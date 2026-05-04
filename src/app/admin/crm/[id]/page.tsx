@@ -33,13 +33,15 @@ export default function CustomerDetailPage() {
       setCustomer(data);
       setForm(data);
 
+      // Load tour history
       const { data: ct } = await supabase
         .from("customer_tours")
         .select("paid_amount, tour:tours(*)")
         .eq("customer_id", id);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const tourList = (ct || []).map((r: any) => ({
-        ...(Array.isArray(r.tour) ? r.tour[0] : r.tour) as Tour,
-        paid_amount: r.paid_amount as number,
+        ...(Array.isArray(r.tour) ? r.tour[0] : r.tour),
+        paid_amount: r.paid_amount,
       }));
       setTours(tourList);
     })();
@@ -60,7 +62,7 @@ export default function CustomerDetailPage() {
   };
 
   const del = async () => {
-    if (!confirm("確定刪除「" + customer?.name + "」？")) return;
+    if (!confirm(`確定刪除「${customer?.name}」？`)) return;
     await supabase.from("customers").delete().eq("id", id);
     router.push("/admin/crm");
   };
@@ -91,11 +93,12 @@ export default function CustomerDetailPage() {
         </button>
       </div>
 
+      {/* Stats */}
       <div className="grid grid-cols-3 gap-3">
         {[
           { label: "參加出團", value: tours.length + " 次" },
           { label: "已完成出團", value: toursDone + " 次" },
-          { label: "累計付款", value: totalPaid > 0 ? "NT$" + totalPaid.toLocaleString() : "—" },
+          { label: "累計付款", value: totalPaid > 0 ? `NT$${totalPaid.toLocaleString()}` : "—" },
         ].map(({ label, value }) => (
           <div key={label} className="bg-white border border-slate-100 rounded-xl p-4 shadow-sm">
             <div className="text-xs text-slate-400">{label}</div>
@@ -105,6 +108,7 @@ export default function CustomerDetailPage() {
       </div>
 
       <div className="grid lg:grid-cols-2 gap-5">
+        {/* Edit form */}
         <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
           <h3 className="font-semibold text-slate-700 text-sm">基本資料</h3>
           <div className="grid grid-cols-2 gap-3">
@@ -166,6 +170,7 @@ export default function CustomerDetailPage() {
           </div>
         </div>
 
+        {/* Tour history */}
         <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-100">
             <h3 className="font-semibold text-slate-700 text-sm">出團記錄</h3>
@@ -175,16 +180,16 @@ export default function CustomerDetailPage() {
           ) : (
             <div className="divide-y divide-slate-50">
               {tours.map(t => (
-                <Link key={t.id} href={"/admin/groups/" + t.id}
+                <Link key={t.id} href={`/admin/groups/${t.id}`}
                   className="flex items-center justify-between px-5 py-3.5 hover:bg-slate-50 transition-colors">
                   <div>
                     <div className="text-sm font-medium text-slate-800">{t.name}</div>
                     <div className="text-xs text-slate-400">
                       {t.destination} ・ {t.start_date || "未定"}
-                      {t.paid_amount > 0 && " ・ 已付 NT$" + t.paid_amount.toLocaleString()}
+                      {t.paid_amount > 0 && ` ・ 已付 NT$${t.paid_amount.toLocaleString()}`}
                     </div>
                   </div>
-                  <span className={"text-xs px-2 py-0.5 rounded-full " + STATUS_COLOR[t.status]}>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_COLOR[t.status]}`}>
                     {STATUS_LABEL[t.status]}
                   </span>
                 </Link>
