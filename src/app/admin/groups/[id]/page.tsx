@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase, Tour, TourStatus, Customer, CustomerTour } from "@/lib/supabase";
 import CostSpreadsheet from "@/components/CostSpreadsheet";
+import PaymentsTab from "@/components/PaymentsTab";
 import { ArrowLeft, Save, Trash2, UserPlus, X } from "lucide-react";
 import Link from "next/link";
 
@@ -32,7 +33,7 @@ export default function GroupDetailPage() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedCid, setSelectedCid]  = useState("");
   const [saving, setSaving]            = useState(false);
-  const [activeTab, setActiveTab]      = useState<"info"|"costs"|"participants">("info");
+  const [activeTab, setActiveTab]      = useState<"info"|"costs"|"payments"|"participants">("info");
 
   const loadTour = async () => {
     const { data } = await supabase.from("tours").select("*").eq("id", id).single();
@@ -70,7 +71,7 @@ export default function GroupDetailPage() {
   };
 
   const deleteTour = async () => {
-    if (!confirm("確定刪除「" + tour?.name + "」？此操作無法復原。")) return;
+    if (!confirm(`確定刪除「${tour?.name}」？此操作無法復原。`)) return;
     await supabase.from("tours").delete().eq("id", id);
     router.push("/admin/groups");
   };
@@ -99,6 +100,7 @@ export default function GroupDetailPage() {
 
   return (
     <div className="p-6 space-y-5 max-w-5xl">
+      {/* Back + title */}
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
           <Link href="/admin/groups" className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors">
@@ -108,7 +110,7 @@ export default function GroupDetailPage() {
             <h1 className="text-xl font-bold text-slate-800">{tour.name}</h1>
             <div className="flex items-center gap-2 mt-1">
               <span className="text-sm text-slate-500">{tour.destination}</span>
-              <span className={"text-xs px-2 py-0.5 rounded-full font-medium " + STATUS_COLOR[tour.status]}>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[tour.status]}`}>
                 {STATUS_OPTIONS.find(s => s.value === tour.status)?.label}
               </span>
             </div>
@@ -119,10 +121,18 @@ export default function GroupDetailPage() {
         </button>
       </div>
 
+      {/* Tabs */}
       <div className="flex border-b border-slate-200 gap-1">
-        {([["info","基本資料"],["costs","費用試算"],["participants","報名旅客"]] as const).map(([tab, label]) => (
-          <button key={tab} onClick={() => setActiveTab(tab)}
-            className={"px-4 py-2.5 text-sm font-medium border-b-2 transition-colors " + (activeTab === tab ? "border-blue-600 text-blue-600" : "border-transparent text-slate-500 hover:text-slate-700")}>
+        {([["info","基本資料"],["costs","費用試算"],["payments","收付款"],["participants","報名旅客"]] as const).map(([tab, label]) => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === tab
+                ? "border-blue-600 text-blue-600"
+                : "border-transparent text-slate-500 hover:text-slate-700"
+            }`}
+          >
             {label}
             {tab === "participants" && participants.length > 0 && (
               <span className="ml-1.5 text-xs bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded-full">
@@ -133,6 +143,7 @@ export default function GroupDetailPage() {
         ))}
       </div>
 
+      {/* ── Tab: Info ── */}
       {activeTab === "info" && (
         <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
           <div className="grid grid-cols-2 gap-4">
@@ -184,10 +195,25 @@ export default function GroupDetailPage() {
         </div>
       )}
 
+      {/* ── Tab: Costs ── */}
       {activeTab === "costs" && (
-        <CostSpreadsheet tourId={id} pax={tour.pax} sellingPrice={tour.selling_price} />
+        <CostSpreadsheet
+          tourId={id}
+          pax={tour.pax}
+          sellingPrice={tour.selling_price}
+        />
       )}
 
+      {/* ── Tab: Payments ── */}
+      {activeTab === "payments" && (
+        <PaymentsTab
+          tourId={id}
+          pax={tour.pax}
+          sellingPrice={tour.selling_price}
+        />
+      )}
+
+      {/* ── Tab: Participants ── */}
       {activeTab === "participants" && (
         <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
@@ -214,14 +240,14 @@ export default function GroupDetailPage() {
                 {participants.map(p => (
                   <tr key={p.id} className="hover:bg-slate-50">
                     <td className="px-4 py-3">
-                      <Link href={"/admin/crm/" + p.customer_id} className="font-medium text-blue-600 hover:underline">
+                      <Link href={`/admin/crm/${p.customer_id}`} className="font-medium text-blue-600 hover:underline">
                         {p.customer.name}
                       </Link>
                     </td>
                     <td className="px-4 py-3 text-slate-600">{p.customer.phone || "—"}</td>
                     <td className="px-4 py-3 text-slate-600">{p.customer.email || "—"}</td>
                     <td className="px-4 py-3 text-right text-slate-600">
-                      {p.paid_amount ? "NT$" + p.paid_amount.toLocaleString() : "—"}
+                      {p.paid_amount ? `NT$${p.paid_amount.toLocaleString()}` : "—"}
                     </td>
                     <td className="px-2 py-3 text-center">
                       <button onClick={() => removeParticipant(p.id)}
@@ -237,6 +263,7 @@ export default function GroupDetailPage() {
         </div>
       )}
 
+      {/* Add participant modal */}
       {showAddModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm">
@@ -250,10 +277,11 @@ export default function GroupDetailPage() {
               {unjoined.length === 0 ? (
                 <p className="text-sm text-slate-500">所有旅客都已加入此團</p>
               ) : (
-                <select className={input} value={selectedCid} onChange={e => setSelectedCid(e.target.value)}>
+                <select className={input} value={selectedCid}
+                  onChange={e => setSelectedCid(e.target.value)}>
                   <option value="">— 選擇旅客 —</option>
                   {unjoined.map(c => (
-                    <option key={c.id} value={c.id}>{c.name} {c.phone}</option>
+                    <option key={c.id} value={c.id}>{c.name}　{c.phone}</option>
                   ))}
                 </select>
               )}
