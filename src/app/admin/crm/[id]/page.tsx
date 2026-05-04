@@ -37,9 +37,9 @@ export default function CustomerDetailPage() {
         .from("customer_tours")
         .select("paid_amount, tour:tours(*)")
         .eq("customer_id", id);
-      const tourList = (ct || []).map((r: { paid_amount: number; tour: Tour }) => ({
-        ...r.tour,
-        paid_amount: r.paid_amount,
+      const tourList = (ct || []).map((r: any) => ({
+        ...(Array.isArray(r.tour) ? r.tour[0] : r.tour) as Tour,
+        paid_amount: r.paid_amount as number,
       }));
       setTours(tourList);
     })();
