@@ -61,7 +61,7 @@ export default function GroupDetailPage() {
     setSaving(true);
     const { error } = await supabase.from("tours").update({
       name: form.name, destination: form.destination,
-      start_date: form.start_date, end_date: form.end_date,
+      start_date: form.start_date || null, end_date: form.end_date || null,
       pax: form.pax, selling_price: form.selling_price,
       status: form.status, notes: form.notes,
     }).eq("id", id);
@@ -143,7 +143,7 @@ export default function GroupDetailPage() {
         ))}
       </div>
 
-      {/* ── Tab: Info ── */}
+      {/* Tab: Info */}
       {activeTab === "info" && (
         <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-5 space-y-4">
           <div className="grid grid-cols-2 gap-4">
@@ -195,25 +195,17 @@ export default function GroupDetailPage() {
         </div>
       )}
 
-      {/* ── Tab: Costs ── */}
+      {/* Tab: Costs */}
       {activeTab === "costs" && (
-        <CostSpreadsheet
-          tourId={id}
-          pax={tour.pax}
-          sellingPrice={tour.selling_price}
-        />
+        <CostSpreadsheet tourId={id} pax={tour.pax} sellingPrice={tour.selling_price} />
       )}
 
-      {/* ── Tab: Payments ── */}
+      {/* Tab: Payments */}
       {activeTab === "payments" && (
-        <PaymentsTab
-          tourId={id}
-          pax={tour.pax}
-          sellingPrice={tour.selling_price}
-        />
+        <PaymentsTab tourId={id} pax={tour.pax} sellingPrice={tour.selling_price} />
       )}
 
-      {/* ── Tab: Participants ── */}
+      {/* Tab: Participants */}
       {activeTab === "participants" && (
         <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
