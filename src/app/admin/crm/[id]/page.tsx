@@ -109,12 +109,12 @@ export default function CustomerDetailPage() {
       id_number:         form.id_number,
       id_card_image:     form.id_card_image,
       passport:          form.passport,
-      passport_expiry:   form.passport_expiry,
+      passport_expiry:   form.passport_expiry   || null,
       passport_image:    form.passport_image,
       taibao_number:     form.taibao_number,
-      taibao_expiry:     form.taibao_expiry,
+      taibao_expiry:     form.taibao_expiry     || null,
       taibao_image:      form.taibao_image,
-      birthday:          form.birthday,
+      birthday:          form.birthday          || null,
       gender:            form.gender,
       address:           form.address,
       emergency_contact: form.emergency_contact,
@@ -166,6 +166,7 @@ export default function CustomerDetailPage() {
     if (docType === "passport") {
       if (result.passport)       { updates.passport        = result.passport;       detected.push("passport");        }
       if (result.passportExpiry) { updates.passport_expiry = result.passportExpiry; detected.push("passport_expiry"); }
+      if (result.idNumber)       { updates.id_number       = result.idNumber;       detected.push("id_number");       }
     } else if (docType === "taibao") {
       if (result.taibaoNumber) { updates.taibao_number = result.taibaoNumber; detected.push("taibao_number"); }
       if (result.taibaoExpiry) { updates.taibao_expiry = result.taibaoExpiry; detected.push("taibao_expiry"); }
