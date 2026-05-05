@@ -578,8 +578,7 @@ export default function CRMPage() {
                 重新上傳
               </button>
               <div className="flex gap-2">
-                <button onClick={closeScan}
-    /             className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">取消</button>
+                <button onClick={closeScan} className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">取消</button>
                 {scanStatus === "done" && (
                   <button onClick={handleScanCreate} disabled={creating || !scanForm.name.trim()}
                     className="px-5 py-2 text-sm bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg disabled:opacity-50 flex items-center gap-1.5">
