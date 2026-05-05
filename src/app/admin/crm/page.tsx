@@ -9,7 +9,7 @@ import {
 import Link from "next/link";
 
 // ─── types ───────────────────────────────────────────────────────────────────
-type DocType = "passport" | "taibao";
+type DocType = "passport" | "taibao" | "idCard";
 type ScanStatus = "idle" | "scanning" | "done" | "error";
 
 interface OcrResult {
@@ -21,6 +21,7 @@ interface OcrResult {
   taibaoExpiry?: string | null;
   birthday?: string | null;
   gender?: "male" | "female" | null;
+  idNumber?: string | null;
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -97,7 +98,8 @@ export default function CRMPage() {
   const handleCreate = async () => {
     if (!form.name.trim()) return alert("請填寫姓名");
     setSaving(true);
-    const { error } = await supabase.from("customers").insert([form]);
+    const payload = { ...form, birthday: form.birthday || null, passport_expiry: form.passport_expiry || null, taibao_expiry: form.taibao_expiry || null };
+    const { error } = await supabase.from("customers").insert([payload]);
     setSaving(false);
     if (error) { alert("建立失敗：" + error.message); return; }
     setShowModal(false);
@@ -138,10 +140,13 @@ export default function CRMPage() {
         preForm.passport         = json.passport        ?? "";
         preForm.passport_expiry  = json.passportExpiry  ?? "";
         preForm.passport_image   = b64;
-      } else {
+      } else if (docType === "taibao") {
         preForm.taibao_number    = json.taibaoNumber    ?? "";
         preForm.taibao_expiry    = json.taibaoExpiry    ?? "";
         preForm.taibao_image     = b64;
+      } else {
+        preForm.id_number        = json.idNumber        ?? "";
+        preForm.id_card_image    = b64;
       }
 
       setScanForm(preForm);
@@ -172,12 +177,37 @@ export default function CRMPage() {
   const handleScanCreate = async () => {
     if (!scanForm.name.trim()) return alert("請確認姓名欄位");
     setCreating(true);
+    const payload = { ...scanForm, birthday: scanForm.birthday || null, passport_expiry: scanForm.passport_expiry || null, taibao_expiry: scanForm.taibao_expiry || null };
     const { data, error } = await supabase
-      .from("customers").insert([scanForm]).select("id").single();
+      .from("customers").insert([payload]).select("id").single();
     setCreating(false);
     if (error) { alert("建立失敗：" + error.message); return; }
     closeScan();
     router.push(`/admin/crm/${data.id}`);
+  };
+
+  const handleMerge = async (existingId: string) => {
+    setCreating(true);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const updates: Record<string, any> = {};
+    if (docType === "passport") {
+      if (scanForm.passport)        updates.passport        = scanForm.passport;
+      if (scanForm.passport_expiry) updates.passport_expiry = scanForm.passport_expiry || null;
+      if (scanForm.passport_image)  updates.passport_image  = scanForm.passport_image;
+    } else if (docType === "taibao") {
+      if (scanForm.taibao_number)   updates.taibao_number   = scanForm.taibao_number;
+      if (scanForm.taibao_expiry)   updates.taibao_expiry   = scanForm.taibao_expiry || null;
+      if (scanForm.taibao_image)    updates.taibao_image    = scanForm.taibao_image;
+    } else {
+      if (scanForm.id_number)       updates.id_number       = scanForm.id_number;
+      if (scanForm.id_card_image)   updates.id_card_image   = scanForm.id_card_image;
+    }
+    if (scanForm.name_en)  updates.name_en  = scanForm.name_en;
+    if (scanForm.birthday) updates.birthday = scanForm.birthday || null;
+    await supabase.from("customers").update(updates).eq("id", existingId);
+    setCreating(false);
+    closeScan();
+    router.push(`/admin/crm/${existingId}`);
   };
 
   const closeScan = () => {
@@ -229,7 +259,7 @@ export default function CRMPage() {
           </div>
         ) : filtered.length === 0 ? (
           <div className="text-center py-12 text-slate-400 text-sm">
-            {search ? "沒有符合的旅客" : "尚無旅客，點右上角新增或掃描證件"}
+            {search ? "沒有符合的旗客" : "尚無旅客，點右上角新增或掃描證件"}
           </div>
         ) : (
           <table className="w-full text-sm">
@@ -265,7 +295,9 @@ export default function CRMPage() {
         )}
       </div>
 
-      {/* MANUAL CREATE MODAL */}
+      {/* ══════════════════════════════════════════════════════════════════════
+          MANUAL CREATE MODAL
+         ══════════════════════════════════════════════════════════════════════ */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
@@ -345,10 +377,14 @@ export default function CRMPage() {
         </div>
       )}
 
-      {/* SCAN-TO-CREATE MODAL */}
+      {/* ══════════════════════════════════════════════════════════════════════
+          SCAN-TO-CREATE MODAL
+         ══════════════════════════════════════════════════════════════════════ */}
       {showScan && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[92vh] overflow-y-auto">
+
+            {/* header */}
             <div className="px-6 py-4 border-b border-slate-100 sticky top-0 bg-white flex items-center justify-between">
               <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
                 <ScanLine className="w-5 h-5 text-emerald-600" /> 掃描證件快速建檔
@@ -357,11 +393,14 @@ export default function CRMPage() {
                 <X className="w-5 h-5" />
               </button>
             </div>
+
             <div className="px-6 py-5 space-y-5">
+
+              {/* doc type toggle */}
               <div>
                 <label className={lbl}>證件類型</label>
                 <div className="flex gap-2">
-                  {([["passport","🛂 護照"],["taibao","🪪 台胞證"]] as const).map(([v, label]) => (
+                  {([ ["passport","🛂 護照"],["idCard","🪪 身分證"],["taibao","🏮 台胞證"] ] as [DocType, string][]).map(([v, label]) => (
                     <button key={v}
                       onClick={() => { setDocType(v); setScanStatus("idle"); setScanImg(""); setOcrResult(null); }}
                       className={`flex-1 py-2 text-sm rounded-lg border transition-colors font-medium ${
@@ -374,6 +413,8 @@ export default function CRMPage() {
                   ))}
                 </div>
               </div>
+
+              {/* upload zone */}
               <div>
                 <label className={lbl}>上傳證件照片</label>
                 <input
@@ -381,7 +422,7 @@ export default function CRMPage() {
                   onChange={e => { const f = e.target.files?.[0]; if (f) handleFileSelect(f); }}
                 />
                 <div
-                  onClick={() => fileRef.current?.click()}
+                   onClick={() => fileRef.current?.click()}
                   onDrop={handleDrop}
                   onDragOver={e => e.preventDefault()}
                   className={`relative border-2 border-dashed rounded-xl cursor-pointer transition-colors
@@ -392,6 +433,7 @@ export default function CRMPage() {
                 >
                   {scanImg ? (
                     <div className="relative">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={scanImg} alt="證件預覽"
                         className="w-full max-h-52 object-contain rounded-xl" />
                       {scanStatus === "scanning" && (
@@ -409,6 +451,8 @@ export default function CRMPage() {
                     </div>
                   )}
                 </div>
+
+                {/* OCR status messages */}
                 {scanStatus === "done" && (
                   <p className="mt-2 text-sm text-emerald-600 flex items-center gap-1">
                     <CheckCircle className="w-4 h-4" /> 辨識完成，請確認下方資料
@@ -420,23 +464,38 @@ export default function CRMPage() {
                   </p>
                 )}
               </div>
+
+              {/* OCR result form — only shown after successful scan */}
               {scanStatus === "done" && (
                 <>
+                  {/* duplicate warning with merge option */}
                   {duplicates.length > 0 && (
                     <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">
-                      <p className="font-semibold mb-1">⚠️ 資料庫中已有同名旅客：</p>
+                      <p className="font-semibold mb-2">⚠️ 資料庫中已有疑似相同旅客，是否要合併證件資料？</p>
                       {duplicates.map(d => (
-                        <p key={d.id} className="flex items-center gap-2">
-                          <Link href={`/admin/crm/${d.id}`} target="_blank"
-                            className="text-violet-600 hover:underline font-medium">
-                            {d.name}
-                          </Link>
-                          <span className="text-amber-700">{d.phone} · {d.birthday}</span>
-                        </p>
+                        <div key={d.id} className="flex items-center justify-between py-2 border-b border-amber-100 last:border-0">
+                          <div className="flex items-center gap-2">
+                            <Link href={`/admin/crm/${d.id}`} target="_blank"
+                              className="text-violet-600 hover:underline font-medium">
+                              {d.name}
+                            </Link>
+                            <span className="text-amber-700 text-xs">{d.phone} · {d.birthday}</span>
+                          </div>
+                          <button
+                            onClick={() => handleMerge(d.id)}
+                            disabled={creating}
+                            className="flex items-center gap-1 px-3 py-1 text-xs bg-amber-600 hover:bg-amber-700 text-white rounded-lg disabled:opacity-50 transition-colors"
+                          >
+                            {creating && <Loader2 className="w-3 h-3 animate-spin" />}
+                            合併到此旅客
+                          </button>
+                        </div>
                       ))}
-                      <p className="mt-1 text-amber-600 text-xs">若確認是新旅客請繼續建立；若是重複請關閉此視窗。</p>
+                      <p className="mt-2 text-amber-600 text-xs">若確認是全新旅客，請忽略提示並點「建立旅客」。</p>
                     </div>
                   )}
+
+                  {/* editable fields */}
                   <div className="bg-slate-50 rounded-xl p-4 space-y-3">
                     <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">辨識結果（可編輯）</p>
                     <div className="grid grid-cols-2 gap-3">
@@ -464,6 +523,7 @@ export default function CRMPage() {
                         <input type="date" className={input} value={scanForm.birthday}
                           onChange={e => setScanForm({ ...scanForm, birthday: e.target.value })} />
                       </div>
+
                       {docType === "passport" ? (<>
                         <div>
                           <label className={lbl}>護照號碼</label>
@@ -475,7 +535,7 @@ export default function CRMPage() {
                           <input type="date" className={input} value={scanForm.passport_expiry}
                             onChange={e => setScanForm({ ...scanForm, passport_expiry: e.target.value })} />
                         </div>
-                      </>) : (<>
+                      </>) : docType === "taibao" ? (<>
                         <div>
                           <label className={lbl}>台胞證號碼</label>
                           <input className={input} value={scanForm.taibao_number}
@@ -486,7 +546,14 @@ export default function CRMPage() {
                           <input type="date" className={input} value={scanForm.taibao_expiry}
                             onChange={e => setScanForm({ ...scanForm, taibao_expiry: e.target.value })} />
                         </div>
+                      </>) : (<>
+                        <div className="col-span-2">
+                          <label className={lbl}>身分證字號</label>
+                          <input className={input} value={scanForm.id_number}
+                            onChange={e => setScanForm({ ...scanForm, id_number: e.target.value })} placeholder="A123456789" />
+                        </div>
                       </>)}
+
                       <div>
                         <label className={lbl}>電話（可補填）</label>
                         <input className={input} value={scanForm.phone}
@@ -502,6 +569,8 @@ export default function CRMPage() {
                 </>
               )}
             </div>
+
+            {/* footer */}
             <div className="px-6 py-4 border-t border-slate-100 sticky bottom-0 bg-white flex items-center justify-between gap-3">
               <button
                 onClick={() => { setScanStatus("idle"); setScanImg(""); setOcrResult(null); setDuplicates([]); }}
@@ -511,7 +580,7 @@ export default function CRMPage() {
               </button>
               <div className="flex gap-2">
                 <button onClick={closeScan}
-                  className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">取消</button>
+    0             className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">取消</button>
                 {scanStatus === "done" && (
                   <button onClick={handleScanCreate} disabled={creating || !scanForm.name.trim()}
                     className="px-5 py-2 text-sm bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg disabled:opacity-50 flex items-center gap-1.5">
