@@ -468,7 +468,7 @@ function DocumentCard({
   title: string;
   image: string;
   status: ScanStatus;
-  inputRef: React.RefObject<HTMLInputElement | null>;
+  inputRef: React.RefObject<HTMLInputElement>;
   onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onClear: () => void;
   onScan: () => void;

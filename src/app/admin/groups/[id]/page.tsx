@@ -55,7 +55,7 @@ export default function GroupDetailPage() {
     loadTour();
     loadParticipants();
     supabase.from("customers").select("id,name,phone,email").order("name")
-      .then(({ data }) => setAllCustomers(data || []));
+      .then(({ data }) => setAllCustomers((data || []) as Customer[]));
   }, [id]);
 
   const saveTour = async () => {
