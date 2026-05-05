@@ -27,6 +27,7 @@ export async function POST(req: NextRequest) {
 - name：中文姓名（例如「王小明」）
 - nameEn：英文/拼音全名（例如「WANG XIAO MING」）
 - passport：護照號碼（英文字母+數字，例如「A12345678」）
+- idNumber：身分證字號（台灣護照個人資料頁會印有身分證字號，格式為1個英文字母+9個數字，例如「A123456789」）
 - birthday：生日，格式 YYYY-MM-DD
 - gender：性別，只能是 "male" 或 "female"
 - passportExpiry：護照效期，格式 YYYY-MM-DD
@@ -38,6 +39,7 @@ export async function POST(req: NextRequest) {
   "name": "王小明",
   "nameEn": "WANG XIAO MING",
   "passport": "A12345678",
+  "idNumber": "A123456789",
   "birthday": "1985-03-15",
   "gender": "male",
   "passportExpiry": "2030-06-20"
