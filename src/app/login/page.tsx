@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { Globe, Loader2, Eye, EyeOff } from "lucide-react";
@@ -144,7 +144,9 @@ function LoginForm() {
 export default function LoginPage() {
   return (
     <ThemeProvider>
-      <LoginForm />
+      <Suspense>
+        <LoginForm />
+      </Suspense>
     </ThemeProvider>
   );
 }
