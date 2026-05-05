@@ -149,36 +149,51 @@ export default function CostSpreadsheet({ tourId, pax, sellingPrice, onSaved }: 
 
   const saveAll = async () => {
     setSaving(true);
-    try {
-      const dirtyRows = rows.filter(r => r.dirty);
-      for (const row of dirtyRows) {
-        const payload = {
-          tour_id: tourId,
-          category: row.category,
-          description: row.description,
-          unit_price: row.unit_price,
-          quantity: row.quantity,
-          notes: row.notes,
-          custom_data: row.custom_data,
-        };
-        if (row.id) {
-          await supabase.from("tour_costs").update(payload).eq("id", row.id);
-        } else {
-          const { data } = await supabase.from("tour_costs").insert([payload]).select().single();
-          if (data) {
-            setRows(prev => prev.map(r =>
-              r === row ? { ...r, id: data.id, dirty: false, isNew: false } : r
-            ));
-          }
+    const failedCount = { n: 0 };
+
+    const indexed = rows
+      .map((r, idx) => ({ r, idx }))
+      .filter(({ r }) => r.dirty);
+
+    for (const { r: row, idx } of indexed) {
+      const payload = {
+        tour_id: tourId,
+        category: row.category,
+        description: row.description,
+        unit_price: row.unit_price,
+        quantity: row.quantity,
+        notes: row.notes,
+      };
+
+      if (row.id) {
+        const { error } = await supabase
+          .from("tour_costs").update(payload).eq("id", row.id);
+        if (error) {
+          console.error("update error:", error.message);
+          failedCount.n++;
+          continue;
         }
+        setRows(prev => prev.map((r, i) => i === idx ? { ...r, dirty: false } : r));
+      } else {
+        const { data, error } = await supabase
+          .from("tour_costs").insert([payload]).select("id").single();
+        if (error || !data) {
+          console.error("insert error:", error?.message);
+          failedCount.n++;
+          continue;
+        }
+        setRows(prev => prev.map((r, i) =>
+          i === idx ? { ...r, id: data.id, dirty: false, isNew: false } : r
+        ));
       }
-      setRows(prev => prev.map(r => ({ ...r, dirty: false })));
+    }
+
+    setSaving(false);
+    if (failedCount.n === 0) {
       setLastSaved(new Date());
       onSaved?.();
-    } catch {
-      alert("儲存失敗");
-    } finally {
-      setSaving(false);
+    } else {
+      alert(`${failedCount.n} 筆儲存失敗，請重試`);
     }
   };
 
