@@ -23,10 +23,9 @@ export async function POST(req: NextRequest) {
         ? `你是一個護照 OCR 系統。請仔細辨識這張護照圖片，擷取以下欄位資訊。
 只回傳一個合法的 JSON 物件，不要有任何說明文字。
 
-
 欄位說明：
 - name：中文姓名（例如「王小明」）
-- nameEn：英文/拼音全名（域于H�ANG XIAO MING于5）
+- nameEn：英文/拼音全名（例如「WANG XIAO MING」）
 - passport：護照號碼（英文字母+數字，例如「A12345678」）
 - birthday：生日，格式 YYYY-MM-DD
 - gender：性別，只能是 "male" 或 "female"
@@ -94,7 +93,7 @@ export async function POST(req: NextRequest) {
         "X-Title": "Travel Alliance OCR",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash-preview",
+        model: "google/gemini-2.5-flash",
         messages: [
           {
             role: "user",
