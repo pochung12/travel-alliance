@@ -14,11 +14,11 @@ const STATUS_OPTIONS: { value: TourStatus | "all"; label: string }[] = [
 ];
 
 const STATUS_COLOR: Record<string, string> = {
-  planning:  "bg-yellow-100 text-yellow-800",
-  confirmed: "bg-blue-100 text-blue-800",
-  ongoing:   "bg-green-100 text-green-800",
-  completed: "bg-slate-100 text-slate-600",
-  cancelled: "bg-red-100 text-red-700",
+  planning:  "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300",
+  confirmed: "bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300",
+  ongoing:   "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300",
+  completed: "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300",
+  cancelled: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -69,7 +69,7 @@ export default function GroupsPage() {
     <div className="p-6 space-y-5">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+        <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
           <Map className="w-6 h-6 text-blue-600" /> 團管理
         </h1>
         <button
@@ -85,13 +85,13 @@ export default function GroupsPage() {
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input
-            className="pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm w-56 focus:outline-none focus:ring-2 focus:ring-blue-400"
+            className="pl-9 pr-4 py-2 border border-slate-200 dark:border-slate-600 rounded-lg text-sm w-56 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400 placeholder:text-slate-400"
             placeholder="搜尋團名、目的地…"
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
         </div>
-        <div className="flex gap-1">
+        <div className="flex gap-1 flex-wrap">
           {STATUS_OPTIONS.map(opt => (
             <button
               key={opt.value}
@@ -99,7 +99,7 @@ export default function GroupsPage() {
               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                 filter === opt.value
                   ? "bg-blue-600 text-white"
-                  : "bg-white border border-slate-200 text-slate-600 hover:bg-slate-50"
+                  : "bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
               }`}
             >
               {opt.label}
@@ -109,7 +109,7 @@ export default function GroupsPage() {
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
         {loading ? (
           <div className="flex justify-center py-12">
             <div className="w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
@@ -120,7 +120,7 @@ export default function GroupsPage() {
           </div>
         ) : (
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
+            <thead className="bg-slate-50 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 text-xs uppercase">
               <tr>
                 <th className="text-left px-4 py-3">團名</th>
                 <th className="text-left px-4 py-3">目的地</th>
@@ -131,19 +131,19 @@ export default function GroupsPage() {
                 <th className="text-center px-4 py-3">狀態</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-50">
+            <tbody className="divide-y divide-slate-50 dark:divide-slate-700/50">
               {filtered.map(tour => (
-                <tr key={tour.id} className="hover:bg-slate-50 transition-colors">
+                <tr key={tour.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors">
                   <td className="px-4 py-3">
-                    <Link href={`/admin/groups/${tour.id}`} className="font-medium text-blue-600 hover:underline">
+                    <Link href={`/admin/groups/${tour.id}`} className="font-medium text-blue-600 dark:text-blue-400 hover:underline">
                       {tour.name}
                     </Link>
                   </td>
-                  <td className="px-4 py-3 text-slate-600">{tour.destination || "—"}</td>
-                  <td className="px-4 py-3 text-slate-600">{tour.start_date || "—"}</td>
-                  <td className="px-4 py-3 text-slate-600">{tour.end_date || "—"}</td>
-                  <td className="px-4 py-3 text-right text-slate-600">{tour.pax}</td>
-                  <td className="px-4 py-3 text-right text-slate-600">
+                  <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{tour.destination || "—"}</td>
+                  <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{tour.start_date || "—"}</td>
+                  <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{tour.end_date || "—"}</td>
+                  <td className="px-4 py-3 text-right text-slate-600 dark:text-slate-300">{tour.pax}</td>
+                  <td className="px-4 py-3 text-right text-slate-600 dark:text-slate-300">
                     {tour.selling_price ? `NT$${tour.selling_price.toLocaleString()}` : "—"}
                   </td>
                   <td className="px-4 py-3 text-center">
@@ -161,9 +161,9 @@ export default function GroupsPage() {
       {/* Create Modal */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
-            <div className="px-6 py-4 border-b border-slate-100">
-              <h2 className="text-lg font-bold text-slate-800">新增出發團</h2>
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-md">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700">
+              <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">新增出發團</h2>
             </div>
             <div className="px-6 py-5 space-y-4">
               <Field label="團名 *">
@@ -201,9 +201,9 @@ export default function GroupsPage() {
                 </select>
               </Field>
             </div>
-            <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
+            <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-700 flex justify-end gap-3">
               <button onClick={() => setShowModal(false)}
-                className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">取消</button>
+                className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">取消</button>
               <button onClick={handleCreate} disabled={saving}
                 className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50">
                 {saving ? "建立中…" : "建立"}
@@ -216,12 +216,12 @@ export default function GroupsPage() {
   );
 }
 
-const input = "w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400";
+const input = "w-full border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-slate-500 mb-1">{label}</label>
+      <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">{label}</label>
       {children}
     </div>
   );

@@ -66,8 +66,8 @@ const EMPTY: Omit<Customer, "id" | "created_at"> = {
   address: "", emergency_contact: "", emergency_phone: "", notes: "",
 };
 
-const input = "w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400";
-const lbl   = "block text-xs font-medium text-slate-500 mb-1";
+const input = "w-full border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400 placeholder:text-slate-400";
+const lbl   = "block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1";
 
 // ─── column definitions ───────────────────────────────────────────────────────
 const ALL_COLS: ColDef[] = [
@@ -478,7 +478,7 @@ export default function CRMPage() {
     <div className="p-6 space-y-5">
       {/* header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+        <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
           <Users className="w-6 h-6 text-violet-600" /> 旅客 CRM
         </h1>
         <div className="flex gap-2">
@@ -502,7 +502,7 @@ export default function CRMPage() {
         <div className="relative w-64">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input
-            className="pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm w-full focus:outline-none focus:ring-2 focus:ring-violet-400"
+            className="pl-9 pr-4 py-2 border border-slate-200 dark:border-slate-600 rounded-lg text-sm w-full bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-violet-400 placeholder:text-slate-400"
             placeholder="搜尋姓名、電話、Email…"
             value={search} onChange={e => setSearch(e.target.value)}
           />
@@ -514,21 +514,21 @@ export default function CRMPage() {
             onClick={() => setShowColMenu(v => !v)}
             className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm transition-colors ${
               showColMenu
-                ? "border-violet-400 bg-violet-50 text-violet-700"
-                : "border-slate-200 text-slate-600 hover:bg-slate-50"
+                ? "border-violet-400 bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300"
+                : "border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
             }`}
           >
             <Settings className="w-4 h-4" /> 欄位設定
           </button>
 
           {showColMenu && (
-            <div className="absolute left-0 top-full mt-1 z-30 bg-white rounded-xl shadow-lg border border-slate-100 p-3 w-52">
-              <p className="text-xs font-semibold text-slate-500 mb-2 px-1 uppercase tracking-wide">顯示欄位</p>
+            <div className="absolute left-0 top-full mt-1 z-30 bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-100 dark:border-slate-700 p-3 w-52">
+              <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2 px-1 uppercase tracking-wide">顯示欄位</p>
               <div className="space-y-0.5 max-h-72 overflow-y-auto">
                 {columns.map(col => (
                   <label
                     key={col.key}
-                    className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-50 cursor-pointer text-sm text-slate-700"
+                    className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 cursor-pointer text-sm text-slate-700 dark:text-slate-300"
                   >
                     <input
                       type="checkbox"
@@ -558,7 +558,7 @@ export default function CRMPage() {
       </div>
 
       {/* table */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-x-auto">
+      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-x-auto">
         {loading ? (
           <div className="flex justify-center py-12">
             <div className="w-6 h-6 border-4 border-violet-500 border-t-transparent rounded-full animate-spin" />
@@ -574,14 +574,14 @@ export default function CRMPage() {
                 <col key={col.key} style={{ width: col.width }} />
               ))}
             </colgroup>
-            <thead className="bg-slate-50 text-slate-500 text-xs uppercase select-none">
+            <thead className="bg-slate-50 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 text-xs uppercase select-none">
               <tr>
                 {visibleCols.map(col => (
                   <th
                     key={col.key}
                     className={`text-left px-4 py-3 relative cursor-grab active:cursor-grabbing ${
                       dragOverCol === col.key && dragCol !== col.key
-                        ? "bg-violet-100 text-violet-700"
+                        ? "bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300"
                         : ""
                     }`}
                     style={{ width: col.width }}
@@ -609,9 +609,9 @@ export default function CRMPage() {
                 ))}
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-50">
+            <tbody className="divide-y divide-slate-50 dark:divide-slate-700/50">
               {filtered.map(c => (
-                <tr key={c.id} className="hover:bg-slate-50 transition-colors">
+                <tr key={c.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors">
                   {visibleCols.map(col => (
                     <td
                       key={col.key}
@@ -646,9 +646,9 @@ export default function CRMPage() {
          ══════════════════════════════════════════════════════════════════════ */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="px-6 py-4 border-b border-slate-100 sticky top-0 bg-white flex items-center justify-between">
-              <h2 className="text-lg font-bold text-slate-800">新增旅客</h2>
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 sticky top-0 bg-white dark:bg-slate-800 flex items-center justify-between">
+              <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">新增旅客</h2>
               <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-700">
                 <X className="w-5 h-5" />
               </button>
@@ -711,9 +711,9 @@ export default function CRMPage() {
                 </div>
               </div>
             </div>
-            <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-3 sticky bottom-0 bg-white">
+            <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-700 flex justify-end gap-3 sticky bottom-0 bg-white dark:bg-slate-800">
               <button onClick={() => setShowModal(false)}
-                className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">取消</button>
+                className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">取消</button>
               <button onClick={handleCreate} disabled={saving}
                 className="px-4 py-2 text-sm bg-violet-600 hover:bg-violet-700 text-white rounded-lg disabled:opacity-50">
                 {saving ? "建立中…" : "建立"}
@@ -1111,7 +1111,7 @@ export default function CRMPage() {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-slate-500 mb-1">{label}</label>
+      <label className="block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1">{label}</label>
       {children}
     </div>
   );
