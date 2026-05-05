@@ -55,6 +55,7 @@ export interface Customer {
   phone: string;
   email: string;
   id_number: string;
+  id_card_image: string;     // 身分證 base64 圖片
   passport: string;          // 護照號碼
   passport_expiry: string;   // 護照效期 (YYYY-MM-DD)
   passport_image: string;    // base64 圖片
