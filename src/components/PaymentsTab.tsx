@@ -144,7 +144,7 @@ export default function PaymentsTab({ tourId, pax, sellingPrice }: Props) {
       category: form.category,
       description: form.description || "",
       amount: form.amount,
-      payment_date: form.payment_date,
+      payment_date: form.payment_date || null,
       note: form.note || "",
       image: form.image || "",
     }]);
