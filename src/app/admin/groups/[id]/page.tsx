@@ -4,7 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase, Tour, TourStatus, Customer, CustomerTour } from "@/lib/supabase";
 import CostSpreadsheet from "@/components/CostSpreadsheet";
 import PaymentsTab from "@/components/PaymentsTab";
-import { ArrowLeft, Save, Trash2, UserPlus, X } from "lucide-react";
+import { ArrowLeft, Save, Trash2, UserPlus, X, Search } from "lucide-react";
 import Link from "next/link";
 
 const STATUS_OPTIONS: { value: TourStatus; label: string }[] = [
@@ -31,7 +31,8 @@ export default function GroupDetailPage() {
   const [participants, setParticipants] = useState<(CustomerTour & { customer: Customer })[]>([]);
   const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [selectedCid, setSelectedCid]  = useState("");
+  const [selectedCids, setSelectedCids] = useState<Set<string>>(new Set());
+  const [addSearch, setAddSearch]       = useState("");
   const [saving, setSaving]            = useState(false);
   const [activeTab, setActiveTab]      = useState<"info"|"costs"|"payments"|"participants">("info");
 
@@ -76,11 +77,23 @@ export default function GroupDetailPage() {
     router.push("/admin/groups");
   };
 
-  const addParticipant = async () => {
-    if (!selectedCid) return;
-    await supabase.from("customer_tours").insert([{ customer_id: selectedCid, tour_id: id }]);
+  const toggleCid = (cid: string) => {
+    const next = new Set(selectedCids);
+    if (next.has(cid)) next.delete(cid); else next.add(cid);
+    setSelectedCids(next);
+  };
+
+  const closeAddModal = () => {
     setShowAddModal(false);
-    setSelectedCid("");
+    setSelectedCids(new Set());
+    setAddSearch("");
+  };
+
+  const addParticipants = async () => {
+    if (selectedCids.size === 0) return;
+    const rows = Array.from(selectedCids).map(cid => ({ customer_id: cid, tour_id: id }));
+    await supabase.from("customer_tours").insert(rows);
+    closeAddModal();
     loadParticipants();
   };
 
@@ -264,38 +277,91 @@ export default function GroupDetailPage() {
       )}
 
       {/* Add participant modal */}
-      {showAddModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm">
-            <div className="px-5 py-4 border-b flex items-center justify-between">
-              <h2 className="font-bold text-slate-800">加入旅客</h2>
-              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-700">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="px-5 py-4">
-              {unjoined.length === 0 ? (
-                <p className="text-sm text-slate-500">所有旅客都已加入此團</p>
-              ) : (
-                <select className={input} value={selectedCid}
-                  onChange={e => setSelectedCid(e.target.value)}>
-                  <option value="">— 選擇旅客 —</option>
-                  {unjoined.map(c => (
-                    <option key={c.id} value={c.id}>{c.name}　{c.phone}</option>
-                  ))}
-                </select>
-              )}
-            </div>
-            <div className="px-5 py-4 border-t flex justify-end gap-3">
-              <button onClick={() => setShowAddModal(false)} className="text-sm text-slate-600 hover:bg-slate-100 px-4 py-2 rounded-lg">取消</button>
-              <button onClick={addParticipant} disabled={!selectedCid}
-                className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-40 transition-colors">
-                加入
-              </button>
+      {showAddModal && (() => {
+        const filtered = unjoined.filter(c =>
+          !addSearch || c.name.includes(addSearch) || (c.phone || "").includes(addSearch));
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
+              <div className="px-5 py-4 border-b flex items-center justify-between">
+                <h2 className="font-bold text-slate-800">加入旅客</h2>
+                <button onClick={closeAddModal} className="text-slate-400 hover:text-slate-700">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="px-5 py-4 space-y-3">
+                {unjoined.length === 0 ? (
+                  <p className="text-sm text-slate-500 py-4 text-center">所有旅客都已加入此團</p>
+                ) : (
+                  <>
+                    {/* 搜尋 */}
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                      <input
+                        className="pl-9 w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        placeholder="搜尋姓名或電話…"
+                        value={addSearch}
+                        onChange={e => setAddSearch(e.target.value)}
+                        autoFocus
+                      />
+                    </div>
+
+                    {/* 全選列 */}
+                    <div className="flex items-center justify-between text-xs text-slate-500">
+                      <button
+                        onClick={() => setSelectedCids(new Set(filtered.map(c => c.id as string)))}
+                        className="hover:text-blue-600 hover:underline">全選</button>
+                      {selectedCids.size > 0
+                        ? <span className="font-medium text-blue-600">已選 {selectedCids.size} 位</span>
+                        : <span>共 {filtered.length} 位旅客</span>}
+                      <button
+                        onClick={() => setSelectedCids(new Set())}
+                        className="hover:text-slate-700 hover:underline">取消全選</button>
+                    </div>
+
+                    {/* 旅客清單 */}
+                    {filtered.length === 0 ? (
+                      <p className="text-sm text-slate-400 text-center py-4">找不到符合的旅客</p>
+                    ) : (
+                      <div className="max-h-60 overflow-y-auto -mx-1 space-y-0.5">
+                        {filtered.map(c => (
+                          <label
+                            key={c.id}
+                            className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-50 cursor-pointer transition-colors"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedCids.has(c.id)}
+                              onChange={() => toggleCid(c.id)}
+                              className="w-4 h-4 accent-blue-600"
+                            />
+                            <div className="min-w-0">
+                              <div className="text-sm font-medium text-slate-800">{c.name}</div>
+                              {c.phone && <div className="text-xs text-slate-400">{c.phone}</div>}
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              <div className="px-5 py-4 border-t flex justify-end gap-3">
+                <button onClick={closeAddModal}
+                  className="text-sm text-slate-600 hover:bg-slate-100 px-4 py-2 rounded-lg">取消</button>
+                <button
+                  onClick={addParticipants}
+                  disabled={selectedCids.size === 0}
+                  className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-40 transition-colors">
+                  {selectedCids.size > 0 ? `加入 ${selectedCids.size} 位旅客` : "加入旅客"}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
