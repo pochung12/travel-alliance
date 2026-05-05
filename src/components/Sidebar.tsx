@@ -1,24 +1,49 @@
 "use client";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { LayoutDashboard, Map, Users, Globe, ChevronLeft, ChevronRight, Sun, Moon } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import {
+  LayoutDashboard, Map, Users, Globe,
+  ChevronLeft, ChevronRight, Sun, Moon,
+  LogOut, UserCog, ShieldCheck, User,
+} from "lucide-react";
 import { APP_VERSION } from "@/lib/version";
 import { useTheme } from "./ThemeProvider";
+import { supabase, Profile, UserRole } from "@/lib/supabase";
 
-const navItems = [
-  { href: "/admin",        label: "儀表板",   icon: LayoutDashboard },
-  { href: "/admin/groups", label: "團管理",   icon: Map },
-  { href: "/admin/crm",    label: "旅客 CRM", icon: Users },
+const NAV_ITEMS = [
+  { href: "/admin",        label: "儀表板",   icon: LayoutDashboard, roles: ["staff", "admin"] as UserRole[] },
+  { href: "/admin/groups", label: "團管理",   icon: Map,             roles: ["staff", "admin"] as UserRole[] },
+  { href: "/admin/crm",    label: "旅客 CRM", icon: Users,           roles: ["staff", "admin"] as UserRole[] },
+  { href: "/admin/users",  label: "用戶管理", icon: UserCog,         roles: ["admin"]          as UserRole[] },
 ];
+
+const ROLE_BADGE: Record<UserRole, { label: string; icon: React.ElementType; color: string }> = {
+  admin:    { label: "超級管理員", icon: ShieldCheck, color: "text-purple-400" },
+  staff:    { label: "員工",       icon: UserCog,     color: "text-blue-400" },
+  customer: { label: "顧客會員",   icon: User,        color: "text-slate-400" },
+};
 
 interface Props {
   collapsed: boolean;
   onToggleCollapse: () => void;
+  profile: Profile | null;
 }
 
-export default function Sidebar({ collapsed, onToggleCollapse }: Props) {
+export default function Sidebar({ collapsed, onToggleCollapse, profile }: Props) {
   const pathname = usePathname();
+  const router   = useRouter();
   const { theme, toggle } = useTheme();
+
+  const role = profile?.role ?? "staff";
+  const badge = ROLE_BADGE[role];
+  const BadgeIcon = badge.icon;
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.replace("/login");
+  };
+
+  const visibleNav = NAV_ITEMS.filter(item => item.roles.includes(role));
 
   return (
     <aside
@@ -37,7 +62,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: Props) {
         )}
       </div>
 
-      {/* Collapse toggle — floats on the right edge */}
+      {/* Collapse toggle */}
       <button
         onClick={onToggleCollapse}
         title={collapsed ? "展開側欄" : "折疊側欄"}
@@ -49,9 +74,27 @@ export default function Sidebar({ collapsed, onToggleCollapse }: Props) {
         }
       </button>
 
+      {/* User info */}
+      {!collapsed && profile && (
+        <div className="px-4 py-3 border-b border-slate-700/60">
+          <div className="text-sm font-medium text-slate-100 truncate">
+            {profile.name || profile.email}
+          </div>
+          <div className={`flex items-center gap-1 text-xs mt-0.5 ${badge.color}`}>
+            <BadgeIcon className="w-3 h-3" />
+            {badge.label}
+          </div>
+        </div>
+      )}
+      {collapsed && profile && (
+        <div className="flex justify-center py-3 border-b border-slate-700/60">
+          <BadgeIcon className={`w-4 h-4 ${badge.color}`} title={badge.label} />
+        </div>
+      )}
+
       {/* Nav */}
       <nav className="flex-1 px-2 py-4 space-y-1">
-        {navItems.map(({ href, label, icon: Icon }) => {
+        {visibleNav.map(({ href, label, icon: Icon }) => {
           const active = pathname === href || (href !== "/admin" && pathname.startsWith(href));
           return (
             <Link
@@ -73,7 +116,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }: Props) {
         })}
       </nav>
 
-      {/* Bottom: dark mode toggle + version */}
+      {/* Bottom: dark mode + logout + version */}
       <div className="border-t border-slate-700/60 px-2 py-3 space-y-1">
         <button
           onClick={toggle}
@@ -86,9 +129,18 @@ export default function Sidebar({ collapsed, onToggleCollapse }: Props) {
             ? <Sun  className="w-4 h-4 shrink-0 text-amber-400" />
             : <Moon className="w-4 h-4 shrink-0 text-slate-400" />
           }
-          {!collapsed && (
-            <span>{theme === "dark" ? "明亮模式" : "深色模式"}</span>
-          )}
+          {!collapsed && <span>{theme === "dark" ? "明亮模式" : "深色模式"}</span>}
+        </button>
+
+        <button
+          onClick={handleLogout}
+          title={collapsed ? "登出" : undefined}
+          className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm text-slate-300 hover:bg-red-900/40 hover:text-red-300 transition-colors ${
+            collapsed ? "justify-center" : ""
+          }`}
+        >
+          <LogOut className="w-4 h-4 shrink-0" />
+          {!collapsed && <span>登出</span>}
         </button>
 
         {!collapsed && (

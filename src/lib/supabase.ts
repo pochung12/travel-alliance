@@ -5,6 +5,18 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
+// ─── Auth / Profile ──────────────────────────────────────────────────────────
+
+export type UserRole = 'customer' | 'staff' | 'admin';
+
+export interface Profile {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  created_at: string;
+}
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 export type TourStatus = 'planning' | 'confirmed' | 'ongoing' | 'completed' | 'cancelled';
