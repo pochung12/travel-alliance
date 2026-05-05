@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { supabase, Customer } from "@/lib/supabase";
 import {
   Plus, Search, Users, ScanLine, Upload, FileSpreadsheet,
-  Loader2, CheckCircle, AlertCircle, X,
+  Loader2, CheckCircle, AlertCircle, X, Settings,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -29,6 +29,13 @@ interface ImportRow {
   data: Partial<Omit<Customer, "id" | "created_at">>;
   errors: string[];
   isDuplicate: boolean;
+}
+
+interface ColDef {
+  key: string;
+  label: string;
+  width: number;
+  visible: boolean;
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -61,6 +68,35 @@ const EMPTY: Omit<Customer, "id" | "created_at"> = {
 
 const input = "w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400";
 const lbl   = "block text-xs font-medium text-slate-500 mb-1";
+
+// ─── column definitions ───────────────────────────────────────────────────────
+const ALL_COLS: ColDef[] = [
+  { key: "name",              label: "姓名",       width: 140, visible: true  },
+  { key: "name_en",           label: "英文姓名",   width: 160, visible: false },
+  { key: "gender",            label: "性別",       width: 80,  visible: false },
+  { key: "birthday",          label: "生日",       width: 120, visible: true  },
+  { key: "phone",             label: "電話",       width: 140, visible: true  },
+  { key: "email",             label: "Email",      width: 180, visible: true  },
+  { key: "id_number",         label: "身分證",     width: 140, visible: false },
+  { key: "passport",          label: "護照號碼",   width: 120, visible: true  },
+  { key: "passport_expiry",   label: "護照效期",   width: 120, visible: false },
+  { key: "taibao_number",     label: "台胞證",     width: 140, visible: false },
+  { key: "taibao_expiry",     label: "台胞證效期", width: 120, visible: false },
+  { key: "address",           label: "地址",       width: 200, visible: false },
+  { key: "emergency_contact", label: "緊急聯絡人", width: 120, visible: false },
+  { key: "emergency_phone",   label: "緊急電話",   width: 140, visible: false },
+  { key: "notes",             label: "備註",       width: 160, visible: false },
+  { key: "created_at",        label: "加入時間",   width: 110, visible: true  },
+];
+
+function getCellValue(c: Customer, key: string): string {
+  if (key === "gender") {
+    return c.gender === "male" ? "男" : c.gender === "female" ? "女" : "其他";
+  }
+  if (key === "created_at") return new Date(c.created_at).toLocaleDateString("zh-TW");
+  const v = (c as unknown as Record<string, unknown>)[key];
+  return (v as string) || "—";
+}
 
 // ─── import helpers ───────────────────────────────────────────────────────────
 const HEADER_MAP: Record<string, keyof Omit<Customer, "id" | "created_at">> = {
@@ -167,7 +203,7 @@ export default function CRMPage() {
   // scan-to-create modal
   const [showScan,    setShowScan]    = useState(false);
   const [docType,     setDocType]     = useState<DocType>("passport");
-  const [scanImg,     setScanImg]     = useState<string>("");   // base64 preview
+  const [scanImg,     setScanImg]     = useState<string>("");
   const [scanStatus,  setScanStatus]  = useState<ScanStatus>("idle");
   const [scanError,   setScanError]   = useState("");
   const [ocrResult,   setOcrResult]   = useState<OcrResult | null>(null);
@@ -186,6 +222,16 @@ export default function CRMPage() {
   const [selectedRows,  setSelectedRows]  = useState<Set<number>>(new Set());
   const importFileRef = useRef<HTMLInputElement>(null);
 
+  // column management
+  const [columns,     setColumns]     = useState<ColDef[]>(() => ALL_COLS.map(c => ({ ...c })));
+  const [showColMenu, setShowColMenu] = useState(false);
+  const colMenuRef = useRef<HTMLDivElement>(null);
+  // drag-to-reorder
+  const [dragCol,     setDragCol]     = useState<string | null>(null);
+  const [dragOverCol, setDragOverCol] = useState<string | null>(null);
+  // column resize (ref to avoid stale closure in document listeners)
+  const resizeRef = useRef<{ key: string; startX: number; startW: number } | null>(null);
+
   // ── load ──────────────────────────────────────────────────────────────────
   const load = async () => {
     const { data } = await supabase
@@ -195,9 +241,73 @@ export default function CRMPage() {
   };
   useEffect(() => { load(); }, []);
 
+  // ── resize: attach global mouse handlers ──────────────────────────────────
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!resizeRef.current) return;
+      const { key, startX, startW } = resizeRef.current;
+      const delta = e.clientX - startX;
+      setColumns(prev => prev.map(c =>
+        c.key === key ? { ...c, width: Math.max(60, startW + delta) } : c
+      ));
+    };
+    const onUp = () => { resizeRef.current = null; };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    return () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+  }, []);
+
+  // ── close col menu on outside click ──────────────────────────────────────
+  useEffect(() => {
+    if (!showColMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (colMenuRef.current && !colMenuRef.current.contains(e.target as Node)) {
+        setShowColMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showColMenu]);
+
   const filtered = customers.filter(c =>
     c.name.includes(search) || c.phone.includes(search) || c.email.includes(search)
   );
+
+  const visibleCols = columns.filter(c => c.visible);
+
+  // ── column drag-to-reorder ────────────────────────────────────────────────
+  const handleColDragStart = (key: string, e: React.DragEvent) => {
+    setDragCol(key);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleColDragOver = (key: string, e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (key !== dragCol) setDragOverCol(key);
+  };
+
+  const handleColDrop = (targetKey: string) => {
+    if (!dragCol || dragCol === targetKey) { setDragCol(null); setDragOverCol(null); return; }
+    setColumns(prev => {
+      const next = [...prev];
+      const fromIdx = next.findIndex(c => c.key === dragCol);
+      const toIdx   = next.findIndex(c => c.key === targetKey);
+      const [removed] = next.splice(fromIdx, 1);
+      next.splice(toIdx, 0, removed);
+      return next;
+    });
+    setDragCol(null);
+    setDragOverCol(null);
+  };
+
+  const handleColDragEnd = () => { setDragCol(null); setDragOverCol(null); };
+
+  const toggleCol = (key: string) =>
+    setColumns(prev => prev.map(c => c.key === key ? { ...c, visible: !c.visible } : c));
 
   // ── manual create ─────────────────────────────────────────────────────────
   const handleCreate = async () => {
@@ -234,7 +344,6 @@ export default function CRMPage() {
 
       setOcrResult(json);
 
-      // build pre-filled form
       const preForm: typeof EMPTY = { ...EMPTY };
       preForm.name            = json.name           ?? "";
       preForm.name_en         = json.nameEn          ?? "";
@@ -256,12 +365,11 @@ export default function CRMPage() {
 
       setScanForm(preForm);
 
-      // check duplicates by name
       if (json.name) {
         const { data: dups } = await supabase
           .from("customers").select("id,name,phone,birthday")
           .ilike("name", json.name.trim());
-        setDuplicates(dups || []);
+        setDuplicates((dups || []) as Customer[]);
       }
 
       setScanStatus("done");
@@ -271,7 +379,6 @@ export default function CRMPage() {
     }
   };
 
-  // drag & drop
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     const file = e.dataTransfer.files[0];
@@ -390,18 +497,68 @@ export default function CRMPage() {
         </div>
       </div>
 
-      {/* search */}
-      <div className="relative w-64">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-        <input
-          className="pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm w-full focus:outline-none focus:ring-2 focus:ring-violet-400"
-          placeholder="搜尋姓名、電話、Email…"
-          value={search} onChange={e => setSearch(e.target.value)}
-        />
+      {/* search + column settings */}
+      <div className="flex items-center gap-3">
+        <div className="relative w-64">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          <input
+            className="pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm w-full focus:outline-none focus:ring-2 focus:ring-violet-400"
+            placeholder="搜尋姓名、電話、Email…"
+            value={search} onChange={e => setSearch(e.target.value)}
+          />
+        </div>
+
+        {/* column visibility button */}
+        <div className="relative" ref={colMenuRef}>
+          <button
+            onClick={() => setShowColMenu(v => !v)}
+            className={`flex items-center gap-1.5 px-3 py-2 border rounded-lg text-sm transition-colors ${
+              showColMenu
+                ? "border-violet-400 bg-violet-50 text-violet-700"
+                : "border-slate-200 text-slate-600 hover:bg-slate-50"
+            }`}
+          >
+            <Settings className="w-4 h-4" /> 欄位設定
+          </button>
+
+          {showColMenu && (
+            <div className="absolute left-0 top-full mt-1 z-30 bg-white rounded-xl shadow-lg border border-slate-100 p-3 w-52">
+              <p className="text-xs font-semibold text-slate-500 mb-2 px-1 uppercase tracking-wide">顯示欄位</p>
+              <div className="space-y-0.5 max-h-72 overflow-y-auto">
+                {columns.map(col => (
+                  <label
+                    key={col.key}
+                    className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-slate-50 cursor-pointer text-sm text-slate-700"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={col.visible}
+                      onChange={() => toggleCol(col.key)}
+                      className="accent-violet-600 w-3.5 h-3.5"
+                    />
+                    {col.label}
+                  </label>
+                ))}
+              </div>
+              <div className="mt-2 pt-2 border-t border-slate-100">
+                <button
+                  onClick={() => setColumns(ALL_COLS.map(c => ({ ...c })))}
+                  className="w-full text-xs text-slate-400 hover:text-slate-600 text-center py-1"
+                >
+                  重設為預設
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <span className="text-xs text-slate-400 ml-auto">
+          拖曳欄標題可調整順序，拖曳右邊框可調整寬度
+        </span>
       </div>
 
       {/* table */}
-      <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+      <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-x-auto">
         {loading ? (
           <div className="flex justify-center py-12">
             <div className="w-6 h-6 border-4 border-violet-500 border-t-transparent rounded-full animate-spin" />
@@ -411,32 +568,72 @@ export default function CRMPage() {
             {search ? "沒有符合的旅客" : "尚無旅客，點右上角新增或掃描證件"}
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
+          <table className="text-sm table-fixed" style={{ width: visibleCols.reduce((s, c) => s + c.width, 0) }}>
+            <colgroup>
+              {visibleCols.map(col => (
+                <col key={col.key} style={{ width: col.width }} />
+              ))}
+            </colgroup>
+            <thead className="bg-slate-50 text-slate-500 text-xs uppercase select-none">
               <tr>
-                <th className="text-left px-4 py-3">姓名</th>
-                <th className="text-left px-4 py-3">電話</th>
-                <th className="text-left px-4 py-3">Email</th>
-                <th className="text-left px-4 py-3">護照號碼</th>
-                <th className="text-left px-4 py-3">生日</th>
-                <th className="text-left px-4 py-3">加入時間</th>
+                {visibleCols.map(col => (
+                  <th
+                    key={col.key}
+                    className={`text-left px-4 py-3 relative cursor-grab active:cursor-grabbing ${
+                      dragOverCol === col.key && dragCol !== col.key
+                        ? "bg-violet-100 text-violet-700"
+                        : ""
+                    }`}
+                    style={{ width: col.width }}
+                    draggable
+                    onDragStart={e => handleColDragStart(col.key, e)}
+                    onDragOver={e => handleColDragOver(col.key, e)}
+                    onDrop={() => handleColDrop(col.key)}
+                    onDragEnd={handleColDragEnd}
+                  >
+                    <span className="truncate block pr-2">{col.label}</span>
+                    {/* resize handle */}
+                    <div
+                      className="absolute right-0 top-0 h-full w-2 cursor-col-resize group"
+                      onMouseDown={e => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        resizeRef.current = { key: col.key, startX: e.clientX, startW: col.width };
+                      }}
+                      draggable={false}
+                      onDragStart={e => e.preventDefault()}
+                    >
+                      <div className="absolute right-0 top-1/4 h-1/2 w-0.5 bg-slate-300 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </div>
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
               {filtered.map(c => (
                 <tr key={c.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-4 py-3">
-                    <Link href={`/admin/crm/${c.id}`} className="font-medium text-violet-600 hover:underline">
-                      {c.name}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">{c.phone || "—"}</td>
-                  <td className="px-4 py-3 text-slate-600">{c.email || "—"}</td>
-                  <td className="px-4 py-3 text-slate-600 font-mono text-xs">{c.passport || "—"}</td>
-                  <td className="px-4 py-3 text-slate-600">{c.birthday || "—"}</td>
-                  <td className="px-4 py-3 text-slate-400 text-xs">
-                    {new Date(c.created_at).toLocaleDateString("zh-TW")}
-                  </td>
+                  {visibleCols.map(col => (
+                    <td
+                      key={col.key}
+                      className="px-4 py-3 truncate"
+                      style={{ width: col.width, maxWidth: col.width }}
+                    >
+                      {col.key === "name" ? (
+                        <Link
+                          href={`/admin/crm/${c.id}`}
+                          className="font-medium text-violet-600 hover:underline"
+                        >
+                          {c.name}
+                        </Link>
+                      ) : col.key === "passport" || col.key === "id_number" || col.key === "taibao_number" ? (
+                        <span className="text-slate-600 font-mono text-xs">{getCellValue(c, col.key)}</span>
+                      ) : col.key === "created_at" ? (
+                        <span className="text-slate-400 text-xs">{getCellValue(c, col.key)}</span>
+                      ) : (
+                        <span className="text-slate-600">{getCellValue(c, col.key)}</span>
+                      )}
+                    </td>
+                  ))}
                 </tr>
               ))}
             </tbody>
@@ -769,7 +966,6 @@ export default function CRMPage() {
                   )}
                 </div>
 
-                {/* OCR status messages */}
                 {scanStatus === "done" && (
                   <p className="mt-2 text-sm text-emerald-600 flex items-center gap-1">
                     <CheckCircle className="w-4 h-4" /> 辨識完成，請確認下方資料
@@ -782,10 +978,9 @@ export default function CRMPage() {
                 )}
               </div>
 
-              {/* OCR result form — only shown after successful scan */}
+              {/* OCR result form */}
               {scanStatus === "done" && (
                 <>
-                  {/* duplicate warning with merge option */}
                   {duplicates.length > 0 && (
                     <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">
                       <p className="font-semibold mb-2">⚠️ 資料庫中已有疑似相同旅客，是否要合併證件資料？</p>
@@ -812,7 +1007,6 @@ export default function CRMPage() {
                     </div>
                   )}
 
-                  {/* editable fields */}
                   <div className="bg-slate-50 rounded-xl p-4 space-y-3">
                     <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">辨識結果（可編輯）</p>
                     <div className="grid grid-cols-2 gap-3">
