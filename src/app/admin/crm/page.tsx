@@ -126,8 +126,7 @@ export default function CRMPage() {
       });
       const json: OcrResult & { error?: string } = await res.json();
       if (json.error) throw new Error(json.error);
-
-      setOcrResult(json);
+       setOcrResult(json);
 
       // build pre-filled form
       const preForm: typeof EMPTY = { ...EMPTY };
@@ -422,7 +421,7 @@ export default function CRMPage() {
                   onChange={e => { const f = e.target.files?.[0]; if (f) handleFileSelect(f); }}
                 />
                 <div
-                   onClick={() => fileRef.current?.click()}
+                  onClick={() => fileRef.current?.click()}
                   onDrop={handleDrop}
                   onDragOver={e => e.preventDefault()}
                   className={`relative border-2 border-dashed rounded-xl cursor-pointer transition-colors
@@ -471,7 +470,7 @@ export default function CRMPage() {
                   {/* duplicate warning with merge option */}
                   {duplicates.length > 0 && (
                     <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">
-                      <p className="font-semibold mb-2">⚠️ 資料庫中已有疑似相同旅客，是否要合併證件資料？</p>
+                      <p className="font-semibold mb-2">⚠️ 資料庫中已有疑似相同旅客，本否要合併證件資料？</p>
                       {duplicates.map(d => (
                         <div key={d.id} className="flex items-center justify-between py-2 border-b border-amber-100 last:border-0">
                           <div className="flex items-center gap-2">
@@ -491,7 +490,7 @@ export default function CRMPage() {
                           </button>
                         </div>
                       ))}
-                      <p className="mt-2 text-amber-600 text-xs">若確認是全新旅客，請忽略提示並點「建立旅客」。</p>
+                      <p className="mt-2 text-amber-600 text-xs">若確認本全新旅客，請忽略提示並點「建立旅客」。</p>
                     </div>
                   )}
 
@@ -580,7 +579,7 @@ export default function CRMPage() {
               </button>
               <div className="flex gap-2">
                 <button onClick={closeScan}
-    0             className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">取消</button>
+    /             className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">取消</button>
                 {scanStatus === "done" && (
                   <button onClick={handleScanCreate} disabled={creating || !scanForm.name.trim()}
                     className="px-5 py-2 text-sm bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg disabled:opacity-50 flex items-center gap-1.5">
