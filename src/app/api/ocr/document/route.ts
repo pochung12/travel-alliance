@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
         "X-Title": "Travel Alliance OCR",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.0-flash-001",
+        model: "baidu/qianfan-ocr-fast:free",
         messages: [
           {
             role: "user",
