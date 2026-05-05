@@ -68,6 +68,8 @@ export default function CustomerDetailPage() {
   const [taibaoStatus,   setTaibaoStatus]   = useState<ScanStatus>({ type: "idle" });
   const [idCardStatus,   setIdCardStatus]   = useState<ScanStatus>({ type: "idle" });
 
+  const [dupWarning, setDupWarning] = useState<Array<{id: string; name: string; birthday: string}>>([]);
+
   // File input refs
   const passportInputRef = useRef<HTMLInputElement>(null);
   const taibaoInputRef   = useRef<HTMLInputElement>(null);
@@ -166,7 +168,6 @@ export default function CustomerDetailPage() {
     if (docType === "passport") {
       if (result.passport)       { updates.passport        = result.passport;       detected.push("passport");        }
       if (result.passportExpiry) { updates.passport_expiry = result.passportExpiry; detected.push("passport_expiry"); }
-      if (result.idNumber)       { updates.id_number       = result.idNumber;       detected.push("id_number");       }
     } else if (docType === "taibao") {
       if (result.taibaoNumber) { updates.taibao_number = result.taibaoNumber; detected.push("taibao_number"); }
       if (result.taibaoExpiry) { updates.taibao_expiry = result.taibaoExpiry; detected.push("taibao_expiry"); }
@@ -202,6 +203,17 @@ export default function CustomerDetailPage() {
       if (result.error) throw new Error(result.error);
 
       const detected = applyOcr(result, docType);
+
+      // Search for other customers with the same name (possible duplicate)
+      if (result.name) {
+        const { data: dups } = await supabase
+          .from("customers").select("id,name,birthday")
+          .ilike("name", result.name.trim()).neq("id", id);
+        setDupWarning((dups || []).slice(0, 3));
+      } else {
+        setDupWarning([]);
+      }
+
       const labels: Record<string, string> = {
         name: "姓名", name_en: "英文名", birthday: "生日", gender: "性別",
         passport: "護照號碼", passport_expiry: "護照效期",
@@ -332,7 +344,7 @@ export default function CustomerDetailPage() {
             </div>
             <div>
               <label className={lbl}>地址</label>
-              <input className={input} value={form.address || ""} onChange={e => setForm({...form, address: e.target.value})} />
+     /        <input className={input} value={form.address || ""} onChange={e => setForm({...form, address: e.target.value})} />
             </div>
             {/* 緊急聯絡人 */}
             <div>
@@ -426,6 +438,23 @@ export default function CustomerDetailPage() {
         <div className="flex items-center gap-2 px-4 py-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-700 text-sm">
           <CheckCircle className="w-4 h-4 shrink-0" />
           AI 已自動填入綠色高亮欄位，請確認後點「儲存全部」
+        </div>
+      )}
+
+      {dupWarning.length > 0 && (
+        <div className="px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-800 text-sm space-y-1.5">
+          <div className="flex items-center gap-2 font-semibold">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            辨識資料疑似與以下旅客重複，請確認是否為同一人：
+          </div>
+          {dupWarning.map(d => (
+            <div key={d.id} className="flex items-center gap-3 pl-6">
+              <Link href={`/admin/crm/${d.id}`} className="text-violet-600 hover:underline font-medium">
+                {d.name}
+              </Link>
+              <span className="text-amber-700 text-xs">{d.birthday || "生日未填"}</span>
+            </div>
+          ))}
         </div>
       )}
     </div>
