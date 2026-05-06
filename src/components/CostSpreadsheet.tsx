@@ -37,7 +37,7 @@ interface Props {
 }
 
 // Compress image to max 1024px, JPEG 0.82
-function compressImage(file: File, maxPx = 1024, quality = 0.82): Promise<string> {
+function compressImage(file: File, maxPx = 2400, quality = 0.92): Promise<string> {
   return new Promise(resolve => {
     const img = new Image();
     const url = URL.createObjectURL(file);
