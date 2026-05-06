@@ -225,12 +225,37 @@ export default function CRMPage() {
   // column management
   const [columns,     setColumns]     = useState<ColDef[]>(() => ALL_COLS.map(c => ({ ...c })));
   const [showColMenu, setShowColMenu] = useState(false);
+  const [colSaved,    setColSaved]    = useState(false);
   const colMenuRef = useRef<HTMLDivElement>(null);
   // drag-to-reorder
   const [dragCol,     setDragCol]     = useState<string | null>(null);
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
   // column resize (ref to avoid stale closure in document listeners)
   const resizeRef = useRef<{ key: string; startX: number; startW: number } | null>(null);
+
+  // ── load col settings from localStorage ──────────────────────────────────
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("ta_crm_columns");
+      if (saved) {
+        const parsed: ColDef[] = JSON.parse(saved);
+        const savedKeys = new Set(parsed.map(c => c.key));
+        const extra = ALL_COLS.filter(c => !savedKeys.has(c.key));
+        setColumns([...parsed, ...extra]);
+      }
+    } catch {}
+  }, []);
+
+  const saveColumns = () => {
+    localStorage.setItem("ta_crm_columns", JSON.stringify(columns));
+    setColSaved(true);
+    setTimeout(() => setColSaved(false), 1500);
+  };
+
+  const resetColumns = () => {
+    localStorage.removeItem("ta_crm_columns");
+    setColumns(ALL_COLS.map(c => ({ ...c })));
+  };
 
   // ── load ──────────────────────────────────────────────────────────────────
   const load = async () => {
@@ -540,9 +565,19 @@ export default function CRMPage() {
                   </label>
                 ))}
               </div>
-              <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-700">
+              <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-700 space-y-1.5">
                 <button
-                  onClick={() => setColumns(ALL_COLS.map(c => ({ ...c })))}
+                  onClick={saveColumns}
+                  className={`w-full text-xs font-medium py-1.5 rounded-lg transition-colors ${
+                    colSaved
+                      ? "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300"
+                      : "bg-violet-600 hover:bg-violet-700 text-white"
+                  }`}
+                >
+                  {colSaved ? "✓ 已儲存" : "儲存欄位設定"}
+                </button>
+                <button
+                  onClick={resetColumns}
                   className="w-full text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 text-center py-1"
                 >
                   重設為預設
