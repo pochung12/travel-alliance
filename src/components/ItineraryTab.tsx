@@ -9,10 +9,8 @@ import {
 
 function toEmbedUrl(raw: string): string {
   if (!raw) return "";
-  // Match /document/d/ID/... (regular or published)
   const m = raw.match(/docs\.google\.com\/document\/d\/(?:e\/)?([^/?#]+)/);
   if (!m) return raw;
-  // If it looks like a published ID (longer, contains hyphens in unusual places) use pub format
   if (raw.includes("/d/e/")) {
     return `https://docs.google.com/document/d/e/${m[1]}/pub?embedded=true`;
   }
@@ -30,16 +28,21 @@ function b64ToBlobUrl(b64: string): string {
 
 type Mode = "doc" | "pdf";
 
-interface Record {
+interface ItinRecord {
   id: string;
   doc_url: string;
   pdf_name: string;
   pdf_data: string;
 }
 
-export default function ItineraryTab({ tourId }: { tourId: string }) {
+interface Props {
+  tourId: string;
+  variant: "customer" | "trade";
+}
+
+export default function ItineraryTab({ tourId, variant }: Props) {
   const [mode, setMode]           = useState<Mode>("doc");
-  const [rec, setRec]             = useState<Record | null>(null);
+  const [rec, setRec]             = useState<ItinRecord | null>(null);
   const [docInput, setDocInput]   = useState("");
   const [embedUrl, setEmbedUrl]   = useState("");
   const [pdfBlob, setPdfBlob]     = useState<string | null>(null);
@@ -47,13 +50,20 @@ export default function ItineraryTab({ tourId }: { tourId: string }) {
   const [saving, setSaving]       = useState(false);
   const [uploading, setUploading] = useState(false);
   const [saved, setSaved]         = useState(false);
-  const blobRef  = useRef<string | null>(null);
-  const fileRef  = useRef<HTMLInputElement>(null);
+  const blobRef = useRef<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
-  // cleanup blob URL on unmount
   useEffect(() => () => { if (blobRef.current) URL.revokeObjectURL(blobRef.current); }, []);
 
-  useEffect(() => { load(); }, [tourId]);
+  // reset state when variant switches (same component, different prop)
+  useEffect(() => {
+    setRec(null);
+    setDocInput(""); setEmbedUrl("");
+    if (blobRef.current) { URL.revokeObjectURL(blobRef.current); blobRef.current = null; }
+    setPdfBlob(null);
+    setMode("doc");
+    load();
+  }, [tourId, variant]);
 
   const load = async () => {
     setLoading(true);
@@ -61,9 +71,10 @@ export default function ItineraryTab({ tourId }: { tourId: string }) {
       .from("tour_itinerary")
       .select("id, doc_url, pdf_name, pdf_data")
       .eq("tour_id", tourId)
+      .eq("variant", variant)
       .limit(1);
 
-    const row = data?.[0] as Record | undefined;
+    const row = data?.[0] as ItinRecord | undefined;
     if (row) {
       setRec(row);
       setDocInput(row.doc_url || "");
@@ -78,8 +89,8 @@ export default function ItineraryTab({ tourId }: { tourId: string }) {
     setLoading(false);
   };
 
-  const upsert = async (patch: Partial<Record>) => {
-    const payload = { tour_id: tourId, ...patch };
+  const upsert = async (patch: Partial<ItinRecord>) => {
+    const payload = { tour_id: tourId, variant, ...patch };
     if (rec?.id) {
       await supabase.from("tour_itinerary").update(payload).eq("id", rec.id);
       setRec(prev => prev ? { ...prev, ...patch } : prev);
@@ -98,8 +109,7 @@ export default function ItineraryTab({ tourId }: { tourId: string }) {
     const url = docInput.trim();
     if (!url) return;
     setSaving(true);
-    const embed = toEmbedUrl(url);
-    setEmbedUrl(embed);
+    setEmbedUrl(toEmbedUrl(url));
     await upsert({ doc_url: url });
     setSaving(false);
     flash();
@@ -156,28 +166,25 @@ export default function ItineraryTab({ tourId }: { tourId: string }) {
 
       {/* Mode switcher */}
       <div className="flex items-center gap-2 flex-wrap">
-        {([["doc", "Google Doc", <Globe key="g" className="w-4 h-4" />],
-           ["pdf", "PDF",        <FileText key="f" className="w-4 h-4" />]] as const).map(
-          ([m, label, icon]) => (
-            <button
-              key={m}
-              onClick={() => setMode(m as Mode)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors relative ${
-                mode === m
-                  ? "bg-blue-600 text-white shadow-sm"
-                  : "bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600"
-              }`}
-            >
-              {icon}{label}
-              {/* dot indicator when data exists */}
-              {((m === "doc" && hasDoc) || (m === "pdf" && hasPdf)) && (
-                <span className={`absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 ${
-                  mode === m ? "border-blue-600 bg-white" : "border-white dark:border-slate-800 bg-blue-500"
-                }`} />
-              )}
-            </button>
-          )
-        )}
+        {(["doc", "pdf"] as const).map(m => (
+          <button
+            key={m}
+            onClick={() => setMode(m)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors relative ${
+              mode === m
+                ? "bg-blue-600 text-white shadow-sm"
+                : "bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600"
+            }`}
+          >
+            {m === "doc" ? <Globe className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
+            {m === "doc" ? "Google Doc" : "PDF"}
+            {((m === "doc" && hasDoc) || (m === "pdf" && hasPdf)) && (
+              <span className={`absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full border-2 ${
+                mode === m ? "border-blue-600 bg-white" : "border-white dark:border-slate-800 bg-blue-500"
+              }`} />
+            )}
+          </button>
+        ))}
         {saved && (
           <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400 font-medium">
             <CheckCircle2 className="w-3.5 h-3.5" /> 已儲存
@@ -188,11 +195,8 @@ export default function ItineraryTab({ tourId }: { tourId: string }) {
       {/* ── Google Doc mode ────────────────────────────────────────────────── */}
       {mode === "doc" && (
         <div className="space-y-3">
-          {/* URL input */}
           <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 p-4">
-            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">
-              Google Doc 連結
-            </p>
+            <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">Google Doc 連結</p>
             <div className="flex gap-2">
               <input
                 className="flex-1 border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-400"
@@ -202,11 +206,7 @@ export default function ItineraryTab({ tourId }: { tourId: string }) {
                 onKeyDown={e => e.key === "Enter" && applyDoc()}
               />
               {embedUrl && (
-                <button
-                  onClick={clearDoc}
-                  className="p-2 text-slate-300 hover:text-red-500 dark:hover:text-red-400 transition-colors"
-                  title="清除連結"
-                >
+                <button onClick={clearDoc} className="p-2 text-slate-300 hover:text-red-500 dark:hover:text-red-400 transition-colors" title="清除連結">
                   <X className="w-5 h-5" />
                 </button>
               )}
@@ -224,17 +224,12 @@ export default function ItineraryTab({ tourId }: { tourId: string }) {
             </p>
           </div>
 
-          {/* Preview or empty */}
           {embedUrl ? (
             <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 overflow-hidden">
               <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 dark:border-slate-700">
-                <span className="text-sm font-medium text-slate-700 dark:text-slate-200">行程文件預覽</span>
-                <a
-                  href={rec?.doc_url || docInput}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:underline"
-                >
+                <span className="text-sm font-medium text-slate-700 dark:text-slate-200">文件預覽</span>
+                <a href={rec?.doc_url || docInput} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:underline">
                   <ExternalLink className="w-3.5 h-3.5" /> 在新視窗開啟
                 </a>
               </div>
@@ -249,12 +244,8 @@ export default function ItineraryTab({ tourId }: { tourId: string }) {
           ) : (
             <div className="bg-white dark:bg-slate-800 rounded-xl border-2 border-dashed border-slate-200 dark:border-slate-600 py-20 text-center">
               <Globe className="w-10 h-10 text-slate-200 dark:text-slate-600 mx-auto mb-3" />
-              <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mb-1">
-                尚未設定 Google Doc
-              </p>
-              <p className="text-xs text-slate-400 dark:text-slate-500">
-                貼上連結後點「套用」即可嵌入預覽
-              </p>
+              <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mb-1">尚未設定 Google Doc</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500">貼上連結後點「套用」即可嵌入預覽</p>
             </div>
           )}
         </div>
@@ -263,21 +254,14 @@ export default function ItineraryTab({ tourId }: { tourId: string }) {
       {/* ── PDF mode ───────────────────────────────────────────────────────── */}
       {mode === "pdf" && (
         <div className="space-y-3">
-          {/* File info + upload button */}
           <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 p-4">
             <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2 min-w-0">
                 {rec?.pdf_name ? (
                   <>
                     <FileText className="w-4 h-4 text-blue-500 shrink-0" />
-                    <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">
-                      {rec.pdf_name}
-                    </span>
-                    <button
-                      onClick={removePdf}
-                      className="p-0.5 text-slate-300 hover:text-red-500 dark:hover:text-red-400 transition-colors shrink-0"
-                      title="移除 PDF"
-                    >
+                    <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate">{rec.pdf_name}</span>
+                    <button onClick={removePdf} className="p-0.5 text-slate-300 hover:text-red-500 dark:hover:text-red-400 transition-colors shrink-0" title="移除 PDF">
                       <X className="w-3.5 h-3.5" />
                     </button>
                   </>
@@ -290,33 +274,17 @@ export default function ItineraryTab({ tourId }: { tourId: string }) {
                 disabled={uploading}
                 className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 text-sm rounded-lg transition-colors disabled:opacity-50 shrink-0"
               >
-                {uploading
-                  ? <Loader2 className="w-4 h-4 animate-spin" />
-                  : <Upload className="w-4 h-4" />}
+                {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                 {uploading ? "上傳中…" : rec?.pdf_name ? "更換 PDF" : "上傳 PDF"}
               </button>
             </div>
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".pdf,application/pdf"
-              className="hidden"
-              onChange={handlePdfSelect}
-            />
-            <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">
-              支援 PDF 格式，檔案大小上限 12MB，上傳後自動儲存
-            </p>
+            <input ref={fileRef} type="file" accept=".pdf,application/pdf" className="hidden" onChange={handlePdfSelect} />
+            <p className="text-xs text-slate-400 dark:text-slate-500 mt-2">支援 PDF 格式，檔案大小上限 12MB，上傳後自動儲存</p>
           </div>
 
-          {/* PDF viewer or empty state */}
           {pdfBlob ? (
             <div className="rounded-xl border border-slate-100 dark:border-slate-700 overflow-hidden bg-white dark:bg-slate-900">
-              <embed
-                src={pdfBlob}
-                type="application/pdf"
-                className="w-full"
-                style={{ height: "76vh" }}
-              />
+              <embed src={pdfBlob} type="application/pdf" className="w-full" style={{ height: "76vh" }} />
             </div>
           ) : (
             <div
@@ -324,12 +292,8 @@ export default function ItineraryTab({ tourId }: { tourId: string }) {
               onClick={() => fileRef.current?.click()}
             >
               <FileText className="w-10 h-10 text-slate-200 dark:text-slate-600 mx-auto mb-3" />
-              <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mb-1">
-                點此上傳行程 PDF
-              </p>
-              <p className="text-xs text-slate-400 dark:text-slate-500">
-                或將 PDF 拖放到此處（最大 12MB）
-              </p>
+              <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mb-1">點此上傳行程 PDF</p>
+              <p className="text-xs text-slate-400 dark:text-slate-500">或將 PDF 拖放到此處（最大 12MB）</p>
             </div>
           )}
         </div>

@@ -37,7 +37,7 @@ export default function GroupDetailPage() {
   const [selectedCids, setSelectedCids] = useState<Set<string>>(new Set());
   const [addSearch, setAddSearch]       = useState("");
   const [saving, setSaving]            = useState(false);
-  const [activeTab, setActiveTab]      = useState<"info"|"costs"|"payments"|"participants"|"itinerary">("info");
+  const [activeTab, setActiveTab]      = useState<"info"|"costs"|"payments"|"participants"|"itin_c"|"itin_t">("info");
 
   const loadTour = async () => {
     const { data } = await supabase.from("tours").select("*").eq("id", id).single();
@@ -139,7 +139,7 @@ export default function GroupDetailPage() {
 
       {/* Tabs */}
       <div className="flex border-b border-slate-200 dark:border-slate-700 gap-1">
-        {([["info","基本資料"],["costs","費用試算"],["payments","收付款"],["participants","報名旅客"],["itinerary","行程內容"]] as const).map(([tab, label]) => (
+        {([["info","基本資料"],["costs","費用試算"],["payments","收付款"],["participants","報名旅客"],["itin_c","旅客版行程"],["itin_t","同業版行程"]] as const).map(([tab, label]) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -279,9 +279,14 @@ export default function GroupDetailPage() {
         </div>
       )}
 
-      {/* ── Tab: Itinerary ── */}
-      {activeTab === "itinerary" && (
-        <ItineraryTab tourId={id} />
+      {/* ── Tab: Customer Itinerary ── */}
+      {activeTab === "itin_c" && (
+        <ItineraryTab tourId={id} variant="customer" />
+      )}
+
+      {/* ── Tab: Trade Itinerary ── */}
+      {activeTab === "itin_t" && (
+        <ItineraryTab tourId={id} variant="trade" />
       )}
 
       {/* Add participant modal */}
