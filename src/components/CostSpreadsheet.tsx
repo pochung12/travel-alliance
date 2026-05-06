@@ -303,10 +303,10 @@ export default function CostSpreadsheet({ tourId, pax, sellingPrice, onSaved }: 
 
       {/* Toolbar */}
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <h3 className="font-semibold text-slate-700 text-sm">💰 費用試算表</h3>
+        <h3 className="font-semibold text-slate-700 dark:text-slate-200 text-sm">💰 費用試算表</h3>
         <div className="flex items-center gap-2 flex-wrap">
           <button onClick={() => setShowColManager(true)}
-            className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors">
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg transition-colors">
             <Settings className="w-3.5 h-3.5" /> 管理欄位
           </button>
           {lastSaved && !hasDirty && (
@@ -324,7 +324,7 @@ export default function CostSpreadsheet({ tourId, pax, sellingPrice, onSaved }: 
       </div>
 
       {/* Spreadsheet table */}
-      <div className="border border-slate-200 rounded-xl overflow-hidden">
+      <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -348,9 +348,9 @@ export default function CostSpreadsheet({ tourId, pax, sellingPrice, onSaved }: 
                 const catRows = rows.map((r, idx) => ({ r, idx })).filter(({ r }) => r.category === cat.key);
                 if (catRows.length === 0) return null;
                 return catRows.map(({ r, idx }, i) => (
-                  <tr key={idx} className={`border-t border-slate-100 ${idx % 2 === 0 ? "bg-white" : "bg-slate-50/50"} hover:bg-blue-50/30 transition-colors`}>
+                  <tr key={idx} className={`border-t border-slate-100 dark:border-slate-700 ${idx % 2 === 0 ? "bg-white dark:bg-slate-800" : "bg-slate-50/50 dark:bg-slate-800/50"} hover:bg-blue-50/30 dark:hover:bg-blue-900/10 transition-colors`}>
                     {i === 0 ? (
-                      <td rowSpan={catRows.length} className="px-3 py-2 text-xs font-medium text-slate-600 bg-slate-50 border-r border-slate-200 align-top pt-3">
+                      <td rowSpan={catRows.length} className="px-3 py-2 text-xs font-medium text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-700/50 border-r border-slate-200 dark:border-slate-600 align-top pt-3">
                         {cat.label}
                       </td>
                     ) : null}
@@ -368,7 +368,7 @@ export default function CostSpreadsheet({ tourId, pax, sellingPrice, onSaved }: 
                         value={r.quantity || ""} placeholder="1" min="0"
                         onChange={e => updateRow(idx, "quantity", +e.target.value)} />
                     </td>
-                    <td className="px-3 py-2 text-right font-semibold text-slate-700">
+                    <td className="px-3 py-2 text-right font-semibold text-slate-700 dark:text-slate-200">
                       {(r.unit_price * r.quantity).toLocaleString()}
                     </td>
                     <td className="px-1 py-1">
@@ -401,9 +401,9 @@ export default function CostSpreadsheet({ tourId, pax, sellingPrice, onSaved }: 
               {rows.map((r, idx) => ({ r, idx }))
                 .filter(({ r }) => !COST_CATEGORIES.find(c => c.key === r.category))
                 .map(({ r, idx }) => (
-                  <tr key={idx} className="border-t border-slate-100 bg-white hover:bg-blue-50/30">
-                    <td className="px-3 py-2 text-xs text-slate-400 bg-slate-50 border-r border-slate-200">
-                      <select className="w-full text-xs border-0 bg-transparent outline-none"
+                  <tr key={idx} className="border-t border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-blue-50/30 dark:hover:bg-blue-900/10">
+                    <td className="px-3 py-2 text-xs text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-700/50 border-r border-slate-200 dark:border-slate-600">
+                      <select className="w-full text-xs border-0 bg-transparent outline-none dark:text-slate-300"
                         value={r.category} onChange={e => updateRow(idx, "category", e.target.value)}>
                         {COST_CATEGORIES.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
                       </select>
@@ -422,7 +422,7 @@ export default function CostSpreadsheet({ tourId, pax, sellingPrice, onSaved }: 
                         value={r.quantity || ""} placeholder="1" min="0"
                         onChange={e => updateRow(idx, "quantity", +e.target.value)} />
                     </td>
-                    <td className="px-3 py-2 text-right font-semibold text-slate-700">
+                    <td className="px-3 py-2 text-right font-semibold text-slate-700 dark:text-slate-200">
                       {(r.unit_price * r.quantity).toLocaleString()}
                     </td>
                     <td className="px-1 py-1">
@@ -465,7 +465,7 @@ export default function CostSpreadsheet({ tourId, pax, sellingPrice, onSaved }: 
         </div>
 
         {/* Add row button */}
-        <div className="px-3 py-2 bg-slate-50 border-t border-slate-200">
+        <div className="px-3 py-2 bg-slate-50 dark:bg-slate-700/50 border-t border-slate-200 dark:border-slate-600">
           <button onClick={addRow}
             className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 font-medium">
             <Plus className="w-3.5 h-3.5" /> 新增費用列
@@ -477,24 +477,24 @@ export default function CostSpreadsheet({ tourId, pax, sellingPrice, onSaved }: 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <SummaryCard label="總成本" value={`NT$${totalCost.toLocaleString()}`}
           sub={pax > 0 ? `每人 NT$${Math.round(costPerPax).toLocaleString()}` : undefined}
-          color="text-red-600" bg="bg-red-50" />
+          color="text-red-600 dark:text-red-400" bg="bg-red-50 dark:bg-red-900/20" />
         <SummaryCard label="預估收入" value={`NT$${revenue.toLocaleString()}`}
           sub={`${pax} 人 × NT$${sellingPrice.toLocaleString()}`}
-          color="text-blue-600" bg="bg-blue-50" />
+          color="text-blue-600 dark:text-blue-400" bg="bg-blue-50 dark:bg-blue-900/20" />
         <SummaryCard label="預估毛利" value={`NT$${profit.toLocaleString()}`}
           sub={profit >= 0 ? "✅ 有利潤" : "⚠️ 虧損"}
-          color={profit >= 0 ? "text-green-600" : "text-red-600"}
-          bg={profit >= 0 ? "bg-green-50" : "bg-red-50"} />
+          color={profit >= 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}
+          bg={profit >= 0 ? "bg-green-50 dark:bg-green-900/20" : "bg-red-50 dark:bg-red-900/20"} />
         <SummaryCard label="毛利率" value={`${margin.toFixed(1)}%`}
           sub={margin >= 20 ? "👍 健康毛利" : margin >= 0 ? "⚡ 低毛利" : "🚨 虧損"}
-          color={margin >= 20 ? "text-green-600" : margin >= 0 ? "text-orange-600" : "text-red-600"}
-          bg={margin >= 20 ? "bg-green-50" : margin >= 0 ? "bg-orange-50" : "bg-red-50"} />
+          color={margin >= 20 ? "text-green-600 dark:text-green-400" : margin >= 0 ? "text-orange-600 dark:text-orange-400" : "text-red-600 dark:text-red-400"}
+          bg={margin >= 20 ? "bg-green-50 dark:bg-green-900/20" : margin >= 0 ? "bg-orange-50 dark:bg-orange-900/20" : "bg-red-50 dark:bg-red-900/20"} />
       </div>
 
       {/* Cost breakdown */}
       {totalCost > 0 && (
-        <div className="bg-white border border-slate-200 rounded-xl p-4">
-          <h4 className="text-xs font-semibold text-slate-500 uppercase mb-3">費用分佈</h4>
+        <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl p-4">
+          <h4 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-3">費用分佈</h4>
           <div className="space-y-2">
             {COST_CATEGORIES.map(cat => {
               const amt = categoryTotals[cat.key] || 0;
@@ -502,12 +502,12 @@ export default function CostSpreadsheet({ tourId, pax, sellingPrice, onSaved }: 
               const pct = totalCost > 0 ? amt / totalCost * 100 : 0;
               return (
                 <div key={cat.key} className="flex items-center gap-3">
-                  <div className="text-xs text-slate-500 w-28 shrink-0">{cat.label}</div>
-                  <div className="flex-1 bg-slate-100 rounded-full h-2 overflow-hidden">
+                  <div className="text-xs text-slate-500 dark:text-slate-400 w-28 shrink-0">{cat.label}</div>
+                  <div className="flex-1 bg-slate-100 dark:bg-slate-700 rounded-full h-2 overflow-hidden">
                     <div className="h-2 bg-blue-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
                   </div>
-                  <div className="text-xs text-slate-600 w-24 text-right shrink-0">
-                    NT${amt.toLocaleString()} <span className="text-slate-400">({pct.toFixed(0)}%)</span>
+                  <div className="text-xs text-slate-600 dark:text-slate-300 w-24 text-right shrink-0">
+                    NT${amt.toLocaleString()} <span className="text-slate-400 dark:text-slate-500">({pct.toFixed(0)}%)</span>
                   </div>
                 </div>
               );
@@ -517,19 +517,19 @@ export default function CostSpreadsheet({ tourId, pax, sellingPrice, onSaved }: 
       )}
 
       {/* ── Photo section ──────────────────────────────────────────────────── */}
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-          <h3 className="font-semibold text-slate-700 text-sm flex items-center gap-2">
-            <Camera className="w-4 h-4 text-slate-500" /> 報價備忘照片
+      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-700">
+          <h3 className="font-semibold text-slate-700 dark:text-slate-200 text-sm flex items-center gap-2">
+            <Camera className="w-4 h-4 text-slate-500 dark:text-slate-400" /> 報價備忘照片
             {images.length > 0 && (
-              <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-full">
+              <span className="text-xs bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded-full">
                 {images.length} 張
               </span>
             )}
           </h3>
           <div className="flex items-center gap-2">
             <button onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors">
+              className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg transition-colors">
               <Upload className="w-3.5 h-3.5" /> 上傳照片
             </button>
             {hasNewImgs && (
@@ -570,7 +570,7 @@ export default function CostSpreadsheet({ tourId, pax, sellingPrice, onSaved }: 
                   <X className="w-3 h-3" />
                 </button>
                 <input
-                  className="mt-1 w-full text-xs border border-slate-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  className="mt-1 w-full text-xs border border-slate-200 dark:border-slate-600 rounded px-2 py-1 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-blue-400"
                   placeholder="說明文字（選填）"
                   value={img.caption}
                   onChange={e => setImages(prev => prev.map((i, ii) =>
@@ -586,10 +586,10 @@ export default function CostSpreadsheet({ tourId, pax, sellingPrice, onSaved }: 
       {/* ── Column Manager Modal ───────────────────────────────────────────── */}
       {showColManager && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-              <h2 className="text-base font-bold text-slate-800">管理自訂欄位</h2>
-              <button onClick={() => setShowColManager(false)} className="text-slate-400 hover:text-slate-700">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-md">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between">
+              <h2 className="text-base font-bold text-slate-800 dark:text-slate-100">管理自訂欄位</h2>
+              <button onClick={() => setShowColManager(false)} className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -598,11 +598,11 @@ export default function CostSpreadsheet({ tourId, pax, sellingPrice, onSaved }: 
                 <p className="text-sm text-slate-400 text-center py-3">還沒有自訂欄位</p>
               ) : (
                 customColumns.map(col => (
-                  <div key={col.id} className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-lg">
+                  <div key={col.id} className="flex items-center gap-2 p-2.5 bg-slate-50 dark:bg-slate-700/50 rounded-lg">
                     {editingColId === col.id ? (
                       <>
                         <input
-                          className="flex-1 text-sm border border-slate-300 rounded px-2 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                          className="flex-1 text-sm border border-slate-300 dark:border-slate-600 rounded px-2 py-1.5 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
                           value={editingColName}
                           onChange={e => setEditingColName(e.target.value)}
                           onKeyDown={e => e.key === "Enter" && saveEditColumn()}
@@ -615,8 +615,8 @@ export default function CostSpreadsheet({ tourId, pax, sellingPrice, onSaved }: 
                       </>
                     ) : (
                       <>
-                        <span className="flex-1 text-sm font-medium text-slate-700">{col.name}</span>
-                        <span className="text-xs text-slate-400 px-2 py-0.5 bg-white border border-slate-200 rounded-full">
+                        <span className="flex-1 text-sm font-medium text-slate-700 dark:text-slate-200">{col.name}</span>
+                        <span className="text-xs text-slate-400 dark:text-slate-500 px-2 py-0.5 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-full">
                           {col.type === "number" ? "數字" : "文字"}
                         </span>
                         <button onClick={() => startEditColumn(col)}
@@ -631,18 +631,18 @@ export default function CostSpreadsheet({ tourId, pax, sellingPrice, onSaved }: 
                 ))
               )}
             </div>
-            <div className="px-6 py-4 border-t border-slate-100">
-              <p className="text-xs font-medium text-slate-500 mb-2">新增欄位</p>
+            <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-700">
+              <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">新增欄位</p>
               <div className="flex gap-2">
                 <input
-                  className="flex-1 text-sm border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  className="flex-1 text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
                   placeholder="欄位名稱（例：供應商、備用數量）"
                   value={newColName}
                   onChange={e => setNewColName(e.target.value)}
                   onKeyDown={e => e.key === "Enter" && addColumn()}
                 />
                 <select
-                  className="text-sm border border-slate-200 rounded-lg px-2 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                  className="text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-2 py-2 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
                   value={newColType}
                   onChange={e => setNewColType(e.target.value as "text" | "number")}
                 >
@@ -688,10 +688,10 @@ function SummaryCard({ label, value, sub, color, bg }: {
   label: string; value: string; sub?: string; color: string; bg: string;
 }) {
   return (
-    <div className={`${bg} rounded-xl p-4 border border-slate-100`}>
-      <div className="text-xs text-slate-500 mb-1">{label}</div>
+    <div className={`${bg} rounded-xl p-4 border border-slate-100 dark:border-slate-700`}>
+      <div className="text-xs text-slate-500 dark:text-slate-400 mb-1">{label}</div>
       <div className={`text-xl font-bold ${color}`}>{value}</div>
-      {sub && <div className="text-xs text-slate-400 mt-0.5">{sub}</div>}
+      {sub && <div className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">{sub}</div>}
     </div>
   );
 }

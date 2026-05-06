@@ -50,8 +50,8 @@ function compressImage(file: File, maxPx = 1500, quality = 0.82): Promise<string
 
 const fmt = (n: number) => `NT$${Math.round(n).toLocaleString()}`;
 
-const input = "w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400";
-const lbl   = "block text-xs font-medium text-slate-500 mb-1";
+const input = "w-full border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400";
+const lbl   = "block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1";
 
 // ─── Summary Card ─────────────────────────────────────────────────────────────
 
@@ -180,21 +180,21 @@ export default function PaymentsTab({ tourId, pax, sellingPrice }: Props) {
           label="費用試算總成本"
           value={fmt(estimatedCost)}
           sub={pax > 0 ? `每人 ${fmt(estimatedCost / pax)}` : undefined}
-          color="bg-slate-50 border-slate-200 text-slate-700"
+          color="bg-slate-50 border-slate-200 text-slate-700 dark:bg-slate-700/50 dark:border-slate-600 dark:text-slate-200"
           icon={<Receipt className="w-5 h-5" />}
         />
         <SummaryCard
           label="應收客款"
           value={fmt(expectedRevenue)}
           sub={incomeGap > 0 ? `尚差 ${fmt(incomeGap)}` : "已全數收齊 ✓"}
-          color="bg-blue-50 border-blue-100 text-blue-800"
+          color="bg-blue-50 border-blue-100 text-blue-800 dark:bg-blue-900/30 dark:border-blue-800 dark:text-blue-200"
           icon={<TrendingUp className="w-5 h-5" />}
         />
         <SummaryCard
           label="實際收入"
           value={fmt(actualIncome)}
           sub={`已付支出 ${fmt(actualExpense)}`}
-          color="bg-emerald-50 border-emerald-100 text-emerald-800"
+          color="bg-emerald-50 border-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:border-emerald-800 dark:text-emerald-200"
           icon={<TrendingUp className="w-5 h-5" />}
         />
         <SummaryCard
@@ -202,15 +202,15 @@ export default function PaymentsTab({ tourId, pax, sellingPrice }: Props) {
           value={fmt(Math.abs(netBalance))}
           sub={expenseGap > 0 ? `估算尚須付 ${fmt(expenseGap)}` : undefined}
           color={netBalance >= 0
-            ? "bg-green-50 border-green-100 text-green-800"
-            : "bg-red-50 border-red-100 text-red-700"}
+            ? "bg-green-50 border-green-100 text-green-800 dark:bg-green-900/30 dark:border-green-800 dark:text-green-200"
+            : "bg-red-50 border-red-100 text-red-700 dark:bg-red-900/30 dark:border-red-800 dark:text-red-300"}
           icon={<Scale className="w-5 h-5" />}
         />
       </div>
 
       {/* ── Controls ── */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex rounded-lg border border-slate-200 overflow-hidden text-sm">
+        <div className="flex rounded-lg border border-slate-200 dark:border-slate-600 overflow-hidden text-sm">
           {(["all","income","expense"] as const).map(f => (
             <button
               key={f}
@@ -218,7 +218,7 @@ export default function PaymentsTab({ tourId, pax, sellingPrice }: Props) {
               className={`px-3 py-1.5 transition-colors ${
                 filter === f
                   ? "bg-blue-600 text-white"
-                  : "text-slate-500 hover:bg-slate-50"
+                  : "text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700"
               }`}
             >
               {f === "all" ? "全部" : f === "income" ? "💰 收入" : "💸 支出"}
@@ -240,9 +240,9 @@ export default function PaymentsTab({ tourId, pax, sellingPrice }: Props) {
 
       {/* ── Records List ── */}
       {filtered.length === 0 ? (
-        <div className="bg-white rounded-xl border border-slate-100 py-14 text-center">
-          <Receipt className="w-8 h-8 text-slate-200 mx-auto mb-2" />
-          <p className="text-sm text-slate-400">還沒有{filter === "income" ? "收款" : filter === "expense" ? "付款" : "收付款"}紀錄</p>
+        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 py-14 text-center">
+          <Receipt className="w-8 h-8 text-slate-200 dark:text-slate-600 mx-auto mb-2" />
+          <p className="text-sm text-slate-400 dark:text-slate-500">還沒有{filter === "income" ? "收款" : filter === "expense" ? "付款" : "收付款"}紀錄</p>
           <button
             onClick={() => { setForm(emptyForm()); setShowModal(true); }}
             className="mt-3 text-xs text-blue-600 hover:underline"
@@ -251,9 +251,9 @@ export default function PaymentsTab({ tourId, pax, sellingPrice }: Props) {
           </button>
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-xs text-slate-500 uppercase">
+            <thead className="bg-slate-50 dark:bg-slate-700/50 text-xs text-slate-500 dark:text-slate-400 uppercase">
               <tr>
                 <th className="text-left px-4 py-3">日期</th>
                 <th className="text-left px-4 py-3">類型</th>
@@ -263,15 +263,15 @@ export default function PaymentsTab({ tourId, pax, sellingPrice }: Props) {
                 <th className="w-8 px-2 py-3"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-50">
+            <tbody className="divide-y divide-slate-50 dark:divide-slate-700">
               {filtered.map(p => (
                 <>
                   <tr
                     key={p.id}
-                    className="hover:bg-slate-50 cursor-pointer"
+                    className="hover:bg-slate-50 dark:hover:bg-slate-700/30 cursor-pointer"
                     onClick={() => setExpandedId(expandedId === p.id ? null : p.id)}
                   >
-                    <td className="px-4 py-3 text-slate-500 whitespace-nowrap">
+                    <td className="px-4 py-3 text-slate-500 dark:text-slate-400 whitespace-nowrap">
                       {p.payment_date || "—"}
                     </td>
                     <td className="px-4 py-3">
@@ -284,9 +284,9 @@ export default function PaymentsTab({ tourId, pax, sellingPrice }: Props) {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="font-medium text-slate-700">{categoryLabel(p.type, p.category)}</span>
+                      <span className="font-medium text-slate-700 dark:text-slate-200">{categoryLabel(p.type, p.category)}</span>
                       {p.description && (
-                        <span className="text-slate-400 ml-1.5">{p.description}</span>
+                        <span className="text-slate-400 dark:text-slate-500 ml-1.5">{p.description}</span>
                       )}
                     </td>
                     <td className={`px-4 py-3 text-right font-semibold tabular-nums ${
@@ -298,7 +298,7 @@ export default function PaymentsTab({ tourId, pax, sellingPrice }: Props) {
                       {p.image ? (
                         <button
                           onClick={e => { e.stopPropagation(); setLightbox(p.image); }}
-                          className="inline-flex items-center justify-center w-7 h-7 rounded bg-slate-100 hover:bg-blue-100 text-slate-500 hover:text-blue-600 transition-colors"
+                          className="inline-flex items-center justify-center w-7 h-7 rounded bg-slate-100 dark:bg-slate-700 hover:bg-blue-100 dark:hover:bg-blue-900/30 text-slate-500 dark:text-slate-400 hover:text-blue-600 transition-colors"
                         >
                           <ZoomIn className="w-3.5 h-3.5" />
                         </button>
@@ -314,14 +314,14 @@ export default function PaymentsTab({ tourId, pax, sellingPrice }: Props) {
                   </tr>
 
                   {expandedId === p.id && (
-                    <tr key={`${p.id}-exp`} className="bg-slate-50/60">
+                    <tr key={`${p.id}-exp`} className="bg-slate-50/60 dark:bg-slate-700/20">
                       <td colSpan={6} className="px-5 py-4">
                         <div className="flex items-start gap-5 flex-wrap">
                           <div className="flex-1 min-w-0 space-y-1.5 text-sm">
                             {p.note && (
-                              <p className="text-slate-600"><span className="text-slate-400 text-xs">備註</span>　{p.note}</p>
+                              <p className="text-slate-600 dark:text-slate-300"><span className="text-slate-400 dark:text-slate-500 text-xs">備註</span>　{p.note}</p>
                             )}
-                            <p className="text-slate-400 text-xs">
+                            <p className="text-slate-400 dark:text-slate-500 text-xs">
                               建立時間：{new Date(p.created_at).toLocaleString("zh-TW")}
                             </p>
                           </div>
@@ -329,13 +329,13 @@ export default function PaymentsTab({ tourId, pax, sellingPrice }: Props) {
                             <img
                               src={p.image}
                               alt="佐證截圖"
-                              className="h-24 rounded-lg border border-slate-200 object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                              className="h-24 rounded-lg border border-slate-200 dark:border-slate-600 object-cover cursor-pointer hover:opacity-90 transition-opacity"
                               onClick={() => setLightbox(p.image)}
                             />
                           )}
                           <button
                             onClick={() => deleteRecord(p.id)}
-                            className="flex items-center gap-1 text-xs text-red-400 hover:text-red-600 hover:bg-red-50 px-2 py-1 rounded transition-colors self-start"
+                            className="flex items-center gap-1 text-xs text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 px-2 py-1 rounded transition-colors self-start"
                           >
                             <Trash2 className="w-3.5 h-3.5" /> 刪除
                           </button>
@@ -347,10 +347,10 @@ export default function PaymentsTab({ tourId, pax, sellingPrice }: Props) {
               ))}
             </tbody>
             {/* ── Footer totals ── */}
-            <tfoot className="bg-slate-50 border-t border-slate-200 text-sm font-semibold">
+            <tfoot className="bg-slate-50 dark:bg-slate-700/50 border-t border-slate-200 dark:border-slate-600 text-sm font-semibold">
               {filter !== "expense" && (
                 <tr>
-                  <td colSpan={3} className="px-4 py-2.5 text-slate-500 text-xs">收入小計</td>
+                  <td colSpan={3} className="px-4 py-2.5 text-slate-500 dark:text-slate-400 text-xs">收入小計</td>
                   <td className="px-4 py-2.5 text-right text-emerald-600 tabular-nums">
                     +{fmt(actualIncome)}
                   </td>
@@ -359,7 +359,7 @@ export default function PaymentsTab({ tourId, pax, sellingPrice }: Props) {
               )}
               {filter !== "income" && (
                 <tr>
-                  <td colSpan={3} className="px-4 py-2.5 text-slate-500 text-xs">支出小計</td>
+                  <td colSpan={3} className="px-4 py-2.5 text-slate-500 dark:text-slate-400 text-xs">支出小計</td>
                   <td className="px-4 py-2.5 text-right text-orange-600 tabular-nums">
                     -{fmt(actualExpense)}
                   </td>
@@ -367,8 +367,8 @@ export default function PaymentsTab({ tourId, pax, sellingPrice }: Props) {
                 </tr>
               )}
               {filter === "all" && (
-                <tr className="border-t border-slate-200">
-                  <td colSpan={3} className="px-4 py-2.5 text-slate-700 text-xs font-bold">淨餘</td>
+                <tr className="border-t border-slate-200 dark:border-slate-600">
+                  <td colSpan={3} className="px-4 py-2.5 text-slate-700 dark:text-slate-200 text-xs font-bold">淨餘</td>
                   <td className={`px-4 py-2.5 text-right tabular-nums font-bold ${
                     netBalance >= 0 ? "text-green-600" : "text-red-600"
                   }`}>
@@ -385,10 +385,10 @@ export default function PaymentsTab({ tourId, pax, sellingPrice }: Props) {
       {/* ── Add Record Modal ── */}
       {showModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
-            <div className="sticky top-0 bg-white px-5 py-4 border-b flex items-center justify-between z-10">
-              <h2 className="font-bold text-slate-800">新增收付款紀錄</h2>
-              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-700 p-1">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 bg-white dark:bg-slate-800 px-5 py-4 border-b dark:border-slate-700 flex items-center justify-between z-10">
+              <h2 className="font-bold text-slate-800 dark:text-slate-100">新增收付款紀錄</h2>
+              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -410,7 +410,7 @@ export default function PaymentsTab({ tourId, pax, sellingPrice }: Props) {
                           ? t === "income"
                             ? "bg-emerald-500 text-white border-emerald-500"
                             : "bg-orange-500 text-white border-orange-500"
-                          : "border-slate-200 text-slate-500 hover:bg-slate-50"
+                          : "border-slate-200 dark:border-slate-600 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700"
                       }`}
                     >
                       {t === "income" ? "💰 收入" : "💸 支出"}
@@ -488,7 +488,7 @@ export default function PaymentsTab({ tourId, pax, sellingPrice }: Props) {
                     <img
                       src={form.image}
                       alt="截圖預覽"
-                      className="h-28 rounded-lg border border-slate-200 object-cover"
+                      className="h-28 rounded-lg border border-slate-200 dark:border-slate-600 object-cover"
                     />
                     <button
                       onClick={() => setForm(f => ({ ...f, image: "" }))}
@@ -500,7 +500,7 @@ export default function PaymentsTab({ tourId, pax, sellingPrice }: Props) {
                 ) : (
                   <button
                     onClick={() => fileRef.current?.click()}
-                    className="w-full h-20 border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center gap-1 text-slate-400 hover:border-blue-300 hover:text-blue-500 transition-colors"
+                    className="w-full h-20 border-2 border-dashed border-slate-200 dark:border-slate-600 rounded-xl flex flex-col items-center justify-center gap-1 text-slate-400 dark:text-slate-500 hover:border-blue-300 hover:text-blue-500 transition-colors"
                   >
                     <Upload className="w-5 h-5" />
                     <span className="text-xs">上傳截圖 / 匯款憑證</span>
@@ -509,10 +509,10 @@ export default function PaymentsTab({ tourId, pax, sellingPrice }: Props) {
               </div>
             </div>
 
-            <div className="px-5 py-4 border-t flex justify-end gap-3">
+            <div className="px-5 py-4 border-t dark:border-slate-700 flex justify-end gap-3">
               <button
                 onClick={() => setShowModal(false)}
-                className="text-sm text-slate-600 hover:bg-slate-100 px-4 py-2 rounded-lg transition-colors"
+                className="text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 px-4 py-2 rounded-lg transition-colors"
               >
                 取消
               </button>
