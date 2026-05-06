@@ -540,10 +540,10 @@ export default function CRMPage() {
                   </label>
                 ))}
               </div>
-              <div className="mt-2 pt-2 border-t border-slate-100">
+              <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-700">
                 <button
                   onClick={() => setColumns(ALL_COLS.map(c => ({ ...c })))}
-                  className="w-full text-xs text-slate-400 hover:text-slate-600 text-center py-1"
+                  className="w-full text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 text-center py-1"
                 >
                   重設為預設
                 </button>
@@ -626,11 +626,11 @@ export default function CRMPage() {
                           {c.name}
                         </Link>
                       ) : col.key === "passport" || col.key === "id_number" || col.key === "taibao_number" ? (
-                        <span className="text-slate-600 font-mono text-xs">{getCellValue(c, col.key)}</span>
+                        <span className="text-slate-600 dark:text-slate-300 font-mono text-xs">{getCellValue(c, col.key)}</span>
                       ) : col.key === "created_at" ? (
-                        <span className="text-slate-400 text-xs">{getCellValue(c, col.key)}</span>
+                        <span className="text-slate-400 dark:text-slate-500 text-xs">{getCellValue(c, col.key)}</span>
                       ) : (
-                        <span className="text-slate-600">{getCellValue(c, col.key)}</span>
+                        <span className="text-slate-600 dark:text-slate-300">{getCellValue(c, col.key)}</span>
                       )}
                     </td>
                   ))}
@@ -728,15 +728,15 @@ export default function CRMPage() {
          ══════════════════════════════════════════════════════════════════════ */}
       {showImport && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[92vh] overflow-y-auto">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-3xl max-h-[92vh] overflow-y-auto">
 
             {/* header */}
-            <div className="px-6 py-4 border-b border-slate-100 sticky top-0 bg-white flex items-center justify-between">
-              <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 sticky top-0 bg-white dark:bg-slate-800 flex items-center justify-between">
+              <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
                 <FileSpreadsheet className="w-5 h-5 text-blue-600" />
                 {importResult ? "匯入完成" : importStep === "preview" ? `匯入預覽（${importRows.length} 筆）` : "匯入旅客名單"}
               </h2>
-              <button onClick={closeImport} className="text-slate-400 hover:text-slate-700"><X className="w-5 h-5" /></button>
+              <button onClick={closeImport} className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"><X className="w-5 h-5" /></button>
             </div>
 
             <div className="px-6 py-5">
@@ -744,17 +744,17 @@ export default function CRMPage() {
               {/* step 1: paste / upload */}
               {importStep === "input" && (
                 <div className="space-y-4">
-                  <p className="text-sm text-slate-600">
+                  <p className="text-sm text-slate-600 dark:text-slate-300">
                     從 Google Sheets 選取整張表格（含標題列）複製後貼到下方，或上傳 CSV 檔案。
                     第一行必須是欄位標題。
                   </p>
-                  <p className="text-xs text-slate-400">
+                  <p className="text-xs text-slate-400 dark:text-slate-500">
                     支援欄位：<span className="font-mono">姓名、電話、Email、生日、性別、護照、護照效期、台胞證、台胞證效期、身分證、地址、緊急聯絡人、緊急聯絡電話、備註</span>
                   </p>
                   <div>
                     <label className={lbl}>貼上資料（Google Sheets / CSV）</label>
                     <textarea
-                      className="w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm font-mono h-48 resize-none focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      className="w-full border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2.5 text-sm font-mono h-48 resize-none focus:outline-none focus:ring-2 focus:ring-blue-400 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 placeholder:text-slate-400"
                       placeholder={"姓名\t電話\t生日\t護照\n張小明\t0912345678\t1985-03-20\tA12345678"}
                       value={importText}
                       onChange={e => setImportText(e.target.value)}
@@ -765,7 +765,7 @@ export default function CRMPage() {
                     <input ref={importFileRef} type="file" accept=".csv,.tsv,.txt" className="hidden"
                       onChange={e => { const f = e.target.files?.[0]; if (f) f.text().then(t => setImportText(t)); }} />
                     <button onClick={() => importFileRef.current?.click()}
-                      className="flex items-center gap-2 px-4 py-2 text-sm border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-600 transition-colors">
+                      className="flex items-center gap-2 px-4 py-2 text-sm border border-slate-200 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors">
                       <FileSpreadsheet className="w-4 h-4" /> 上傳 CSV / TSV 檔案
                     </button>
                     {importText && <span className="text-xs text-emerald-600">✓ 已載入資料</span>}
@@ -793,9 +793,9 @@ export default function CRMPage() {
                         className="text-xs text-slate-500 hover:underline">取消全選</button>
                     </div>
                   </div>
-                  <div className="border border-slate-100 rounded-xl overflow-hidden">
+                  <div className="border border-slate-100 dark:border-slate-700 rounded-xl overflow-hidden">
                     <table className="w-full text-sm">
-                      <thead className="bg-slate-50 text-slate-500 text-xs uppercase">
+                      <thead className="bg-slate-50 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 text-xs uppercase">
                         <tr>
                           <th className="px-3 py-2 w-8"></th>
                           <th className="text-left px-3 py-2">姓名</th>
@@ -805,10 +805,10 @@ export default function CRMPage() {
                           <th className="text-left px-3 py-2">狀態</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-50">
+                      <tbody className="divide-y divide-slate-50 dark:divide-slate-700/50">
                         {importRows.map(row => (
                           <tr key={row.rowIndex}
-                            className={`${row.errors.length > 0 ? "opacity-50" : "hover:bg-slate-50"} transition-colors`}>
+                            className={`${row.errors.length > 0 ? "opacity-50" : "hover:bg-slate-50 dark:hover:bg-slate-700/40"} transition-colors`}>
                             <td className="px-3 py-2 text-center">
                               <input type="checkbox" disabled={row.errors.length > 0}
                                 checked={selectedRows.has(row.rowIndex)}
@@ -818,10 +818,10 @@ export default function CRMPage() {
                                   setSelectedRows(next);
                                 }} />
                             </td>
-                            <td className="px-3 py-2 font-medium">{row.data.name || "—"}</td>
-                            <td className="px-3 py-2 text-slate-600">{row.data.phone || "—"}</td>
-                            <td className="px-3 py-2 text-slate-600">{row.data.birthday || "—"}</td>
-                            <td className="px-3 py-2 text-slate-600 font-mono text-xs">{row.data.passport || "—"}</td>
+                            <td className="px-3 py-2 font-medium text-slate-800 dark:text-slate-100">{row.data.name || "—"}</td>
+                            <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{row.data.phone || "—"}</td>
+                            <td className="px-3 py-2 text-slate-600 dark:text-slate-300">{row.data.birthday || "—"}</td>
+                            <td className="px-3 py-2 text-slate-600 dark:text-slate-300 font-mono text-xs">{row.data.passport || "—"}</td>
                             <td className="px-3 py-2">
                               {row.errors.length > 0 ? (
                                 <span className="text-xs text-red-500">✗ {row.errors[0]}</span>
@@ -853,7 +853,7 @@ export default function CRMPage() {
             </div>
 
             {/* footer */}
-            <div className="px-6 py-4 border-t border-slate-100 sticky bottom-0 bg-white flex items-center justify-between gap-3">
+            <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-700 sticky bottom-0 bg-white dark:bg-slate-800 flex items-center justify-between gap-3">
               {importResult ? (
                 <div className="ml-auto">
                   <button onClick={closeImport}
@@ -862,10 +862,10 @@ export default function CRMPage() {
               ) : importStep === "preview" ? (
                 <>
                   <button onClick={() => setImportStep("input")}
-                    className="text-sm text-slate-500 hover:text-slate-700">← 返回修改</button>
+                    className="text-sm text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">← 返回修改</button>
                   <div className="flex gap-2">
                     <button onClick={closeImport}
-                      className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">取消</button>
+                      className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">取消</button>
                     <button onClick={handleImport} disabled={importing || selectedRows.size === 0}
                       className="px-5 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 flex items-center gap-1.5">
                       {importing && <Loader2 className="w-4 h-4 animate-spin" />}
@@ -878,7 +878,7 @@ export default function CRMPage() {
                   <div />
                   <div className="flex gap-2">
                     <button onClick={closeImport}
-                      className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">取消</button>
+                      className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">取消</button>
                     <button onClick={parseAndPreview} disabled={!importText.trim()}
                       className="px-5 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50">
                       下一步：預覽 →
@@ -896,14 +896,14 @@ export default function CRMPage() {
          ══════════════════════════════════════════════════════════════════════ */}
       {showScan && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[92vh] overflow-y-auto">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-2xl max-h-[92vh] overflow-y-auto">
 
             {/* header */}
-            <div className="px-6 py-4 border-b border-slate-100 sticky top-0 bg-white flex items-center justify-between">
-              <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 sticky top-0 bg-white dark:bg-slate-800 flex items-center justify-between">
+              <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
                 <ScanLine className="w-5 h-5 text-emerald-600" /> 掃描證件快速建檔
               </h2>
-              <button onClick={closeScan} className="text-slate-400 hover:text-slate-700">
+              <button onClick={closeScan} className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -982,16 +982,16 @@ export default function CRMPage() {
               {scanStatus === "done" && (
                 <>
                   {duplicates.length > 0 && (
-                    <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">
+                    <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-xl px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
                       <p className="font-semibold mb-2">⚠️ 資料庫中已有疑似相同旅客，是否要合併證件資料？</p>
                       {duplicates.map(d => (
-                        <div key={d.id} className="flex items-center justify-between py-2 border-b border-amber-100 last:border-0">
+                        <div key={d.id} className="flex items-center justify-between py-2 border-b border-amber-100 dark:border-amber-700/50 last:border-0">
                           <div className="flex items-center gap-2">
                             <Link href={`/admin/crm/${d.id}`} target="_blank"
-                              className="text-violet-600 hover:underline font-medium">
+                              className="text-violet-600 dark:text-violet-400 hover:underline font-medium">
                               {d.name}
                             </Link>
-                            <span className="text-amber-700 text-xs">{d.phone} · {d.birthday}</span>
+                            <span className="text-amber-700 dark:text-amber-400 text-xs">{d.phone} · {d.birthday}</span>
                           </div>
                           <button
                             onClick={() => handleMerge(d.id)}
@@ -1003,12 +1003,12 @@ export default function CRMPage() {
                           </button>
                         </div>
                       ))}
-                      <p className="mt-2 text-amber-600 text-xs">若確認是全新旅客，請忽略提示並點「建立旅客」。</p>
+                      <p className="mt-2 text-amber-600 dark:text-amber-400 text-xs">若確認是全新旅客，請忽略提示並點「建立旅客」。</p>
                     </div>
                   )}
 
-                  <div className="bg-slate-50 rounded-xl p-4 space-y-3">
-                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">辨識結果（可編輯）</p>
+                  <div className="bg-slate-50 dark:bg-slate-700/40 rounded-xl p-4 space-y-3">
+                    <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">辨識結果（可編輯）</p>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="col-span-2">
                         <label className={lbl}>中文姓名 *</label>
@@ -1082,16 +1082,16 @@ export default function CRMPage() {
             </div>
 
             {/* footer */}
-            <div className="px-6 py-4 border-t border-slate-100 sticky bottom-0 bg-white flex items-center justify-between gap-3">
+            <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-700 sticky bottom-0 bg-white dark:bg-slate-800 flex items-center justify-between gap-3">
               <button
                 onClick={() => { setScanStatus("idle"); setScanImg(""); setOcrResult(null); setDuplicates([]); }}
-                className="text-sm text-slate-500 hover:text-slate-700 underline"
+                className="text-sm text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 underline"
               >
                 重新上傳
               </button>
               <div className="flex gap-2">
                 <button onClick={closeScan}
-                  className="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">取消</button>
+                  className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">取消</button>
                 {scanStatus === "done" && (
                   <button onClick={handleScanCreate} disabled={creating || !scanForm.name.trim()}
                     className="px-5 py-2 text-sm bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg disabled:opacity-50 flex items-center gap-1.5">
