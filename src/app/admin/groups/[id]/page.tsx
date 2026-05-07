@@ -106,6 +106,9 @@ export default function GroupDetailPage() {
   const [partCols,      setPartCols]      = useState<PartCol[]>(PART_COLS_DEFAULT);
   const [showColSettings, setShowColSettings] = useState(false);
   const [dragColIdx,    setDragColIdx]    = useState<number | null>(null);
+  // 旅客排序
+  const [rowOrder,      setRowOrder]      = useState<string[]>([]);
+  const [dragPartIdx,   setDragPartIdx]   = useState<number | null>(null);
 
   const loadTour = async () => {
     const { data } = await supabase.from("tours").select("*").eq("id", id).single();
@@ -119,7 +122,23 @@ export default function GroupDetailPage() {
       .from("customer_tours")
       .select("*, customer:customers(*)")
       .eq("tour_id", id);
-    setParticipants((data || []) as (CustomerTour & { customer: Customer })[]);
+    const loaded = (data || []) as (CustomerTour & { customer: Customer })[];
+    setParticipants(loaded);
+    // 從 localStorage 恢復自訂排序
+    const saved = localStorage.getItem(`ta_part_order_${id}`);
+    if (saved) {
+      try {
+        const arr: string[] = JSON.parse(saved);
+        const merged = [
+          ...arr.filter(oid => loaded.find(p => p.id === oid)),
+          ...loaded.filter(p => !arr.includes(p.id)).map(p => p.id),
+        ];
+        setRowOrder(merged);
+        localStorage.setItem(`ta_part_order_${id}`, JSON.stringify(merged));
+      } catch { setRowOrder(loaded.map(p => p.id)); }
+    } else {
+      setRowOrder(loaded.map(p => p.id));
+    }
   };
 
   const loadPayTotals = async () => {
@@ -290,6 +309,11 @@ export default function GroupDetailPage() {
   const savePartCols = (cols: PartCol[]) => {
     setPartCols(cols);
     localStorage.setItem("ta_part_cols", JSON.stringify(cols));
+  };
+
+  const savePartOrder = (order: string[]) => {
+    setRowOrder(order);
+    localStorage.setItem(`ta_part_order_${id}`, JSON.stringify(order));
   };
 
   if (!tour) return (
@@ -478,23 +502,19 @@ export default function GroupDetailPage() {
           { bar:"bg-teal-500",   bg:"bg-teal-50 dark:bg-teal-900/20",     badge:"bg-teal-500 text-white",   header:"text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-800/60"     },
         ];
 
-        // Group and sort
-        const sorted = [...participants].sort((a,b) => {
-          const ra = a.room_number||""; const rb = b.room_number||"";
-          if (!ra && !rb) return 0; if (!ra) return 1; if (!rb) return -1;
-          return ra.localeCompare(rb, undefined, {numeric:true});
-        });
-        const roomNums = Array.from(new Set(sorted.map(p=>p.room_number).filter(Boolean))) as string[];
+        // Room palette（依房號上色）
+        const roomNums = Array.from(new Set(participants.map(p=>p.room_number).filter(Boolean))) as string[];
         const paletteMap = new Map(roomNums.map((r,i)=>[r, ROOM_PALETTES[i%ROOM_PALETTES.length]]));
 
-        // Build grouped structure
-        const groups: { room: string; members: typeof sorted }[] = [];
-        for (const p of sorted) {
-          const r = p.room_number||"";
-          const last = groups[groups.length-1];
-          if (last && last.room===r) last.members.push(p);
-          else groups.push({room:r, members:[p]});
-        }
+        // 自訂順序列表
+        const orderedParts = (() => {
+          if (rowOrder.length === 0) return participants;
+          const mapped = rowOrder
+            .map(pid => participants.find(p => p.id === pid))
+            .filter((p): p is (CustomerTour & { customer: Customer }) => !!p);
+          const extra = participants.filter(p => !rowOrder.includes(p.id));
+          return [...mapped, ...extra];
+        })();
 
         return (
           <div className="space-y-4">
@@ -651,172 +671,167 @@ export default function GroupDetailPage() {
                 還沒有旅客報名此團
               </div>
             ) : (
-              <div className="space-y-3">
-                {groups.map(({room, members}) => {
-                  const palette = room ? paletteMap.get(room) : null;
+              <div className="space-y-1.5">
+                {orderedParts.map((p, idx) => {
+                  const palette = p.room_number ? paletteMap.get(p.room_number) ?? ROOM_PALETTES[0] : null;
                   return (
-                    <div key={room||"__unassigned"} className={`rounded-xl overflow-hidden border ${
-                      room ? "border-slate-100 dark:border-slate-700 shadow-sm" : "border-dashed border-slate-200 dark:border-slate-700"
-                    }`}>
-                      {/* group header */}
-                      <div className={`flex items-center gap-2 px-4 py-2.5 ${
-                        room ? `bg-white dark:bg-slate-800 border-b ${palette!.header}` : "bg-slate-50 dark:bg-slate-700/50 border-b border-slate-100 dark:border-slate-700"
+                    <div key={p.id}
+                      draggable
+                      onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; setDragPartIdx(idx); }}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={() => {
+                        if (dragPartIdx === null || dragPartIdx === idx) return;
+                        const ids = orderedParts.map(x => x.id);
+                        const [moved] = ids.splice(dragPartIdx, 1);
+                        ids.splice(idx, 0, moved);
+                        savePartOrder(ids);
+                        setDragPartIdx(null);
+                      }}
+                      onDragEnd={() => setDragPartIdx(null)}
+                      className={`flex items-center bg-white dark:bg-slate-800 rounded-xl border shadow-sm transition-all select-none ${
+                        dragPartIdx === idx
+                          ? "opacity-40 border-blue-400 dark:border-blue-500 ring-2 ring-blue-200 dark:ring-blue-800"
+                          : "border-slate-100 dark:border-slate-700 hover:border-slate-200 dark:hover:border-slate-600"
                       }`}>
-                        {room ? (
-                          <>
-                            <div className={`w-2 h-2 rounded-full ${palette!.bar}`} />
-                            <BedDouble className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
-                            <span className={`text-xs font-bold ${palette!.header.split(" ")[0]}`}>{room} 號房</span>
-                            <span className="text-xs text-slate-400 dark:text-slate-500 ml-1">· {members.length} 人</span>
-                          </>
-                        ) : (
-                          <>
-                            <span className="text-xs font-medium text-slate-400 dark:text-slate-500">未分配房號</span>
-                            <span className="text-xs text-slate-300 dark:text-slate-600 ml-1">· {members.length} 人</span>
-                          </>
-                        )}
+                      {/* drag handle */}
+                      <div className="pl-2 pr-1 self-stretch flex items-center text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-400 cursor-grab active:cursor-grabbing flex-shrink-0">
+                        <GripVertical className="w-4 h-4" />
                       </div>
-
-                      {/* members */}
-                      <div className="bg-white dark:bg-slate-800 divide-y divide-slate-50 dark:divide-slate-700/50">
-                        {members.map((p, mIdx) => (
-                          <div key={p.id} className={`flex items-center gap-0 ${room ? palette!.bg : "hover:bg-slate-50 dark:hover:bg-slate-700/20"} transition-colors`}>
-                            {/* colored left bar */}
-                            <div className={`w-1 self-stretch flex-shrink-0 ${room ? palette!.bar : "bg-transparent"} ${mIdx===0?"rounded-none":""}`} />
-
-                            <div className="flex-1 flex items-center gap-0 min-w-0 px-4 py-3">
-                              {/* name — always visible */}
-                              <div className="w-28 flex-shrink-0">
-                                <Link href={`/admin/crm/${p.customer_id}`} className="font-medium text-blue-600 dark:text-blue-400 hover:underline text-sm">
-                                  {p.customer.name}
-                                </Link>
-                              </div>
-                              {/* participant type badge — always visible */}
-                              {(() => {
-                                const pType = PARTICIPANT_TYPES.find(t => t.key === (p.participant_type || "adult")) || PARTICIPANT_TYPES[0];
-                                const isOpen = typePickerId === p.id;
-                                return (
-                                  <div className="w-20 flex-shrink-0 flex items-center">
-                                    <button
-                                      onClick={(e) => {
-                                        if (isOpen) { setTypePickerId(null); setTypePickerRect(null); }
-                                        else { setTypePickerId(p.id); setTypePickerRect(e.currentTarget.getBoundingClientRect()); }
-                                      }}
-                                      className={`flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg border transition-all font-medium ${pType.badge}`}>
-                                      <span>{pType.icon}</span>
-                                      <span>{pType.label}</span>
-                                    </button>
-                                  </div>
-                                );
-                              })()}
-                              {/* dynamic columns */}
-                              {partCols.filter(c => c.visible).map(col => {
-                                if (col.key === "phone") return (
-                                  <div key="phone" className="flex-1 text-sm text-slate-500 dark:text-slate-400 truncate min-w-0 max-w-[120px]">
-                                    {p.customer.phone || "—"}
-                                  </div>
-                                );
-                                if (col.key === "email") return (
-                                  <div key="email" className="flex-1 text-sm text-slate-500 dark:text-slate-400 truncate min-w-0 max-w-[160px]">
-                                    {p.customer.email || "—"}
-                                  </div>
-                                );
-                                if (col.key === "deposit_amount" || col.key === "balance_amount") {
-                                  const field = col.key as "deposit_amount" | "balance_amount";
-                                  const label = field === "deposit_amount" ? "訂金" : "尾款";
-                                  const val   = p[field] || 0;
-                                  const isEdit = editingAmtId === p.id && editingAmtField === field;
-                                  return (
-                                    <div key={col.key} className="w-24 flex-shrink-0 flex items-center justify-end">
-                                      {isEdit ? (
-                                        <input autoFocus type="text" inputMode="numeric"
-                                          className="w-20 text-xs border border-blue-400 rounded-lg px-2 py-1 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-right focus:outline-none focus:ring-2 focus:ring-blue-400"
-                                          value={amtInput}
-                                          onChange={e => setAmtInput(e.target.value)}
-                                          onBlur={() => saveAmount(p.id, field, amtInput)}
-                                          onKeyDown={e => {
-                                            if (e.key === "Enter") saveAmount(p.id, field, amtInput);
-                                            if (e.key === "Escape") { setEditingAmtId(null); setEditingAmtField(null); }
-                                          }}
-                                          placeholder="0" />
-                                      ) : (
-                                        <button
-                                          onClick={() => { setEditingAmtId(p.id); setEditingAmtField(field); setAmtInput(val ? String(val) : ""); }}
-                                          className={`group/amt text-xs px-2 py-1 rounded-lg transition-all text-right ${
-                                            val > 0
-                                              ? "text-emerald-700 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/30"
-                                              : "text-slate-300 dark:text-slate-600 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20"
-                                          }`}
-                                          title={`點擊編輯${label}`}>
-                                          {val > 0 ? `NT$${val.toLocaleString()}` : <span className="group-hover/amt:text-blue-400">{label}</span>}
-                                        </button>
-                                      )}
-                                    </div>
-                                  );
-                                }
-                                if (col.key === "meal_preference") {
-                                  const meals = (p.meal_preference || "").split(",").map(s => s.trim()).filter(Boolean);
-                                  const isOpen = mealPickerId === p.id;
-                                  return (
-                                    <div key="meal" className="w-28 flex-shrink-0 flex items-center">
-                                      <button
-                                        onClick={(e) => {
-                                          if (isOpen) { setMealPickerId(null); setMealPickerRect(null); }
-                                          else { setMealPickerId(p.id); setMealPickerRect(e.currentTarget.getBoundingClientRect()); }
-                                        }}
-                                        className={`flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg border transition-all ${
-                                          meals.length > 0
-                                            ? "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700 text-amber-700 dark:text-amber-300 font-medium"
-                                            : "text-slate-400 dark:text-slate-500 border-dashed border-slate-200 dark:border-slate-600 hover:border-amber-400 hover:text-amber-500"
-                                        }`}>
-                                        <UtensilsCrossed className="w-3 h-3 flex-shrink-0" />
-                                        <span className="truncate max-w-[70px]">{meals.length > 0 ? meals.join("·") : "正常餐"}</span>
-                                      </button>
-                                    </div>
-                                  );
-                                }
-                                if (col.key === "room_number") {
-                                  return (
-                                    <div key="room" className="w-28 flex-shrink-0 flex justify-end pr-1">
-                                      {editingRoomId === p.id ? (
-                                        <input autoFocus
-                                          className="w-20 text-xs border border-blue-400 rounded-lg px-2 py-1 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                                          value={roomInput}
-                                          onChange={e => setRoomInput(e.target.value)}
-                                          onBlur={() => saveRoomNumber(p.id, roomInput)}
-                                          onKeyDown={e => {
-                                            if (e.key === "Enter") saveRoomNumber(p.id, roomInput);
-                                            if (e.key === "Escape") setEditingRoomId(null);
-                                          }}
-                                          placeholder="房號…" />
-                                      ) : (
-                                        <button
-                                          onClick={() => { setEditingRoomId(p.id); setRoomInput(p.room_number || ""); }}
-                                          className={`group/room flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-all ${
-                                            p.room_number
-                                              ? `${palette!.badge} font-medium shadow-sm hover:opacity-80`
-                                              : "text-slate-400 dark:text-slate-500 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 border border-dashed border-slate-200 dark:border-slate-600 hover:border-blue-400"
-                                          }`}>
-                                          {p.room_number ? (
-                                            <>{p.room_number} <Pencil className="w-2.5 h-2.5 opacity-70" /></>
-                                          ) : (
-                                            <><BedDouble className="w-3 h-3" /> 分配房號</>
-                                          )}
-                                        </button>
-                                      )}
-                                    </div>
-                                  );
-                                }
-                                return null;
-                              })}
-                              {/* remove */}
-                              <button onClick={() => removeParticipant(p.id)}
-                                className="ml-auto p-1 text-slate-200 dark:text-slate-600 hover:text-red-500 transition-colors rounded flex-shrink-0">
-                                <X className="w-4 h-4" />
+                      {/* colored left bar */}
+                      <div className={`w-1 self-stretch flex-shrink-0 ${palette ? palette.bar : "bg-transparent"}`} />
+                      {/* seq number */}
+                      <div className="w-5 flex-shrink-0 text-center text-[10px] text-slate-300 dark:text-slate-600 font-mono">{idx+1}</div>
+                      {/* main content */}
+                      <div className="flex-1 flex items-center gap-0 min-w-0 px-2 py-3">
+                        {/* name */}
+                        <div className="w-28 flex-shrink-0">
+                          <Link href={`/admin/crm/${p.customer_id}`} className="font-medium text-blue-600 dark:text-blue-400 hover:underline text-sm">
+                            {p.customer.name}
+                          </Link>
+                        </div>
+                        {/* participant type badge */}
+                        {(() => {
+                          const pType = PARTICIPANT_TYPES.find(t => t.key === (p.participant_type || "adult")) || PARTICIPANT_TYPES[0];
+                          const isOpen = typePickerId === p.id;
+                          return (
+                            <div className="w-20 flex-shrink-0 flex items-center">
+                              <button
+                                onClick={(e) => {
+                                  if (isOpen) { setTypePickerId(null); setTypePickerRect(null); }
+                                  else { setTypePickerId(p.id); setTypePickerRect(e.currentTarget.getBoundingClientRect()); }
+                                }}
+                                className={`flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg border transition-all font-medium ${pType.badge}`}>
+                                <span>{pType.icon}</span>
+                                <span>{pType.label}</span>
                               </button>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })()}
+                        {/* dynamic columns */}
+                        {partCols.filter(c => c.visible).map(col => {
+                          if (col.key === "phone") return (
+                            <div key="phone" className="flex-1 text-sm text-slate-500 dark:text-slate-400 truncate min-w-0 max-w-[120px]">
+                              {p.customer.phone || "—"}
+                            </div>
+                          );
+                          if (col.key === "email") return (
+                            <div key="email" className="flex-1 text-sm text-slate-500 dark:text-slate-400 truncate min-w-0 max-w-[160px]">
+                              {p.customer.email || "—"}
+                            </div>
+                          );
+                          if (col.key === "deposit_amount" || col.key === "balance_amount") {
+                            const field = col.key as "deposit_amount" | "balance_amount";
+                            const label = field === "deposit_amount" ? "訂金" : "尾款";
+                            const val   = p[field] || 0;
+                            const isEdit = editingAmtId === p.id && editingAmtField === field;
+                            return (
+                              <div key={col.key} className="w-24 flex-shrink-0 flex items-center justify-end">
+                                {isEdit ? (
+                                  <input autoFocus type="text" inputMode="numeric"
+                                    className="w-20 text-xs border border-blue-400 rounded-lg px-2 py-1 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-right focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                    value={amtInput}
+                                    onChange={e => setAmtInput(e.target.value)}
+                                    onBlur={() => saveAmount(p.id, field, amtInput)}
+                                    onKeyDown={e => {
+                                      if (e.key === "Enter") saveAmount(p.id, field, amtInput);
+                                      if (e.key === "Escape") { setEditingAmtId(null); setEditingAmtField(null); }
+                                    }}
+                                    placeholder="0" />
+                                ) : (
+                                  <button
+                                    onClick={() => { setEditingAmtId(p.id); setEditingAmtField(field); setAmtInput(val ? String(val) : ""); }}
+                                    className={`group/amt text-xs px-2 py-1 rounded-lg transition-all text-right ${
+                                      val > 0
+                                        ? "text-emerald-700 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/30"
+                                        : "text-slate-300 dark:text-slate-600 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                                    }`}
+                                    title={`點擊編輯${label}`}>
+                                    {val > 0 ? `NT$${val.toLocaleString()}` : <span className="group-hover/amt:text-blue-400">{label}</span>}
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          }
+                          if (col.key === "meal_preference") {
+                            const meals = (p.meal_preference || "").split(",").map(s => s.trim()).filter(Boolean);
+                            const isOpen = mealPickerId === p.id;
+                            return (
+                              <div key="meal" className="w-28 flex-shrink-0 flex items-center">
+                                <button
+                                  onClick={(e) => {
+                                    if (isOpen) { setMealPickerId(null); setMealPickerRect(null); }
+                                    else { setMealPickerId(p.id); setMealPickerRect(e.currentTarget.getBoundingClientRect()); }
+                                  }}
+                                  className={`flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg border transition-all ${
+                                    meals.length > 0
+                                      ? "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700 text-amber-700 dark:text-amber-300 font-medium"
+                                      : "text-slate-400 dark:text-slate-500 border-dashed border-slate-200 dark:border-slate-600 hover:border-amber-400 hover:text-amber-500"
+                                  }`}>
+                                  <UtensilsCrossed className="w-3 h-3 flex-shrink-0" />
+                                  <span className="truncate max-w-[70px]">{meals.length > 0 ? meals.join("·") : "正常餐"}</span>
+                                </button>
+                              </div>
+                            );
+                          }
+                          if (col.key === "room_number") {
+                            return (
+                              <div key="room" className="w-28 flex-shrink-0 flex justify-end pr-1">
+                                {editingRoomId === p.id ? (
+                                  <input autoFocus
+                                    className="w-20 text-xs border border-blue-400 rounded-lg px-2 py-1 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                    value={roomInput}
+                                    onChange={e => setRoomInput(e.target.value)}
+                                    onBlur={() => saveRoomNumber(p.id, roomInput)}
+                                    onKeyDown={e => {
+                                      if (e.key === "Enter") saveRoomNumber(p.id, roomInput);
+                                      if (e.key === "Escape") setEditingRoomId(null);
+                                    }}
+                                    placeholder="房號…" />
+                                ) : (
+                                  <button
+                                    onClick={() => { setEditingRoomId(p.id); setRoomInput(p.room_number || ""); }}
+                                    className={`group/room flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-all ${
+                                      p.room_number && palette
+                                        ? `${palette.badge} font-medium shadow-sm hover:opacity-80`
+                                        : "text-slate-400 dark:text-slate-500 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 border border-dashed border-slate-200 dark:border-slate-600 hover:border-blue-400"
+                                    }`}>
+                                    {p.room_number ? (
+                                      <>{p.room_number} <Pencil className="w-2.5 h-2.5 opacity-70" /></>
+                                    ) : (
+                                      <><BedDouble className="w-3 h-3" /> 分配房號</>
+                                    )}
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          }
+                          return null;
+                        })}
+                        {/* remove */}
+                        <button onClick={() => removeParticipant(p.id)}
+                          className="ml-auto p-1 text-slate-200 dark:text-slate-600 hover:text-red-500 transition-colors rounded flex-shrink-0">
+                          <X className="w-4 h-4" />
+                        </button>
                       </div>
                     </div>
                   );
