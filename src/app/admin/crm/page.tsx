@@ -5,7 +5,7 @@ import { supabase, Customer, Tour } from "@/lib/supabase";
 import {
   Plus, Search, Users, ScanLine, Upload, FileSpreadsheet,
   Loader2, CheckCircle, AlertCircle, X, Settings, Tag, Trash2, CheckCircle2, Layers,
-  GitMerge, ChevronRight,
+  GitMerge, ChevronRight, ArrowUp, ArrowDown, ChevronsUpDown,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -377,6 +377,9 @@ export default function CRMPage() {
   // columns
   const [columns,     setColumns]     = useState<ColDef[]>(() => ALL_COLS.map(c=>({...c})));
   const [showColMenu, setShowColMenu] = useState(false);
+  // sort
+  const [sortKey, setSortKey] = useState<string>("created_at");
+  const [sortDir, setSortDir] = useState<"asc"|"desc">("desc");
   const [colSaved,    setColSaved]    = useState(false);
   const colMenuRef = useRef<HTMLDivElement>(null);
   const [dragCol,     setDragCol]     = useState<string|null>(null);
@@ -495,6 +498,32 @@ export default function CRMPage() {
     const ml = !filterLabelId || (custLabels[c.id]||[]).includes(filterLabelId);
     return ms && ml;
   });
+
+  // ── sort ──────────────────────────────────────────────────────────────────
+  const DATE_KEYS = new Set(["birthday","passport_expiry","taibao_expiry","created_at"]);
+  const sorted = [...filtered].sort((a, b) => {
+    let av: string | number, bv: string | number;
+    if (sortKey === "tours") {
+      av = (custTours[a.id] || []).length;
+      bv = (custTours[b.id] || []).length;
+    } else if (DATE_KEYS.has(sortKey)) {
+      av = (a as unknown as Record<string,string>)[sortKey] ? new Date((a as unknown as Record<string,string>)[sortKey]).getTime() : 0;
+      bv = (b as unknown as Record<string,string>)[sortKey] ? new Date((b as unknown as Record<string,string>)[sortKey]).getTime() : 0;
+    } else {
+      av = ((a as unknown as Record<string,string>)[sortKey] || "").toLowerCase();
+      bv = ((b as unknown as Record<string,string>)[sortKey] || "").toLowerCase();
+    }
+    if (av < bv) return sortDir === "asc" ? -1 : 1;
+    if (av > bv) return sortDir === "asc" ? 1 : -1;
+    return 0;
+  });
+
+  const cycleSort = (key: string) => {
+    if (sortKey !== key) { setSortKey(key); setSortDir("asc"); }
+    else if (sortDir === "asc") setSortDir("desc");
+    else { setSortKey("created_at"); setSortDir("desc"); }
+  };
+
   const visibleCols = columns.filter(c => c.visible);
 
   // ── col drag ──────────────────────────────────────────────────────────────
@@ -962,7 +991,18 @@ export default function CRMPage() {
                     onDragOver={e=>handleColDragOver(col.key,e)}
                     onDrop={()=>handleColDrop(col.key)}
                     onDragEnd={handleColDragEnd}>
-                    <span className="truncate block pr-2">{col.label}</span>
+                    <button
+                      onClick={()=>cycleSort(col.key)}
+                      className="flex items-center gap-1 truncate max-w-full hover:text-violet-600 dark:hover:text-violet-400 transition-colors group/sort"
+                      title="點擊排序">
+                      <span className="truncate">{col.label}</span>
+                      {sortKey===col.key
+                        ? sortDir==="asc"
+                          ? <ArrowUp className="w-3 h-3 shrink-0 text-violet-500" />
+                          : <ArrowDown className="w-3 h-3 shrink-0 text-violet-500" />
+                        : <ChevronsUpDown className="w-3 h-3 shrink-0 opacity-0 group-hover/sort:opacity-40 transition-opacity" />
+                      }
+                    </button>
                     <div className="absolute right-0 top-0 h-full w-2 cursor-col-resize group"
                       onMouseDown={e=>{e.preventDefault();e.stopPropagation();resizeRef.current={key:col.key,startX:e.clientX,startW:col.width};}}
                       draggable={false} onDragStart={e=>e.preventDefault()}>
@@ -973,7 +1013,7 @@ export default function CRMPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50 dark:divide-slate-700/50">
-              {filtered.map(c=>(
+              {sorted.map(c=>(
                 <tr key={c.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors">
                   {visibleCols.map(col=>(
                     <td key={col.key} className="px-4 py-2.5 truncate" style={{width:col.width,maxWidth:col.width}}>
