@@ -51,6 +51,8 @@ export default function GroupDetailPage() {
   const [editingRoomId, setEditingRoomId] = useState<string|null>(null);
   const [roomInput,     setRoomInput]     = useState("");
   const [mealPickerId,  setMealPickerId]  = useState<string|null>(null);
+  // CRM 標籤（用於加入旅客 Modal）
+  const [custLabels, setCustLabels] = useState<Record<string, { id: string; name: string; color: string }[]>>({});
   // 收付款總計（從 tour_payments 載入，用於顯示聯動）
   const [payTotals, setPayTotals] = useState<{ deposit: number; balance: number }>({ deposit: 0, balance: 0 });
   // 訂金/尾款 inline edit
@@ -91,8 +93,23 @@ export default function GroupDetailPage() {
     loadTour();
     loadParticipants();
     loadPayTotals();
-    supabase.from("customers").select("id,name,phone,email,meal_preference").order("name")
-      .then(({ data }) => setAllCustomers((data || []) as Customer[]));
+    // 旅客清單 + CRM 標籤 並行載入
+    Promise.all([
+      supabase.from("customers").select("id,name,phone,email,meal_preference").order("name"),
+      supabase.from("crm_labels").select("*"),
+      supabase.from("customer_labels").select("customer_id,label_id"),
+    ]).then(([{ data: custs }, { data: labels }, { data: cl }]) => {
+      setAllCustomers((custs || []) as Customer[]);
+      const map: Record<string, { id: string; name: string; color: string }[]> = {};
+      (cl || []).forEach((row: { customer_id: string; label_id: string }) => {
+        const label = (labels || []).find((l: { id: string }) => l.id === row.label_id) as { id: string; name: string; color: string } | undefined;
+        if (label) {
+          if (!map[row.customer_id]) map[row.customer_id] = [];
+          map[row.customer_id].push(label);
+        }
+      });
+      setCustLabels(map);
+    });
   }, [id]);
 
   const saveTour = async () => {
@@ -647,8 +664,17 @@ export default function GroupDetailPage() {
                               onChange={() => toggleCid(c.id)}
                               className="w-4 h-4 accent-blue-600"
                             />
-                            <div className="min-w-0">
-                              <div className="text-sm font-medium text-slate-800 dark:text-slate-100">{c.name}</div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="text-sm font-medium text-slate-800 dark:text-slate-100">{c.name}</span>
+                                {(custLabels[c.id] || []).map(lb => (
+                                  <span key={lb.id}
+                                    className="inline-flex items-center px-1.5 py-px rounded text-[10px] font-medium text-white whitespace-nowrap"
+                                    style={{ backgroundColor: lb.color }}>
+                                    {lb.name}
+                                  </span>
+                                ))}
+                              </div>
                               {c.phone && <div className="text-xs text-slate-400 dark:text-slate-500">{c.phone}</div>}
                             </div>
                           </label>

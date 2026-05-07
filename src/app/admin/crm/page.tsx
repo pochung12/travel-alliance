@@ -5,7 +5,7 @@ import { supabase, Customer, Tour } from "@/lib/supabase";
 import {
   Plus, Search, Users, ScanLine, Upload, FileSpreadsheet,
   Loader2, CheckCircle, AlertCircle, X, Settings, Tag, Trash2, CheckCircle2, Layers,
-  GitMerge, ChevronRight, ArrowUp, ArrowDown, ChevronsUpDown,
+  GitMerge, ChevronRight, ArrowUp, ArrowDown, ChevronsUpDown, Pencil,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -322,6 +322,8 @@ export default function CRMPage() {
 
   // tour records per customer
   const [custTours, setCustTours] = useState<Record<string, Pick<Tour,"id"|"name">[]>>({});
+  const [allTours,  setAllTours]  = useState<Pick<Tour,"id"|"name"|"status">[]>([]);
+  const [tourPickerId, setTourPickerId] = useState<string|null>(null);
 
   // labels
   const [allLabels,     setAllLabels]     = useState<CrmLabel[]>([]);
@@ -450,10 +452,10 @@ export default function CRMPage() {
   };
 
   const loadCustTours = async () => {
-    const { data } = await supabase
-      .from("customer_tours")
-      .select("customer_id, tours(id, name)")
-      .neq("status", "cancelled");
+    const [{ data }, { data: tours }] = await Promise.all([
+      supabase.from("customer_tours").select("customer_id, tours(id, name)").neq("status", "cancelled"),
+      supabase.from("tours").select("id,name,status").order("start_date", { ascending: false }),
+    ]);
     const map: Record<string, Pick<Tour, "id" | "name">[]> = {};
     (data || []).forEach((row: { customer_id: string; tours: { id: string; name: string }[] | null }) => {
       const tourArr = Array.isArray(row.tours) ? row.tours : (row.tours ? [row.tours] : []);
@@ -464,6 +466,26 @@ export default function CRMPage() {
       });
     });
     setCustTours(map);
+    setAllTours((tours || []) as Pick<Tour,"id"|"name"|"status">[]);
+  };
+
+  const toggleCustTour = async (custId: string, tour: Pick<Tour,"id"|"name">) => {
+    const already = (custTours[custId] || []).find(t => t.id === tour.id);
+    if (already) {
+      if (!confirm(`確定移除「${customers.find(c=>c.id===custId)?.name}」從「${tour.name}」？`)) return;
+      await supabase.from("customer_tours").delete()
+        .eq("customer_id", custId).eq("tour_id", tour.id);
+      setCustTours(prev => ({ ...prev, [custId]: (prev[custId]||[]).filter(t=>t.id!==tour.id) }));
+    } else {
+      // 取該旅客的預設餐食偏好
+      const cust = customers.find(c => c.id === custId);
+      await supabase.from("customer_tours").insert([{
+        customer_id: custId,
+        tour_id: tour.id,
+        meal_preference: cust?.meal_preference || "",
+      }]);
+      setCustTours(prev => ({ ...prev, [custId]: [...(prev[custId]||[]), { id: tour.id, name: tour.name }] }));
+    }
   };
 
   // ⚡ 三個查詢全部並行
@@ -1037,7 +1059,7 @@ export default function CRMPage() {
                           </button>
                         </div>
                       ) : col.key==="tours" ? (
-                        <div className="flex flex-wrap gap-1">
+                        <div className="group/cell flex flex-wrap gap-1 items-center">
                           {(custTours[c.id]||[]).length===0 ? (
                             <span className="text-slate-300 dark:text-slate-600 text-xs">—</span>
                           ) : (custTours[c.id]).map(t => {
@@ -1050,6 +1072,10 @@ export default function CRMPage() {
                               </span>
                             );
                           })}
+                          <button onClick={e=>{e.stopPropagation();setTourPickerId(c.id);}}
+                            className="opacity-0 group-hover/cell:opacity-100 transition-opacity p-0.5 text-slate-400 hover:text-blue-500 flex-shrink-0" title="編輯參團">
+                            <Pencil className="w-3 h-3" />
+                          </button>
                         </div>
                       ) : col.key==="meal_preference" ? (
                         <div className="flex flex-wrap gap-1">
@@ -1331,6 +1357,49 @@ export default function CRMPage() {
       {/* ══════════════════════════════════════════════════════════════════════
           LABEL PICKER MODAL
          ══════════════════════════════════════════════════════════════════════ */}
+      {/* ══ TOUR PICKER MODAL ══ */}
+      {tourPickerId && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4"
+          onClick={()=>setTourPickerId(null)}>
+          <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl p-4 w-72 max-h-[70vh] flex flex-col" onClick={e=>e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                編輯參團紀錄
+              </p>
+              <button onClick={()=>setTourPickerId(null)}><X className="w-4 h-4 text-slate-400" /></button>
+            </div>
+            <p className="text-xs text-slate-400 dark:text-slate-500 mb-2">
+              {customers.find(c=>c.id===tourPickerId)?.name}
+            </p>
+            {allTours.length===0 ? (
+              <p className="text-xs text-slate-400 text-center py-4">尚無出團資料</p>
+            ) : (
+              <div className="overflow-y-auto space-y-0.5 flex-1">
+                {allTours.map(t => {
+                  const isIn = !!(custTours[tourPickerId]||[]).find(x=>x.id===t.id);
+                  const clr  = tourTagColor(t.id);
+                  const STATUS_LABEL: Record<string,string> = {
+                    planning:"規劃中", confirmed:"已確認", ongoing:"進行中",
+                    completed:"已完成", cancelled:"已取消",
+                  };
+                  return (
+                    <button key={t.id} onClick={()=>toggleCustTour(tourPickerId, t)}
+                      className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors text-left ${
+                        isIn ? "bg-slate-100 dark:bg-slate-700" : "hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                      }`}>
+                      <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{backgroundColor: clr.bg, outline: `2px solid ${clr.text}`, outlineOffset:"0px"}} />
+                      <span className="flex-1 text-slate-700 dark:text-slate-200 truncate">{t.name}</span>
+                      <span className="text-[10px] text-slate-400 dark:text-slate-500 shrink-0">{STATUS_LABEL[t.status] || t.status}</span>
+                      {isIn && <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {labelPickerId && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4"
           onClick={()=>setLabelPickerId(null)}>
