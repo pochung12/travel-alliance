@@ -6,7 +6,7 @@ import CostSpreadsheet from "@/components/CostSpreadsheet";
 import PaymentsTab from "@/components/PaymentsTab";
 import ItineraryTab from "@/components/ItineraryTab";
 import FlightsTab from "@/components/FlightsTab";
-import { ArrowLeft, Save, Trash2, UserPlus, X, Search, BedDouble, Pencil, UtensilsCrossed, SlidersHorizontal, GripVertical } from "lucide-react";
+import { ArrowLeft, Save, Trash2, UserPlus, X, Search, BedDouble, Pencil, UtensilsCrossed, SlidersHorizontal, GripVertical, Users } from "lucide-react";
 
 // ─── Meal options ──────────────────────────────────────────────────────────────
 const MEAL_OPTIONS = [
@@ -75,6 +75,8 @@ const STATUS_COLOR: Record<string, string> = {
 
 const input = "w-full border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400";
 
+type BulkPreviewEntry = { name: string; existing: Customer | null; inTour: boolean; selected: boolean };
+
 export default function GroupDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router  = useRouter();
@@ -113,6 +115,12 @@ export default function GroupDetailPage() {
   // 旅客排序
   const [rowOrder,      setRowOrder]      = useState<string[]>([]);
   const [dragPartIdx,   setDragPartIdx]   = useState<number | null>(null);
+  // 批量輸入旅客
+  const [showBulkModal,   setShowBulkModal]   = useState(false);
+  const [bulkText,        setBulkText]        = useState("");
+  const [bulkSubmitting,  setBulkSubmitting]  = useState(false);
+  const [bulkPreview,     setBulkPreview]     = useState<BulkPreviewEntry[]>([]);
+  const [bulkParsed,      setBulkParsed]      = useState(false);
 
   const loadTour = async () => {
     const { data } = await supabase.from("tours").select("*").eq("id", id).single();
@@ -340,6 +348,82 @@ export default function GroupDetailPage() {
   const savePartOrder = (order: string[]) => {
     setRowOrder(order);
     localStorage.setItem(`ta_part_order_${id}`, JSON.stringify(order));
+  };
+
+  const closeBulkModal = () => {
+    setShowBulkModal(false);
+    setBulkText("");
+    setBulkPreview([]);
+    setBulkParsed(false);
+  };
+
+  const parseBulkNames = () => {
+    const names = bulkText
+      .split(/[\n,，、]/)
+      .map(n => n.trim())
+      .filter(Boolean);
+    const seen = new Set<string>();
+    const preview: BulkPreviewEntry[] = [];
+    for (const name of names) {
+      if (seen.has(name)) continue;
+      seen.add(name);
+      const existing = allCustomers.find(c => c.name === name) || null;
+      const inTour = existing ? participants.some(p => p.customer_id === existing.id) : false;
+      preview.push({ name, existing, inTour, selected: !inTour });
+    }
+    setBulkPreview(preview);
+    setBulkParsed(true);
+  };
+
+  const submitBulk = async () => {
+    const toAdd = bulkPreview.filter(e => e.selected && !e.inTour);
+    if (toAdd.length === 0) return;
+    setBulkSubmitting(true);
+
+    // 1. 新建 CRM 裡不存在的旅客
+    const toCreate = toAdd.filter(e => !e.existing);
+    let createdCustomers: Customer[] = [];
+    if (toCreate.length > 0) {
+      const newRecords = toCreate.map(e => ({
+        name: e.name, phone: "", email: "",
+        id_number: "", passport: "", passport_expiry: "",
+        taibao_number: "", taibao_expiry: "",
+        birthday: "", gender: "other" as const,
+        address: "", emergency_contact: "", emergency_phone: "",
+        notes: "", meal_preference: "",
+        id_card_image: "", passport_image: "", taibao_image: "", name_en: "",
+      }));
+      const { data, error } = await supabase.from("customers").insert(newRecords).select();
+      if (error) { alert("建立旅客失敗：" + error.message); setBulkSubmitting(false); return; }
+      createdCustomers = (data || []) as Customer[];
+    }
+
+    // 2. 合併全部旅客 ID（已存在 + 新建）
+    const allToAddIds = [
+      ...toAdd.filter(e => e.existing).map(e => e.existing!.id),
+      ...createdCustomers.map(c => c.id),
+    ];
+
+    // 3. 加入 customer_tours
+    const rows = allToAddIds.map(cid => ({
+      customer_id: cid,
+      tour_id: id,
+      status: "registered",
+      paid_amount: 0,
+      notes: "",
+      participant_type: "adult",
+      meal_preference: "",
+    }));
+    const { error: ctError } = await supabase.from("customer_tours").insert(rows);
+    if (ctError) { alert("加入出團失敗：" + ctError.message); setBulkSubmitting(false); return; }
+
+    setBulkSubmitting(false);
+    closeBulkModal();
+    // 重新載入旅客列表 + 更新所有旅客清單（含剛建立的新旅客）
+    await loadParticipants();
+    const { data: newCusts } = await supabase
+      .from("customers").select("id,name,phone,email,meal_preference").order("name");
+    setAllCustomers((newCusts || []) as Customer[]);
   };
 
   if (!tour) return (
@@ -622,6 +706,10 @@ export default function GroupDetailPage() {
                     <BedDouble className="w-3.5 h-3.5" /> 按房號排序
                   </button>
                 )}
+                <button onClick={() => setShowBulkModal(true)}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors">
+                  <Users className="w-3.5 h-3.5" /> 批量輸入
+                </button>
                 <button onClick={() => setShowAddModal(true)}
                   className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
                   <UserPlus className="w-3.5 h-3.5" /> 加入旅客
@@ -1023,6 +1111,108 @@ export default function GroupDetailPage() {
           </>
         );
       })()}
+
+      {/* Bulk input modal */}
+      {showBulkModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-lg flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="px-5 py-4 border-b dark:border-slate-700 flex items-center justify-between flex-shrink-0">
+              <h2 className="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                <Users className="w-4 h-4 text-emerald-600" /> 批量輸入旅客名字
+              </h2>
+              <button onClick={closeBulkModal} className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="px-5 py-4 space-y-4 overflow-y-auto flex-1">
+              {!bulkParsed ? (
+                <>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    每行一位旅客姓名，或用逗號、頓號分隔。<br />
+                    新旅客會自動建立並加入 CRM。
+                  </p>
+                  <textarea
+                    className="w-full border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
+                    rows={8}
+                    placeholder={"王小明\n李大華\n張美玲\n..."}
+                    value={bulkText}
+                    onChange={e => setBulkText(e.target.value)}
+                    autoFocus
+                  />
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    共 {bulkPreview.length} 位 ·{" "}
+                    <span className="text-emerald-600 dark:text-emerald-400">{bulkPreview.filter(e => e.existing && !e.inTour).length} 已在 CRM</span>
+                    {" · "}
+                    <span className="text-blue-600 dark:text-blue-400">{bulkPreview.filter(e => !e.existing).length} 新旅客</span>
+                    {bulkPreview.filter(e => e.inTour).length > 0 && (
+                      <> · <span className="text-amber-500">{bulkPreview.filter(e => e.inTour).length} 已在此團</span></>
+                    )}
+                  </p>
+                  <div className="space-y-1 max-h-80 overflow-y-auto -mx-1 px-1">
+                    {bulkPreview.map((entry, i) => (
+                      <div key={i} className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors ${
+                        entry.inTour
+                          ? "bg-amber-50 dark:bg-amber-900/20 opacity-60"
+                          : "hover:bg-slate-50 dark:hover:bg-slate-700/30 cursor-pointer"
+                      }`}
+                        onClick={() => {
+                          if (entry.inTour) return;
+                          const next = [...bulkPreview];
+                          next[i] = { ...next[i], selected: !next[i].selected };
+                          setBulkPreview(next);
+                        }}>
+                        <input type="checkbox"
+                          checked={entry.selected}
+                          disabled={entry.inTour}
+                          onChange={() => {}}
+                          className="w-4 h-4 accent-blue-600 flex-shrink-0 pointer-events-none" />
+                        <span className="text-sm font-medium text-slate-800 dark:text-slate-100 flex-1">{entry.name}</span>
+                        {entry.inTour ? (
+                          <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300 flex-shrink-0">已在此團</span>
+                        ) : entry.existing ? (
+                          <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 flex-shrink-0">已在 CRM</span>
+                        ) : (
+                          <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 flex-shrink-0">新旅客</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 py-4 border-t dark:border-slate-700 flex justify-end gap-3 flex-shrink-0">
+              {bulkParsed ? (
+                <>
+                  <button onClick={() => { setBulkParsed(false); setBulkPreview([]); }}
+                    className="text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 px-4 py-2 rounded-lg">← 上一步</button>
+                  <button
+                    onClick={submitBulk}
+                    disabled={bulkSubmitting || bulkPreview.filter(e => e.selected && !e.inTour).length === 0}
+                    className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-40 transition-colors">
+                    {bulkSubmitting ? "處理中…" : `加入 ${bulkPreview.filter(e => e.selected && !e.inTour).length} 位旅客`}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button onClick={closeBulkModal}
+                    className="text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 px-4 py-2 rounded-lg">取消</button>
+                  <button onClick={parseBulkNames} disabled={!bulkText.trim()}
+                    className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-40 transition-colors">
+                    預覽 →
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add participant modal */}
       {showAddModal && (() => {
