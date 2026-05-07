@@ -814,29 +814,23 @@ export default function CRMPage() {
                   {visibleCols.map(col=>(
                     <td key={col.key} className="px-4 py-2.5 truncate" style={{width:col.width,maxWidth:col.width}}>
                       {col.key==="name" ? (
-                        <div className="group/cell">
-                          <div className="flex items-center gap-1">
-                            <Link href={`/admin/crm/${c.id}`} className="font-medium text-violet-600 hover:underline">{c.name}</Link>
-                            <button onClick={e=>{e.stopPropagation();setLabelPickerId(c.id);}}
-                              className="opacity-0 group-hover/cell:opacity-100 transition-opacity p-0.5 text-slate-400 hover:text-violet-500" title="編輯標籤">
-                              <Tag className="w-3 h-3" />
-                            </button>
-                          </div>
-                          {(custLabels[c.id]||[]).length>0 && (
-                            <div className="flex flex-wrap gap-1 mt-0.5">
-                              {(custLabels[c.id]||[]).map(lid=>{
-                                const label=allLabels.find(l=>l.id===lid);
-                                if (!label) return null;
-                                return (
-                                  <span key={lid} className="inline-flex items-center px-1.5 py-px rounded text-[10px] font-medium text-white cursor-pointer"
-                                    style={{backgroundColor:label.color}}
-                                    onClick={()=>setLabelPickerId(c.id)}>
-                                    {label.name}
-                                  </span>
-                                );
-                              })}
-                            </div>
-                          )}
+                        <div className="group/cell flex items-center gap-1.5 flex-wrap min-w-0">
+                          <Link href={`/admin/crm/${c.id}`} className="font-medium text-blue-500 hover:text-blue-400 hover:underline flex-shrink-0">{c.name}</Link>
+                          {(custLabels[c.id]||[]).map(lid=>{
+                            const label=allLabels.find(l=>l.id===lid);
+                            if (!label) return null;
+                            return (
+                              <span key={lid} className="inline-flex items-center px-1.5 py-px rounded text-[10px] font-medium text-white cursor-pointer flex-shrink-0"
+                                style={{backgroundColor:label.color}}
+                                onClick={()=>setLabelPickerId(c.id)}>
+                                {label.name}
+                              </span>
+                            );
+                          })}
+                          <button onClick={e=>{e.stopPropagation();setLabelPickerId(c.id);}}
+                            className="opacity-0 group-hover/cell:opacity-100 transition-opacity p-0.5 text-slate-400 hover:text-violet-500 flex-shrink-0" title="編輯標籤">
+                            <Tag className="w-3 h-3" />
+                          </button>
                         </div>
                       ) : col.key==="passport"||col.key==="id_number"||col.key==="taibao_number" ? (
                         <span className="text-slate-600 dark:text-slate-300 font-mono text-xs">{getCellValue(c,col.key)}</span>
