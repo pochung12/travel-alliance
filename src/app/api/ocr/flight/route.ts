@@ -14,7 +14,8 @@ export async function POST(req: NextRequest) {
 回傳 JSON 陣列，每筆代表一個航段（flight segment）。欄位如下（無法辨識填空字串 ""）：
 - passenger_name: 旅客姓名（多人用頓號分隔，如 "CHANG/POCHUNG, WANG/XIAOMIN"）
 - pnr: PNR 訂位代號（通常6碼英數字，如 "ABCDEF"）
-- ticket_number: 票號（13位數字或含航空公司代碼前綴，如 "297-1234567890"）
+- ticket_number: 去程票號（此航段的票號，13位數字或含航空公司代碼前綴，如 "297-1234567890"）
+- ticket_number_return: 回程票號（若此航段有對應的回程且票號不同，填入回程票號；否則填 ""）
 - flight_number: 航班號（如 "CI100", "CX101", "BR205"）
 - flight_date: 航班日期（YYYY-MM-DD，例如 "2024-12-25"）
 - departure_time: 出發時間（HH:MM 24小時制，如 "10:30"）
@@ -26,8 +27,8 @@ export async function POST(req: NextRequest) {
 
 只回傳 JSON 陣列，不要有任何說明文字或 markdown 格式。
 若有多個航段（去程/回程/轉機），每個航段獨立列出。
-範例：
-[{"passenger_name":"CHANG/POCHUNG MR","pnr":"ABCDEF","ticket_number":"297-1234567890","flight_number":"CI100","flight_date":"2024-12-25","departure_time":"10:30","arrival_time":"12:45","departure_airport":"TPE","departure_terminal":"T2","arrival_airport":"HKG","arrival_terminal":"T1"},{"passenger_name":"CHANG/POCHUNG MR","pnr":"ABCDEF","ticket_number":"297-1234567890","flight_number":"CI101","flight_date":"2025-01-02","departure_time":"14:00","arrival_time":"16:30","departure_airport":"HKG","departure_terminal":"T1","arrival_airport":"TPE","arrival_terminal":"T2"}]`;
+範例（去程票號與回程票號不同）：
+[{"passenger_name":"CHANG/POCHUNG MR","pnr":"ABCDEF","ticket_number":"297-1234567890","ticket_number_return":"297-9876543210","flight_number":"CI100","flight_date":"2024-12-25","departure_time":"10:30","arrival_time":"12:45","departure_airport":"TPE","departure_terminal":"T2","arrival_airport":"HKG","arrival_terminal":"T1"},{"passenger_name":"CHANG/POCHUNG MR","pnr":"ABCDEF","ticket_number":"297-9876543210","ticket_number_return":"","flight_number":"CI101","flight_date":"2025-01-02","departure_time":"14:00","arrival_time":"16:30","departure_airport":"HKG","departure_terminal":"T1","arrival_airport":"TPE","arrival_terminal":"T2"}]`;
 
     let messages: object[];
     if (imageBase64) {

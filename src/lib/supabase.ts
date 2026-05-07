@@ -104,7 +104,8 @@ export interface TourFlight {
   tour_id: string;
   passenger_name: string;
   pnr: string;
-  ticket_number: string;
+  ticket_number: string;         // 去程票號
+  ticket_number_return: string;  // 回程票號
   flight_number: string;
   flight_date: string;        // YYYY-MM-DD
   departure_time: string;     // HH:MM

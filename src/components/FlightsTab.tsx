@@ -9,7 +9,7 @@ import {
 type ParsedFlight = Omit<TourFlight, "id" | "tour_id" | "created_at">;
 
 const EMPTY_FLIGHT: ParsedFlight = {
-  passenger_name: "", pnr: "", ticket_number: "", flight_number: "",
+  passenger_name: "", pnr: "", ticket_number: "", ticket_number_return: "", flight_number: "",
   flight_date: "", departure_time: "", arrival_time: "",
   departure_airport: "", departure_terminal: "",
   arrival_airport: "", arrival_terminal: "",
@@ -42,7 +42,8 @@ async function compressImg(file: File): Promise<string> {
 const FLIGHT_FIELDS: { key: keyof ParsedFlight; label: string; width: string; mono?: boolean }[] = [
   { key: "passenger_name",    label: "旅客姓名",   width: "min-w-[120px] max-w-[180px]" },
   { key: "pnr",               label: "PNR",        width: "min-w-[80px] max-w-[100px]",  mono: true },
-  { key: "ticket_number",     label: "票號",        width: "min-w-[120px] max-w-[160px]", mono: true },
+  { key: "ticket_number",        label: "去程票號",    width: "min-w-[120px] max-w-[160px]", mono: true },
+  { key: "ticket_number_return", label: "回程票號",    width: "min-w-[120px] max-w-[160px]", mono: true },
   { key: "flight_number",     label: "航班",        width: "min-w-[70px] max-w-[90px]",   mono: true },
   { key: "flight_date",       label: "日期",        width: "min-w-[100px] max-w-[120px]" },
   { key: "departure_time",    label: "出發",        width: "min-w-[60px] max-w-[75px]",   mono: true },
