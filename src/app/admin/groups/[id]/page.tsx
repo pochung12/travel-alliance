@@ -435,35 +435,35 @@ export default function GroupDetailPage() {
   const unjoined = allCustomers.filter(c => !participants.find(p => p.customer_id === c.id));
 
   return (
-    <div className="p-6 space-y-5 max-w-5xl">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-5 max-w-5xl">
       {/* Back + title */}
       <div className="flex items-start justify-between">
-        <div className="flex items-center gap-3">
-          <Link href="/admin/groups" className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors">
+        <div className="flex items-center gap-2 md:gap-3 min-w-0">
+          <Link href="/admin/groups" className="p-2 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors shrink-0">
             <ArrowLeft className="w-5 h-5" />
           </Link>
-          <div>
-            <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">{tour.name}</h1>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-sm text-slate-500 dark:text-slate-400">{tour.destination}</span>
-              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[tour.status]}`}>
+          <div className="min-w-0">
+            <h1 className="text-lg md:text-xl font-bold text-slate-800 dark:text-slate-100 truncate">{tour.name}</h1>
+            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+              {tour.destination && <span className="text-sm text-slate-500 dark:text-slate-400 truncate">{tour.destination}</span>}
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${STATUS_COLOR[tour.status]}`}>
                 {STATUS_OPTIONS.find(s => s.value === tour.status)?.label}
               </span>
             </div>
           </div>
         </div>
-        <button onClick={deleteTour} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors">
+        <button onClick={deleteTour} className="p-2 text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors shrink-0 ml-2">
           <Trash2 className="w-5 h-5" />
         </button>
       </div>
 
-      {/* Tabs */}
-      <div className="flex border-b border-slate-200 dark:border-slate-700 gap-1">
-        {([["info","基本資料"],["costs","費用試算"],["payments","收付款"],["participants","報名旅客"],["flights","✈️ 機票紀錄"],["itin_c","旅客版行程"],["itin_t","同業版行程"]] as const).map(([tab, label]) => (
+      {/* Tabs — scrollable on mobile */}
+      <div className="flex border-b border-slate-200 dark:border-slate-700 gap-0.5 overflow-x-auto scrollbar-none">
+        {([["info","基本資料"],["costs","費用試算"],["payments","收付款"],["participants","旅客"],["flights","✈️ 機票"],["itin_c","旅客行程"],["itin_t","同業行程"]] as const).map(([tab, label]) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`px-4 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+            className={`px-3 md:px-4 py-2.5 text-xs md:text-sm font-medium border-b-2 whitespace-nowrap transition-colors shrink-0 ${
               activeTab === tab
                 ? "border-blue-600 text-blue-600"
                 : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
@@ -471,7 +471,7 @@ export default function GroupDetailPage() {
           >
             {label}
             {tab === "participants" && participants.length > 0 && (
-              <span className="ml-1.5 text-xs bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded-full">
+              <span className="ml-1 text-xs bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-1.5 py-0.5 rounded-full">
                 {participants.length}
               </span>
             )}
@@ -481,8 +481,8 @@ export default function GroupDetailPage() {
 
       {/* ── Tab: Info ── */}
       {activeTab === "info" && (
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm p-5 space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm p-4 md:p-5 space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="col-span-2">
               <label className={lbl}>團名 *</label>
               <input className={input} value={form.name || ""} onChange={e => setForm({...form, name: e.target.value})} />
@@ -505,7 +505,7 @@ export default function GroupDetailPage() {
               <label className={lbl}>回程日</label>
               <input type="date" className={input} value={form.end_date || ""} onChange={e => setForm({...form, end_date: e.target.value})} />
             </div>
-            <div className="col-span-2">
+            <div className="col-span-1 sm:col-span-2">
               <label className={lbl}>各類別人數與售價</label>
               <div className="mt-1 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
                 {/* header */}
@@ -629,8 +629,8 @@ export default function GroupDetailPage() {
         return (
           <div className="space-y-4">
             {/* header */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
+            <div className="flex items-start justify-between gap-2 flex-wrap">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="font-semibold text-slate-700 dark:text-slate-200 text-sm">報名旅客</h3>
                 <span className="text-xs bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded-full">{participants.length} 人</span>
                 {roomNums.length>0 && (
@@ -639,7 +639,7 @@ export default function GroupDetailPage() {
                   </span>
                 )}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 {/* 欄位設定 */}
                 <div className="relative">
                   <button
@@ -803,7 +803,8 @@ export default function GroupDetailPage() {
                 還沒有旅客報名此團
               </div>
             ) : (
-              <div className="space-y-1.5">
+              <div className="overflow-x-auto -mx-4 md:mx-0 px-4 md:px-0">
+              <div className="space-y-1.5 min-w-[540px] md:min-w-0">
                 {orderedParts.map((p, idx) => {
                   const palette = p.room_number ? paletteMap.get(p.room_number) ?? ROOM_PALETTES[0] : null;
                   return (
@@ -1004,6 +1005,7 @@ export default function GroupDetailPage() {
                     </div>
                   );
                 })}
+              </div>
               </div>
             )}
           </div>

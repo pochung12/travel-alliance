@@ -432,10 +432,10 @@ export default function AdminDashboard() {
   );
 
   return (
-    <div className="p-6 space-y-5">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-5">
       {/* Header row */}
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100">儀表板</h1>
+        <h1 className="text-xl md:text-2xl font-bold text-slate-800 dark:text-slate-100">儀表板</h1>
         <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-700/60 rounded-xl p-1">
           {([
             { key: "calendar", label: "日曆模式",  Icon: CalendarDays },

@@ -69,26 +69,26 @@ export default function GroupsPage() {
   };
 
   return (
-    <div className="p-6 space-y-5">
+    <div className="p-4 md:p-6 space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-          <Map className="w-6 h-6 text-blue-600" /> 團管理
+        <h1 className="text-xl md:text-2xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+          <Map className="w-5 h-5 md:w-6 md:h-6 text-blue-600" /> 團管理
         </h1>
         <button
           onClick={() => setShowModal(true)}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded-lg transition-colors"
+          className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm px-3 md:px-4 py-2 rounded-lg transition-colors"
         >
-          <Plus className="w-4 h-4" /> 新增出發團
+          <Plus className="w-4 h-4" /> <span className="hidden sm:inline">新增出發團</span><span className="sm:hidden">新增</span>
         </button>
       </div>
 
       {/* Filter + Search */}
-      <div className="flex flex-wrap gap-3 items-center">
+      <div className="space-y-2 sm:space-y-0 sm:flex sm:flex-wrap sm:gap-3 sm:items-center">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <input
-            className="pl-9 pr-4 py-2 border border-slate-200 dark:border-slate-600 rounded-lg text-sm w-56 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400 placeholder:text-slate-400"
+            className="pl-9 pr-4 py-2 border border-slate-200 dark:border-slate-600 rounded-lg text-sm w-full sm:w-52 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400 placeholder:text-slate-400"
             placeholder="搜尋團名、目的地…"
             value={search}
             onChange={e => setSearch(e.target.value)}
@@ -99,7 +99,7 @@ export default function GroupsPage() {
             <button
               key={opt.value}
               onClick={() => setFilter(opt.value)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                 filter === opt.value
                   ? "bg-blue-600 text-white"
                   : "bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
@@ -111,55 +111,83 @@ export default function GroupsPage() {
         </div>
       </div>
 
-      {/* Table */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <div className="w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      {/* Table — desktop / Card list — mobile */}
+      {loading ? (
+        <div className="flex justify-center py-12">
+          <div className="w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 text-center py-12 text-slate-400 text-sm">
+          {search || filter !== "all" ? "沒有符合的團" : "還沒有出發團，點右上角新增"}
+        </div>
+      ) : (
+        <>
+          {/* Mobile card list */}
+          <div className="sm:hidden space-y-2.5">
+            {filtered.map(tour => (
+              <Link key={tour.id} href={`/admin/groups/${tour.id}`}
+                className="block bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm p-4 active:bg-slate-50 dark:active:bg-slate-700/50 transition-colors">
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <div className="font-semibold text-blue-600 dark:text-blue-400 leading-snug">{tour.name}</div>
+                  <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0 ${STATUS_COLOR[tour.status]}`}>
+                    {STATUS_LABEL[tour.status]}
+                  </span>
+                </div>
+                <div className="text-xs text-slate-500 dark:text-slate-400 space-y-0.5">
+                  {tour.destination && <div>📍 {tour.destination}</div>}
+                  <div className="flex items-center gap-3 flex-wrap">
+                    {tour.start_date && <span>✈ {tour.start_date}{tour.end_date ? ` ～ ${tour.end_date}` : ""}</span>}
+                    <span>👥 {tour.pax} 人</span>
+                    {tour.selling_price ? <span>NT${tour.selling_price.toLocaleString()}/人</span> : null}
+                  </div>
+                </div>
+              </Link>
+            ))}
           </div>
-        ) : filtered.length === 0 ? (
-          <div className="text-center py-12 text-slate-400 text-sm">
-            {search || filter !== "all" ? "沒有符合的團" : "還沒有出發團，點右上角新增"}
+
+          {/* Desktop table */}
+          <div className="hidden sm:block bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm min-w-[600px]">
+                <thead className="bg-slate-50 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 text-xs uppercase">
+                  <tr>
+                    <th className="text-left px-4 py-3">團名</th>
+                    <th className="text-left px-4 py-3">目的地</th>
+                    <th className="text-left px-4 py-3">出發日</th>
+                    <th className="text-left px-4 py-3">回程日</th>
+                    <th className="text-right px-4 py-3">人數</th>
+                    <th className="text-right px-4 py-3">售價/人</th>
+                    <th className="text-center px-4 py-3">狀態</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50 dark:divide-slate-700/50">
+                  {filtered.map(tour => (
+                    <tr key={tour.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors">
+                      <td className="px-4 py-3">
+                        <Link href={`/admin/groups/${tour.id}`} className="font-medium text-blue-600 dark:text-blue-400 hover:underline">
+                          {tour.name}
+                        </Link>
+                      </td>
+                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{tour.destination || "—"}</td>
+                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{tour.start_date || "—"}</td>
+                      <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{tour.end_date || "—"}</td>
+                      <td className="px-4 py-3 text-right text-slate-600 dark:text-slate-300">{tour.pax}</td>
+                      <td className="px-4 py-3 text-right text-slate-600 dark:text-slate-300">
+                        {tour.selling_price ? `NT$${tour.selling_price.toLocaleString()}` : "—"}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[tour.status]}`}>
+                          {STATUS_LABEL[tour.status]}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 text-xs uppercase">
-              <tr>
-                <th className="text-left px-4 py-3">團名</th>
-                <th className="text-left px-4 py-3">目的地</th>
-                <th className="text-left px-4 py-3">出發日</th>
-                <th className="text-left px-4 py-3">回程日</th>
-                <th className="text-right px-4 py-3">人數</th>
-                <th className="text-right px-4 py-3">售價/人</th>
-                <th className="text-center px-4 py-3">狀態</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50 dark:divide-slate-700/50">
-              {filtered.map(tour => (
-                <tr key={tour.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors">
-                  <td className="px-4 py-3">
-                    <Link href={`/admin/groups/${tour.id}`} className="font-medium text-blue-600 dark:text-blue-400 hover:underline">
-                      {tour.name}
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{tour.destination || "—"}</td>
-                  <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{tour.start_date || "—"}</td>
-                  <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{tour.end_date || "—"}</td>
-                  <td className="px-4 py-3 text-right text-slate-600 dark:text-slate-300">{tour.pax}</td>
-                  <td className="px-4 py-3 text-right text-slate-600 dark:text-slate-300">
-                    {tour.selling_price ? `NT$${tour.selling_price.toLocaleString()}` : "—"}
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[tour.status]}`}>
-                      {STATUS_LABEL[tour.status]}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+        </>
+      )}
 
       {/* Create Modal */}
       {showModal && (

@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase, Profile } from "@/lib/supabase";
 import Sidebar from "./Sidebar";
+import BottomNav from "./BottomNav";
+import MobileHeader from "./MobileHeader";
 
 export default function AdminShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -43,14 +45,28 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
 
   return (
     <div className="flex min-h-screen bg-slate-50 dark:bg-slate-950 transition-colors duration-200">
-      <Sidebar
-        collapsed={collapsed}
-        onToggleCollapse={() => setCollapsed(c => !c)}
-        profile={profile}
-      />
-      <main className="flex-1 overflow-auto min-w-0">
+
+      {/* Desktop sidebar — hidden on mobile */}
+      <div className="hidden lg:block">
+        <Sidebar
+          collapsed={collapsed}
+          onToggleCollapse={() => setCollapsed(c => !c)}
+          profile={profile}
+        />
+      </div>
+
+      {/* Mobile top header — hidden on desktop */}
+      <MobileHeader profile={profile} />
+
+      {/* Main content */}
+      <main className="flex-1 overflow-auto min-w-0
+        pt-14 pb-[calc(4rem+env(safe-area-inset-bottom))]
+        lg:pt-0 lg:pb-0">
         {children}
       </main>
+
+      {/* Mobile bottom nav — hidden on desktop */}
+      <BottomNav role={profile?.role} />
     </div>
   );
 }
