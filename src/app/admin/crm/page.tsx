@@ -225,22 +225,14 @@ function ExpiryBadge({ dateStr }: { dateStr?: string }) {
   const exp   = new Date(dateStr);
   const days  = Math.floor((exp.getTime() - today.getTime()) / 86400000);
   const label = exp.toLocaleDateString("zh-TW");
-  if (days < 0)   return (
-    <div className="flex flex-col gap-0.5">
-      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 whitespace-nowrap">過期</span>
-      <span className="text-[11px] text-red-400 dark:text-red-500 font-mono">{label}</span>
-    </div>
-  );
-  if (days <= 90) return (
-    <div className="flex flex-col gap-0.5">
-      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400 whitespace-nowrap">快到期</span>
-      <span className="text-[11px] text-yellow-600 dark:text-yellow-500 font-mono">{label}</span>
-    </div>
-  );
+  const badge =
+    days < 0   ? <span className="px-1 py-px rounded text-[9px] font-semibold bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 whitespace-nowrap leading-none">過期</span> :
+    days <= 90 ? <span className="px-1 py-px rounded text-[9px] font-semibold bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400 whitespace-nowrap leading-none">快到期</span> :
+                 <span className="px-1 py-px rounded text-[9px] font-semibold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 whitespace-nowrap leading-none">有效</span>;
   return (
-    <div className="flex flex-col gap-0.5">
-      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 whitespace-nowrap">有效</span>
-      <span className="text-[11px] text-slate-400 dark:text-slate-500 font-mono">{label}</span>
+    <div className="flex items-center gap-1.5">
+      <span className="text-xs font-mono text-slate-500 dark:text-slate-400 whitespace-nowrap">{label}</span>
+      {badge}
     </div>
   );
 }
