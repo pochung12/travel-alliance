@@ -727,6 +727,7 @@ export default function GroupDetailPage() {
                           { layout: "full",     label: "完整名單",   desc: "A4 橫式，14欄" },
                           { layout: "payment",  label: "收付款狀態", desc: "A4 直式，金額" },
                           { layout: "boarding", label: "登機名單",   desc: "A4 橫式，精簡" },
+                          { layout: "hotel",    label: "飯店名單",   desc: "A4 橫式，欄位可選" },
                         ].map(({ layout, label, desc }) => (
                           <button
                             key={layout}

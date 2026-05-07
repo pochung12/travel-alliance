@@ -4,7 +4,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import { createClient } from "@supabase/supabase-js";
 import { Tour, Customer, CustomerTour, ParticipantType } from "@/lib/supabase";
 
-// ─── local supabase (no auth needed for same project) ─────────────────────────
+// ─── local supabase ───────────────────────────────────────────────────────────
 const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -35,15 +35,50 @@ function calcAge(birthday?: string, refDate?: string): string {
   return String(age);
 }
 
+// ─── Hotel column definitions ─────────────────────────────────────────────────
+const HOTEL_COL_DEFS = [
+  { key: "seq",             label: "#",       defaultOn: true  },
+  { key: "name",            label: "中文姓名",  defaultOn: true  },
+  { key: "name_en",         label: "英文姓名",  defaultOn: true  },
+  { key: "gender",          label: "性別",     defaultOn: true  },
+  { key: "birthday",        label: "生日",     defaultOn: false },
+  { key: "age",             label: "年齡",     defaultOn: true  },
+  { key: "id_number",       label: "身分證號",  defaultOn: false },
+  { key: "passport",        label: "護照號碼",  defaultOn: true  },
+  { key: "passport_expiry", label: "護照效期",  defaultOn: true  },
+  { key: "taibao",          label: "台胞證號",  defaultOn: true  },
+  { key: "taibao_expiry",   label: "台胞效期",  defaultOn: true  },
+  { key: "room",            label: "房號",     defaultOn: true  },
+  { key: "type",            label: "身份類別",  defaultOn: false },
+  { key: "meal",            label: "特殊餐食",  defaultOn: false },
+  { key: "phone",           label: "電話",     defaultOn: false },
+  { key: "notes",           label: "備註",     defaultOn: false },
+  { key: "sign",            label: "簽名欄",   defaultOn: false },
+] as const;
+
+type HotelColKey = (typeof HOTEL_COL_DEFS)[number]["key"];
+const HOTEL_LS_KEY = "ta_hotel_cols";
+
+function loadHotelCols(): Record<HotelColKey, boolean> {
+  const defaults = Object.fromEntries(
+    HOTEL_COL_DEFS.map(c => [c.key, c.defaultOn])
+  ) as Record<HotelColKey, boolean>;
+  if (typeof window === "undefined") return defaults;
+  try {
+    const saved = JSON.parse(localStorage.getItem(HOTEL_LS_KEY) || "{}");
+    return { ...defaults, ...saved };
+  } catch { return defaults; }
+}
+
 // ─── Print page ───────────────────────────────────────────────────────────────
 export default function PrintPage() {
   const { id } = useParams<{ id: string }>();
-  const searchParams  = useSearchParams();
-  const layout  = searchParams.get("layout") ?? "full"; // full | payment | boarding
+  const searchParams = useSearchParams();
+  const layout     = searchParams.get("layout") ?? "full";
   const orderParam = searchParams.get("order");
 
-  const [tour,   setTour]   = useState<Tour | null>(null);
-  const [rows,   setRows]   = useState<Row[]>([]);
+  const [tour,    setTour]    = useState<Tour | null>(null);
+  const [rows,    setRows]    = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -58,7 +93,6 @@ export default function PrintPage() {
 
       let sorted = (p || []) as Row[];
 
-      // Restore saved order from URL param, or sort by room → name
       if (orderParam) {
         const order: string[] = JSON.parse(decodeURIComponent(orderParam));
         const map = new Map(sorted.map(r => [r.id, r]));
@@ -79,13 +113,13 @@ export default function PrintPage() {
     })();
   }, [id, orderParam]);
 
-  // Auto-print once loaded
+  // Auto-print (not for hotel layout — user needs to pick columns first)
   useEffect(() => {
-    if (!loading && tour) {
+    if (!loading && tour && layout !== "hotel") {
       const t = setTimeout(() => window.print(), 600);
       return () => clearTimeout(t);
     }
-  }, [loading, tour]);
+  }, [loading, tour, layout]);
 
   const printDate = new Date().toLocaleDateString("zh-TW", {
     year: "numeric", month: "2-digit", day: "2-digit",
@@ -99,15 +133,9 @@ export default function PrintPage() {
     );
   }
 
-  // ── Layout: full (旅客名單) ──────────────────────────────────────────────────
-  if (layout === "full") {
-    return <FullList tour={tour} rows={rows} printDate={printDate} />;
-  }
-  // ── Layout: payment (收款狀況) ───────────────────────────────────────────────
-  if (layout === "payment") {
-    return <PaymentList tour={tour} rows={rows} printDate={printDate} />;
-  }
-  // ── Layout: boarding (登機名單) ──────────────────────────────────────────────
+  if (layout === "full")    return <FullList    tour={tour} rows={rows} printDate={printDate} />;
+  if (layout === "payment") return <PaymentList tour={tour} rows={rows} printDate={printDate} />;
+  if (layout === "hotel")   return <HotelList   tour={tour} rows={rows} printDate={printDate} />;
   return <BoardingList tour={tour} rows={rows} printDate={printDate} />;
 }
 
@@ -154,6 +182,7 @@ function PrintStyles({ landscape }: { landscape?: boolean }) {
         position: fixed; top: 0; left: 0; right: 0; z-index: 100;
         background: #1e3a5f; color: #fff; padding: 8px 16px;
         display: flex; align-items: center; gap: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.3);
+        flex-wrap: wrap;
       }
       .action-bar button {
         padding: 5px 14px; border-radius: 6px; border: none; cursor: pointer;
@@ -175,11 +204,9 @@ function PrintStyles({ landscape }: { landscape?: boolean }) {
 // ─── Layout 1: 完整旅客名單 ───────────────────────────────────────────────────
 function FullList({ tour, rows, printDate }: { tour: Tour; rows: Row[]; printDate: string }) {
   const today = new Date().toISOString().slice(0, 10);
-  // Group by participant type
   const types: (ParticipantType | string)[] = ["adult", "tour_only", "child", "infant"];
   const groups = types.map(t => ({ type: t, items: rows.filter(r => (r.participant_type || "adult") === t) }))
                       .filter(g => g.items.length > 0);
-
   let globalSeq = 0;
 
   return (
@@ -205,7 +232,6 @@ function FullList({ tour, rows, printDate }: { tour: Tour; rows: Row[]; printDat
               <span data-label="列印">{printDate}</span>
             </div>
           </div>
-
           <table>
             <thead>
               <tr>
@@ -234,8 +260,8 @@ function FullList({ tour, rows, printDate }: { tour: Tour; rows: Row[]; printDat
                   {items.map(r => {
                     globalSeq++;
                     const c = r.customer;
-                    const passExpired = c.passport_expiry && c.passport_expiry < today;
-                    const taibaoExpired = c.taibao_expiry && c.taibao_expiry < today;
+                    const passExpired   = c.passport_expiry && c.passport_expiry < today;
+                    const taibaoExpired = c.taibao_expiry   && c.taibao_expiry   < today;
                     return (
                       <tr key={r.id}>
                         <td className="num">{globalSeq}</td>
@@ -245,15 +271,11 @@ function FullList({ tour, rows, printDate }: { tour: Tour; rows: Row[]; printDat
                         <td className="c">{fmtDate(c.birthday)}</td>
                         <td className="c">{calcAge(c.birthday, tour.start_date)}</td>
                         <td style={{ fontFamily: "monospace, monospace", fontSize: "8pt" }}>{c.id_number || ""}</td>
-                        <td style={{ fontFamily: "monospace, monospace", fontSize: "8pt" }}>
-                          {c.passport || ""}
-                        </td>
+                        <td style={{ fontFamily: "monospace, monospace", fontSize: "8pt" }}>{c.passport || ""}</td>
                         <td className={`c ${passExpired ? "expired" : ""}`}>
                           {fmtDate(c.passport_expiry)}{passExpired ? " ⚠" : ""}
                         </td>
-                        <td style={{ fontFamily: "monospace, monospace", fontSize: "8pt" }}>
-                          {c.taibao_number || ""}
-                        </td>
+                        <td style={{ fontFamily: "monospace, monospace", fontSize: "8pt" }}>{c.taibao_number || ""}</td>
                         <td className={`c ${taibaoExpired ? "expired" : ""}`}>
                           {fmtDate(c.taibao_expiry)}{taibaoExpired ? " ⚠" : ""}
                         </td>
@@ -267,7 +289,6 @@ function FullList({ tour, rows, printDate }: { tour: Tour; rows: Row[]; printDat
               ))}
             </tbody>
           </table>
-
           <div className="footer">
             <span>⚠ 效期標示紅色者已過期，請注意換發。</span>
             <span>共 {rows.length} 位旅客 · 列印日期 {printDate}</span>
@@ -310,7 +331,6 @@ function PaymentList({ tour, rows, printDate }: { tour: Tour; rows: Row[]; print
               <span data-label="列印">{printDate}</span>
             </div>
           </div>
-
           <table>
             <thead>
               <tr>
@@ -365,7 +385,6 @@ function PaymentList({ tour, rows, printDate }: { tour: Tour; rows: Row[]; print
               </tr>
             </tfoot>
           </table>
-
           <div className="footer">
             <span />
             <span>共 {rows.length} 位旅客 · 列印日期 {printDate}</span>
@@ -376,7 +395,7 @@ function PaymentList({ tour, rows, printDate }: { tour: Tour; rows: Row[]; print
   );
 }
 
-// ─── Layout 3: 登機名單（精簡版）─────────────────────────────────────────────
+// ─── Layout 3: 登機名單 ────────────────────────────────────────────────────────
 function BoardingList({ tour, rows, printDate }: { tour: Tour; rows: Row[]; printDate: string }) {
   return (
     <>
@@ -398,7 +417,6 @@ function BoardingList({ tour, rows, printDate }: { tour: Tour; rows: Row[]; prin
               <span data-label="列印">{printDate}</span>
             </div>
           </div>
-
           <table>
             <thead>
               <tr>
@@ -421,8 +439,8 @@ function BoardingList({ tour, rows, printDate }: { tour: Tour; rows: Row[]; prin
               {rows.map((r, i) => {
                 const c = r.customer;
                 const today = new Date().toISOString().slice(0, 10);
-                const passExpired   = c.passport_expiry  && c.passport_expiry  < today;
-                const taibaoExpired = c.taibao_expiry    && c.taibao_expiry    < today;
+                const passExpired   = c.passport_expiry && c.passport_expiry < today;
+                const taibaoExpired = c.taibao_expiry   && c.taibao_expiry   < today;
                 return (
                   <tr key={r.id}>
                     <td className="num">{i + 1}</td>
@@ -443,6 +461,181 @@ function BoardingList({ tour, rows, printDate }: { tour: Tour; rows: Row[]; prin
               })}
             </tbody>
           </table>
+          <div className="footer">
+            <span>⚠ 效期標示紅色者已過期，請注意換發。</span>
+            <span>共 {rows.length} 位旅客 · 列印日期 {printDate}</span>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ─── Layout 4: 飯店登記名單（欄位可勾選，按房號分組）────────────────────────
+function HotelList({ tour, rows, printDate }: { tour: Tour; rows: Row[]; printDate: string }) {
+  const [cols, setCols] = useState<Record<HotelColKey, boolean>>(loadHotelCols);
+  const [groupByRoom, setGroupByRoom] = useState(true);
+
+  // Persist col selection
+  useEffect(() => {
+    try { localStorage.setItem(HOTEL_LS_KEY, JSON.stringify(cols)); } catch { /* noop */ }
+  }, [cols]);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const activeCols = HOTEL_COL_DEFS.filter(c => cols[c.key]);
+  const colSpanAll = activeCols.length;
+
+  // Group by room number (or show flat list)
+  const roomNums = Array.from(new Set(rows.map(r => r.room_number || "").filter(Boolean))).sort((a, b) =>
+    a.localeCompare(b, undefined, { numeric: true })
+  );
+  const noRoom = rows.filter(r => !r.room_number);
+
+  type Group = { roomLabel: string; items: Row[] };
+  const groups: Group[] = groupByRoom
+    ? [
+        ...roomNums.map(rn => ({ roomLabel: rn, items: rows.filter(r => r.room_number === rn) })),
+        ...(noRoom.length > 0 ? [{ roomLabel: "（未分房）", items: noRoom }] : []),
+      ]
+    : [{ roomLabel: "", items: rows }];
+
+  let globalSeq = 0;
+
+  function renderCell(colKey: HotelColKey, r: Row, seq: number) {
+    const c = r.customer;
+    const passExpired   = c.passport_expiry && c.passport_expiry < today;
+    const taibaoExpired = c.taibao_expiry   && c.taibao_expiry   < today;
+
+    switch (colKey) {
+      case "seq":             return <td key="seq" className="num">{seq}</td>;
+      case "name":            return <td key="name" className="bold">{c.name}</td>;
+      case "name_en":         return <td key="name_en" style={{ fontSize: "8pt", letterSpacing: "0.3px" }}>{c.name_en || ""}</td>;
+      case "gender":          return <td key="gender" className="c">{GENDER_LABEL[c.gender] ?? "—"}</td>;
+      case "birthday":        return <td key="birthday" className="c">{fmtDate(c.birthday)}</td>;
+      case "age":             return <td key="age" className="c">{calcAge(c.birthday, tour.start_date)}</td>;
+      case "id_number":       return <td key="id_number" style={{ fontFamily: "monospace, monospace", fontSize: "8pt" }}>{c.id_number || ""}</td>;
+      case "passport":        return <td key="passport" style={{ fontFamily: "monospace, monospace", fontSize: "8pt" }}>{c.passport || ""}</td>;
+      case "passport_expiry": return (
+        <td key="passport_expiry" className={`c ${passExpired ? "expired" : ""}`}>
+          {fmtDate(c.passport_expiry)}{passExpired ? " ⚠" : ""}
+        </td>
+      );
+      case "taibao":          return <td key="taibao" style={{ fontFamily: "monospace, monospace", fontSize: "8pt" }}>{c.taibao_number || ""}</td>;
+      case "taibao_expiry":   return (
+        <td key="taibao_expiry" className={`c ${taibaoExpired ? "expired" : ""}`}>
+          {fmtDate(c.taibao_expiry)}{taibaoExpired ? " ⚠" : ""}
+        </td>
+      );
+      case "room":            return <td key="room" className="c bold">{r.room_number || ""}</td>;
+      case "type":            return <td key="type" className="c">{TYPE_LABEL[r.participant_type || "adult"]}</td>;
+      case "meal":            return <td key="meal" className="meal">{r.meal_preference || c.meal_preference || ""}</td>;
+      case "phone":           return <td key="phone">{c.phone || ""}</td>;
+      case "notes":           return <td key="notes" style={{ fontSize: "8pt", color: "#666" }}>{r.notes || ""}</td>;
+      case "sign":            return <td key="sign" style={{ minWidth: 60 }}></td>;
+    }
+  }
+
+  return (
+    <>
+      <PrintStyles landscape />
+      {/* ── 操作列（含欄位勾選） ── */}
+      <div className="action-bar no-print" style={{ alignItems: "flex-start", paddingTop: 10, paddingBottom: 10 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <span style={{ fontWeight: "bold", fontSize: 14 }}>🏨 飯店登記名單</span>
+            <button className="btn-print" onClick={() => window.print()}>列印</button>
+            <button className="btn-close" onClick={() => window.close()}>關閉</button>
+          </div>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ fontSize: 11, opacity: 0.8 }}>{tour.name} · {rows.length} 人</span>
+            <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={groupByRoom}
+                onChange={e => setGroupByRoom(e.target.checked)}
+                style={{ width: 13, height: 13 }}
+              />
+              按房號分組
+            </label>
+          </div>
+        </div>
+
+        {/* 欄位勾選 */}
+        <div style={{
+          marginLeft: 16, borderLeft: "1px solid rgba(255,255,255,.25)", paddingLeft: 16,
+          display: "flex", flexWrap: "wrap", gap: "2px 14px", alignContent: "flex-start",
+        }}>
+          <span style={{ width: "100%", fontSize: 11, fontWeight: "bold", opacity: 0.7, marginBottom: 2 }}>
+            顯示欄位
+          </span>
+          {HOTEL_COL_DEFS.map(col => (
+            <label key={col.key} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>
+              <input
+                type="checkbox"
+                checked={cols[col.key]}
+                onChange={e => setCols(prev => ({ ...prev, [col.key]: e.target.checked }))}
+                style={{ width: 13, height: 13, accentColor: "#3b82f6" }}
+              />
+              {col.label}
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {/* ── 列印內容 ── */}
+      <div className="print-body">
+        <div className="page">
+          <div className="header">
+            <div className="title">🏨 飯店登記名單 — {tour.name}</div>
+            <div className="meta">
+              {tour.destination && <span data-label="目的地">{tour.destination}</span>}
+              {tour.start_date  && <span data-label="入住日">{fmtDate(tour.start_date)}</span>}
+              {tour.end_date    && <span data-label="退房日">{fmtDate(tour.end_date)}</span>}
+              <span data-label="人數">{rows.length} 人</span>
+              <span data-label="列印">{printDate}</span>
+            </div>
+          </div>
+
+          {activeCols.length === 0 ? (
+            <p style={{ padding: "20px 0", color: "#888", textAlign: "center" }}>請在上方勾選至少一個欄位</p>
+          ) : (
+            <table>
+              <thead>
+                <tr>
+                  {activeCols.map(col => {
+                    const widthMap: Partial<Record<HotelColKey, number>> = {
+                      seq: 24, name: 60, name_en: 100, gender: 22, birthday: 70,
+                      age: 30, id_number: 82, passport: 88, passport_expiry: 62,
+                      taibao: 88, taibao_expiry: 62, room: 36, type: 36,
+                      meal: 80, phone: 78, notes: 80, sign: 60,
+                    };
+                    return <th key={col.key} style={{ width: widthMap[col.key] }}>{col.label}</th>;
+                  })}
+                </tr>
+              </thead>
+              <tbody>
+                {groups.map(({ roomLabel, items }) => (
+                  <>
+                    {groupByRoom && (
+                      <tr key={`room-head-${roomLabel}`}>
+                        <td colSpan={colSpanAll} className="section-head">
+                          {roomLabel ? `🛏 ${roomLabel} 房（${items.length} 人）` : `（${items.length} 人）`}
+                        </td>
+                      </tr>
+                    )}
+                    {items.map(r => {
+                      globalSeq++;
+                      return (
+                        <tr key={r.id}>
+                          {activeCols.map(col => renderCell(col.key, r, globalSeq))}
+                        </tr>
+                      );
+                    })}
+                  </>
+                ))}
+              </tbody>
+            </table>
+          )}
 
           <div className="footer">
             <span>⚠ 效期標示紅色者已過期，請注意換發。</span>
