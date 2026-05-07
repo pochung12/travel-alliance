@@ -54,6 +54,7 @@ const EMPTY: Omit<Customer, "id" | "created_at"> = {
   taibao_number: "", taibao_expiry: "", taibao_image: "",
   birthday: "", gender: "other",
   address: "", emergency_contact: "", emergency_phone: "", notes: "",
+  meal_preference: "",
 };
 
 const input = "w-full border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400 placeholder:text-slate-400";

@@ -91,7 +91,7 @@ export default function GroupDetailPage() {
     loadTour();
     loadParticipants();
     loadPayTotals();
-    supabase.from("customers").select("id,name,phone,email").order("name")
+    supabase.from("customers").select("id,name,phone,email,meal_preference").order("name")
       .then(({ data }) => setAllCustomers((data || []) as Customer[]));
   }, [id]);
 
@@ -128,7 +128,14 @@ export default function GroupDetailPage() {
 
   const addParticipants = async () => {
     if (selectedCids.size === 0) return;
-    const rows = Array.from(selectedCids).map(cid => ({ customer_id: cid, tour_id: id }));
+    const rows = Array.from(selectedCids).map(cid => {
+      const cust = allCustomers.find(c => c.id === cid);
+      return {
+        customer_id: cid,
+        tour_id: id,
+        meal_preference: cust?.meal_preference || "",
+      };
+    });
     await supabase.from("customer_tours").insert(rows);
     closeAddModal();
     loadParticipants();

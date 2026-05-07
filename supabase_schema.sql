@@ -45,6 +45,7 @@ CREATE TABLE customers (
   emergency_contact TEXT NOT NULL DEFAULT '',
   emergency_phone   TEXT NOT NULL DEFAULT '',
   notes             TEXT NOT NULL DEFAULT '',
+  meal_preference   TEXT NOT NULL DEFAULT '',   -- 預設餐食偏好（comma-separated）
   created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 

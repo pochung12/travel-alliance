@@ -80,6 +80,7 @@ export interface Customer {
   emergency_contact: string;
   emergency_phone: string;
   notes: string;
+  meal_preference: string;   // 預設餐食偏好（comma-separated）
   created_at: string;
 }
 
