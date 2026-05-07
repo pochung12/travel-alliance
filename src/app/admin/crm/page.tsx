@@ -142,6 +142,14 @@ function tourTagColor(tourId: string) {
   return TOUR_TAG_COLORS[Math.abs(hash) % TOUR_TAG_COLORS.length];
 }
 
+const MEAL_OPTIONS_CRM = [
+  { key: "蛋奶素", bg: "#ecfccb", text: "#4d7c0f" },
+  { key: "全素",   bg: "#dcfce7", text: "#166534" },
+  { key: "不吃羊", bg: "#ffedd5", text: "#c2410c" },
+  { key: "不吃牛", bg: "#ffe4e6", text: "#be123c" },
+  { key: "不吃豬", bg: "#e0f2fe", text: "#0369a1" },
+];
+
 const ALL_COLS: ColDef[] = [
   { key: "name",              label: "姓名",       width: 180, visible: true  },
   { key: "name_en",           label: "英文姓名",   width: 160, visible: false },
@@ -158,6 +166,7 @@ const ALL_COLS: ColDef[] = [
   { key: "emergency_contact", label: "緊急聯絡人", width: 120, visible: false },
   { key: "emergency_phone",   label: "緊急電話",   width: 140, visible: false },
   { key: "notes",             label: "備註",       width: 160, visible: false },
+  { key: "meal_preference",   label: "餐食偏好",   width: 180, visible: false },
   { key: "tours",             label: "參團紀錄",   width: 240, visible: true  },
   { key: "created_at",        label: "加入時間",   width: 110, visible: true  },
 ];
@@ -952,6 +961,23 @@ export default function CRMPage() {
                                 style={{backgroundColor: clr.bg, color: clr.text}}>
                                 {t.name}
                               </span>
+                            );
+                          })}
+                        </div>
+                      ) : col.key==="meal_preference" ? (
+                        <div className="flex flex-wrap gap-1">
+                          {!(c.meal_preference||"").trim() ? (
+                            <span className="text-xs text-slate-300 dark:text-slate-600">正常餐</span>
+                          ) : (c.meal_preference||"").split(",").map(s=>s.trim()).filter(Boolean).map(opt => {
+                            const def = MEAL_OPTIONS_CRM.find(m=>m.key===opt);
+                            return def ? (
+                              <span key={opt}
+                                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap"
+                                style={{backgroundColor:def.bg, color:def.text}}>
+                                {opt}
+                              </span>
+                            ) : (
+                              <span key={opt} className="text-xs text-slate-500 dark:text-slate-400">{opt}</span>
                             );
                           })}
                         </div>
