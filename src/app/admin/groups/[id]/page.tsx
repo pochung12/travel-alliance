@@ -256,7 +256,7 @@ export default function GroupDetailPage() {
           if (!ra && !rb) return 0; if (!ra) return 1; if (!rb) return -1;
           return ra.localeCompare(rb, undefined, {numeric:true});
         });
-        const roomNums = [...new Set(sorted.map(p=>p.room_number).filter(Boolean))];
+        const roomNums = Array.from(new Set(sorted.map(p=>p.room_number).filter(Boolean))) as string[];
         const paletteMap = new Map(roomNums.map((r,i)=>[r, ROOM_PALETTES[i%ROOM_PALETTES.length]]));
 
         // Build grouped structure

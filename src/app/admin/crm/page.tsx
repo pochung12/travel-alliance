@@ -1,10 +1,11 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase, Customer } from "@/lib/supabase";
 import {
   Plus, Search, Users, ScanLine, Upload, FileSpreadsheet,
   Loader2, CheckCircle, AlertCircle, X, Settings, Tag, Trash2, CheckCircle2, Layers,
+  GitMerge, ChevronRight,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -20,6 +21,14 @@ interface OcrResult {
   taibaoNumber?: string | null; taibaoExpiry?: string | null;
   birthday?: string | null; gender?: "male" | "female" | null;
   idNumber?: string | null; docType?: string | null;
+}
+
+interface DupGroup {
+  id: string;
+  reasons: string[];
+  customers: [Customer, Customer];
+  selected: boolean;
+  keepId: string;
 }
 
 interface BulkItem {
@@ -212,6 +221,12 @@ export default function CRMPage() {
   const [newLabelName,  setNewLabelName]  = useState("");
   const [newLabelColor, setNewLabelColor] = useState(LABEL_COLORS[0]);
   const [savingLabel,   setSavingLabel]   = useState(false);
+
+  // merge duplicates
+  const [showMerge,   setShowMerge]   = useState(false);
+  const [dupGroups,   setDupGroups]   = useState<DupGroup[]>([]);
+  const [merging,     setMerging]     = useState(false);
+  const [mergeResult, setMergeResult] = useState<{merged:number}|null>(null);
 
   // bulk scan
   const [showBulkScan,   setShowBulkScan]   = useState(false);
@@ -558,6 +573,93 @@ export default function CRMPage() {
     setImportStep("input"); setImportResult(null); setSelectedRows(new Set());
   };
 
+  // ── find & merge duplicates ───────────────────────────────────────────────
+  const openMerge = () => {
+    const pairs = new Map<string, { customers: [Customer,Customer]; reasons: string[] }>();
+    const addPair = (a:Customer, b:Customer, reason:string) => {
+      const key = [a.id,b.id].sort().join(":");
+      if (!pairs.has(key)) pairs.set(key,{customers:[a,b],reasons:[]});
+      pairs.get(key)!.reasons.push(reason);
+    };
+    // group by name
+    const byName = new Map<string,Customer[]>();
+    customers.forEach(c => {
+      const k = c.name.trim().toLowerCase();
+      if (!byName.has(k)) byName.set(k,[]);
+      byName.get(k)!.push(c);
+    });
+    byName.forEach(cs => {
+      if (cs.length<2) return;
+      for (let i=0;i<cs.length;i++) for (let j=i+1;j<cs.length;j++) addPair(cs[i],cs[j],"姓名相同");
+    });
+    // group by passport
+    const byPass = new Map<string,Customer[]>();
+    customers.forEach(c => {
+      if (!c.passport?.trim()) return;
+      const k = c.passport.trim().toUpperCase();
+      if (!byPass.has(k)) byPass.set(k,[]);
+      byPass.get(k)!.push(c);
+    });
+    byPass.forEach(cs => {
+      if (cs.length<2) return;
+      for (let i=0;i<cs.length;i++) for (let j=i+1;j<cs.length;j++) addPair(cs[i],cs[j],"護照號碼相同");
+    });
+    // group by id_number
+    const byId = new Map<string,Customer[]>();
+    customers.forEach(c => {
+      if (!c.id_number?.trim()) return;
+      const k = c.id_number.trim().toUpperCase();
+      if (!byId.has(k)) byId.set(k,[]);
+      byId.get(k)!.push(c);
+    });
+    byId.forEach(cs => {
+      if (cs.length<2) return;
+      for (let i=0;i<cs.length;i++) for (let j=i+1;j<cs.length;j++) addPair(cs[i],cs[j],"身分證字號相同");
+    });
+    const groups: DupGroup[] = [];
+    pairs.forEach(({customers,reasons},key) => {
+      groups.push({id:key, reasons, customers, selected:false, keepId:customers[0].id});
+    });
+    setDupGroups(groups);
+    setMergeResult(null);
+    setShowMerge(true);
+  };
+
+  const executeMerge = async () => {
+    const toMerge = dupGroups.filter(g=>g.selected);
+    if (toMerge.length===0) return;
+    setMerging(true);
+    let merged=0;
+    const MERGE_FIELDS: (keyof Omit<Customer,"id"|"created_at">)[] = [
+      "name_en","phone","email","birthday","gender","address",
+      "emergency_contact","emergency_phone","notes",
+      "id_number","id_card_image","passport","passport_expiry","passport_image",
+      "taibao_number","taibao_expiry","taibao_image",
+    ];
+    for (const group of toMerge) {
+      const [a,b] = group.customers;
+      const primary   = group.keepId===a.id ? a : b;
+      const secondary = group.keepId===a.id ? b : a;
+      // Fill gaps in primary with secondary's data
+      const patch: Partial<Omit<Customer,"id"|"created_at">> = {};
+      for (const f of MERGE_FIELDS) {
+        const pv = primary[f] as string|null|undefined;
+        const sv = secondary[f] as string|null|undefined;
+        if ((!pv||pv==="other") && sv && sv!=="other") patch[f] = sv as never;
+      }
+      if (Object.keys(patch).length>0)
+        await supabase.from("customers").update(patch).eq("id",primary.id);
+      // Migrate tours
+      await supabase.from("customer_tours").update({customer_id:primary.id}).eq("customer_id",secondary.id);
+      // Delete secondary
+      await supabase.from("customers").delete().eq("id",secondary.id);
+      merged++;
+    }
+    setMerging(false);
+    setMergeResult({merged});
+    load(); loadLabels();
+  };
+
   // ─── render ───────────────────────────────────────────────────────────────
   return (
     <div className="p-6 space-y-5">
@@ -568,6 +670,10 @@ export default function CRMPage() {
           <Users className="w-6 h-6 text-violet-600" /> 旅客 CRM
         </h1>
         <div className="flex gap-2 flex-wrap">
+          <button onClick={openMerge}
+            className="flex items-center gap-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 text-sm px-4 py-2 rounded-lg transition-colors">
+            <GitMerge className="w-4 h-4" /> 合併重複旅客
+          </button>
           <button onClick={()=>setShowLabelMgr(true)}
             className="flex items-center gap-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 text-sm px-4 py-2 rounded-lg transition-colors">
             <Tag className="w-4 h-4" /> 標籤管理
@@ -747,6 +853,178 @@ export default function CRMPage() {
           </table>
         )}
       </div>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          MERGE DUPLICATES MODAL
+         ══════════════════════════════════════════════════════════════════════ */}
+      {showMerge && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-3xl max-h-[92vh] flex flex-col">
+
+            {/* header */}
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 flex-shrink-0 flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                  <GitMerge className="w-5 h-5 text-violet-600" /> 合併重複旅客資料
+                </h2>
+                {!mergeResult && (
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
+                    依姓名、護照號碼、身分證字號偵測到以下可能重複的旅客
+                  </p>
+                )}
+              </div>
+              <button onClick={()=>setShowMerge(false)}><X className="w-5 h-5 text-slate-400" /></button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-5">
+              {mergeResult ? (
+                <div className="text-center py-12 space-y-3">
+                  <CheckCircle className="w-14 h-14 text-emerald-500 mx-auto" />
+                  <p className="text-xl font-semibold text-slate-800 dark:text-slate-100">合併完成！</p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    成功合併 <strong className="text-violet-600">{mergeResult.merged}</strong> 組重複資料
+                  </p>
+                </div>
+              ) : dupGroups.length===0 ? (
+                <div className="text-center py-16 space-y-3">
+                  <CheckCircle2 className="w-14 h-14 text-emerald-400 mx-auto" />
+                  <p className="text-lg font-semibold text-slate-700 dark:text-slate-200">沒有發現重複旅客</p>
+                  <p className="text-sm text-slate-400">所有旅客的姓名、護照號碼、身分證字號均無重複</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {/* select all */}
+                  <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 pb-1">
+                    <span>共 {dupGroups.length} 組可能重複</span>
+                    <div className="flex gap-3">
+                      <button onClick={()=>setDupGroups(prev=>prev.map(g=>({...g,selected:true})))} className="hover:text-violet-600 hover:underline">全選</button>
+                      <button onClick={()=>setDupGroups(prev=>prev.map(g=>({...g,selected:false})))} className="hover:text-slate-700 hover:underline">取消全選</button>
+                    </div>
+                  </div>
+
+                  {dupGroups.map((group, gi) => {
+                    const [a, b] = group.customers;
+                    const fieldRows: {label:string; va:string; vb:string}[] = [
+                      {label:"姓名",       va:a.name,         vb:b.name},
+                      {label:"身分證",     va:a.id_number||"—",  vb:b.id_number||"—"},
+                      {label:"護照號碼",   va:a.passport||"—",   vb:b.passport||"—"},
+                      {label:"台胞證",     va:a.taibao_number||"—", vb:b.taibao_number||"—"},
+                      {label:"生日",       va:a.birthday||"—",   vb:b.birthday||"—"},
+                      {label:"電話",       va:a.phone||"—",      vb:b.phone||"—"},
+                    ].filter(r => r.va!=="—" || r.vb!=="—");
+                    return (
+                      <div key={group.id}
+                        className={`rounded-xl border-2 transition-colors overflow-hidden ${
+                          group.selected
+                            ? "border-violet-400 dark:border-violet-600"
+                            : "border-slate-100 dark:border-slate-700"
+                        }`}>
+                        {/* group header row */}
+                        <div className={`flex items-center gap-3 px-4 py-2.5 ${
+                          group.selected ? "bg-violet-50 dark:bg-violet-900/20" : "bg-slate-50 dark:bg-slate-700/50"
+                        }`}>
+                          <input type="checkbox" checked={group.selected} onChange={e=>
+                            setDupGroups(prev=>prev.map((g,i)=>i===gi?{...g,selected:e.target.checked}:g))
+                          } className="w-4 h-4 accent-violet-600" />
+                          <div className="flex flex-wrap gap-1.5">
+                            {group.reasons.map(r=>(
+                              <span key={r} className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300">
+                                {r}
+                              </span>
+                            ))}
+                          </div>
+                          <span className="ml-auto text-xs text-slate-400 dark:text-slate-500">勾選後選擇保留哪一筆 →</span>
+                        </div>
+
+                        {/* comparison table */}
+                        <div className="bg-white dark:bg-slate-800 grid grid-cols-[auto_1fr_1fr] text-sm">
+                          {/* col headers */}
+                          <div className="px-3 py-2 bg-slate-50 dark:bg-slate-700/30" />
+                          {[a,b].map((c,ci)=>(
+                            <div key={c.id} className={`px-4 py-2 border-l border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-700/30 ${
+                              group.keepId===c.id ? "bg-emerald-50 dark:bg-emerald-900/20" : ""
+                            }`}>
+                              <label className="flex items-center gap-2 cursor-pointer">
+                                <input type="radio" name={`keep-${group.id}`} checked={group.keepId===c.id}
+                                  onChange={()=>setDupGroups(prev=>prev.map((g,i)=>i===gi?{...g,keepId:c.id}:g))}
+                                  className="accent-emerald-600" />
+                                <span className={`text-xs font-semibold ${
+                                  group.keepId===c.id ? "text-emerald-700 dark:text-emerald-400" : "text-slate-500 dark:text-slate-400"
+                                }`}>
+                                  {group.keepId===c.id ? "✓ 保留此筆" : `旅客 ${ci===0?"A":"B"}`}
+                                </span>
+                              </label>
+                              <Link href={`/admin/crm/${c.id}`} target="_blank"
+                                className="text-[10px] text-violet-500 hover:underline mt-0.5 block truncate">
+                                {c.name}（查看完整資料 ↗）
+                              </Link>
+                            </div>
+                          ))}
+
+                          {/* field rows */}
+                          {fieldRows.map(row=>{
+                            const diff = row.va !== row.vb;
+                            return (
+                              <Fragment key={row.label}>
+                                <div className="px-3 py-2 text-xs font-medium text-slate-400 dark:text-slate-500 border-t border-slate-50 dark:border-slate-700/50 flex items-center">
+                                  {row.label}
+                                </div>
+                                {([row.va,row.vb] as const).map((v,vi)=>(
+                                  <div key={vi} className={`px-4 py-2 border-l border-t border-slate-50 dark:border-slate-700/50 ${
+                                    diff ? "text-amber-700 dark:text-amber-400 font-medium" : "text-slate-600 dark:text-slate-300"
+                                  } ${group.keepId===(vi===0?a:b).id ? "bg-emerald-50/50 dark:bg-emerald-900/10" : ""}`}>
+                                    <span className="font-mono text-xs">{v}</span>
+                                    {diff && <span className="text-[9px] ml-1 opacity-50">⚠</span>}
+                                  </div>
+                                ))}
+                              </Fragment>
+                            );
+                          })}
+                        </div>
+
+                        {/* merge note */}
+                        {group.selected && (
+                          <div className="px-4 py-2 bg-violet-50 dark:bg-violet-900/20 border-t border-violet-100 dark:border-violet-800/40 text-xs text-violet-600 dark:text-violet-400 flex items-center gap-1.5">
+                            <ChevronRight className="w-3 h-3" />
+                            合併後：保留「{group.keepId===a.id?a.name:b.name}」的資料，空缺欄位從另一筆補入，出團報名記錄一併移轉，另一筆資料刪除
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* footer */}
+            <div className="px-6 py-4 border-t border-slate-100 dark:border-slate-700 flex-shrink-0 flex items-center justify-between gap-3">
+              {mergeResult ? (
+                <div className="ml-auto">
+                  <button onClick={()=>setShowMerge(false)} className="px-5 py-2 text-sm bg-violet-600 hover:bg-violet-700 text-white rounded-lg">完成</button>
+                </div>
+              ) : (
+                <>
+                  <span className="text-xs text-slate-400">
+                    {dupGroups.filter(g=>g.selected).length > 0
+                      ? `已選 ${dupGroups.filter(g=>g.selected).length} 組，確認後將合併旅客資料並刪除重複筆`
+                      : "請勾選要合併的項目"}
+                  </span>
+                  <div className="flex gap-2">
+                    <button onClick={()=>setShowMerge(false)} className="px-4 py-2 text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg">取消</button>
+                    <button
+                      onClick={executeMerge}
+                      disabled={merging || dupGroups.filter(g=>g.selected).length===0}
+                      className="px-5 py-2 text-sm bg-violet-600 hover:bg-violet-700 text-white rounded-lg disabled:opacity-40 flex items-center gap-1.5">
+                      {merging && <Loader2 className="w-4 h-4 animate-spin" />}
+                      {merging ? "合併中…" : `✓ 確認合併 ${dupGroups.filter(g=>g.selected).length} 組`}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ══════════════════════════════════════════════════════════════════════
           LABEL PICKER MODAL
