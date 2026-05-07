@@ -68,14 +68,17 @@ const LABEL_COLORS = [
 
 // ─── Traditional → Simplified Chinese character map ──────────────────────────
 const T2S: Record<string,string> = {
-  // Common surnames
+  // ── 常見姓氏 ──
   '陳':'陈','張':'张','劉':'刘','楊':'杨','趙':'赵','吳':'吴','孫':'孙','馬':'马',
   '鄭':'郑','盧':'卢','謝':'谢','許':'许','韓':'韩','鄧':'邓','蕭':'萧','馮':'冯',
   '蔣':'蒋','錢':'钱','葉':'叶','龔':'龚','蘇':'苏','嚴':'严','龍':'龙','鐘':'钟',
   '賴':'赖','歐':'欧','區':'区','莊':'庄','呂':'吕','顏':'颜','顧':'顾','龐':'庞',
   '陸':'陆','簡':'简','關':'关','繆':'缪','鄒':'邹','鄔':'邬','鮑':'鲍','齊':'齐',
   '魏':'魏','薛':'薛','賀':'贺','賈':'贾','駱':'骆','鞏':'巩','鄺':'邝','覃':'覃',
-  // Common given name characters
+  '黃':'黄','聶':'聂','彭':'彭','翁':'翁','凌':'凌','唐':'唐','熊':'熊','尹':'尹',
+  '湯':'汤','鞠':'鞠','喬':'乔','橋':'桥','閻':'阎','闕':'阙',
+  '闞':'阚','隗':'隗','縣':'县','繩':'绳','繪':'绘','織':'织','綠':'绿',
+  // ── 常見名字用字 ──
   '國':'国','華':'华','學':'学','軍':'军','東':'东','麗':'丽','鳳':'凤','偉':'伟',
   '慶':'庆','愛':'爱','賢':'贤','輝':'辉','強':'强','興':'兴','維':'维','穎':'颖',
   '瑩':'莹','躍':'跃','凱':'凯','騰':'腾','鵬':'鹏','曉':'晓','藝':'艺','歡':'欢',
@@ -86,12 +89,44 @@ const T2S: Record<string,string> = {
   '電':'电','數':'数','業':'业','動':'动','當':'当','現':'现','發':'发','來':'来',
   '問':'问','員':'员','語':'语','級':'级','進':'进','這':'这','書':'书','產':'产',
   '設':'设','構':'构','號':'号','讓':'让','點':'点','線':'线','幾':'几','歲':'岁',
-  '輕':'轻','過':'过','還':'还','說':'说','後':'后','看':'看','機':'机','帶':'带',
+  '輕':'轻','過':'过','還':'还','說':'说','後':'后','機':'机','帶':'带',
   '會':'会','對':'对','樣':'样','給':'给','話':'话','錯':'错','親':'亲',
   '頭':'头','門':'门','邊':'边','塊':'块','種':'种','風':'风','歷':'历',
+  '澤':'泽','諾':'诺','彥':'彦','傑':'杰','禮':'礼','悅':'悦','寬':'宽',
+  '寧':'宁','崗':'岗','燦':'灿','熾':'炽','煒':'炜','顯':'显','懷':'怀',
+  '誠':'诚','讚':'赞','覺':'觉','讀':'读','豔':'艳',
+  '禱':'祷','禦':'御','諭':'谕','謁':'谒','謂':'谓','謙':'谦',
+  '謹':'谨','譜':'谱','護':'护','變':'变','邏':'逻','選':'选',
+  '醫':'医','釋':'释','鑒':'鉴','鑑':'鉴','鐵':'铁','鏡':'镜',
+  '鏈':'链','離':'离','難':'难','雙':'双','雞':'鸡',
+  '靈':'灵','韻':'韵','響':'响','頻':'频','願':'愿','預':'预','飛':'飞',
+  // ── 全形→半形數字/字母 ──
+  '０':'0','１':'1','２':'2','３':'3','４':'4','５':'5','６':'6','７':'7','８':'8','９':'9',
 };
+
 function normalizeChineseName(name: string): string {
-  return name.trim().split('').map(ch => T2S[ch] ?? ch).join('').toLowerCase();
+  return name.trim()
+    .replace(/[\s　・·•　]+/g, '')   // 移除所有空格（含全形空格）
+    .split('').map(ch => T2S[ch] ?? ch)
+    .join('').toLowerCase();
+}
+
+// ─── Levenshtein 編輯距離 ─────────────────────────────────────────────────────
+function editDistance(a: string, b: string): number {
+  const m = a.length, n = b.length;
+  if (Math.abs(m - n) > 2) return 99; // quick reject
+  const prev = Array.from({length: n+1}, (_,i) => i);
+  const curr = new Array(n+1).fill(0);
+  for (let i = 1; i <= m; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= n; j++) {
+      curr[j] = a[i-1] === b[j-1]
+        ? prev[j-1]
+        : 1 + Math.min(prev[j], curr[j-1], prev[j-1]);
+    }
+    prev.splice(0, n+1, ...curr);
+  }
+  return prev[n];
 }
 // ─── Merge field definitions ─────────────────────────────────────────────────
 const MERGE_FIELD_DEFS: {
@@ -870,7 +905,7 @@ export default function CRMPage() {
       if (!pairs.has(key)) pairs.set(key,{customers:[a,b],reasons:[]});
       pairs.get(key)!.reasons.push(reason);
     };
-    // group by name (繁體/簡體視為相同)
+    // ① 姓名完全相同（含繁→簡轉換、去空格）
     const byName = new Map<string,Customer[]>();
     customers.forEach(c => {
       if (!c.name?.trim()) return;
@@ -880,9 +915,11 @@ export default function CRMPage() {
     });
     byName.forEach(cs => {
       if (cs.length<2) return;
-      for (let i=0;i<cs.length;i++) for (let j=i+1;j<cs.length;j++) addPair(cs[i],cs[j],"姓名相同（含繁簡轉換）");
+      for (let i=0;i<cs.length;i++) for (let j=i+1;j<cs.length;j++)
+        addPair(cs[i],cs[j],"姓名相同（含繁簡轉換）");
     });
-    // group by passport
+
+    // ② 護照號碼相同
     const byPass = new Map<string,Customer[]>();
     customers.forEach(c => {
       if (!c.passport?.trim()) return;
@@ -892,9 +929,11 @@ export default function CRMPage() {
     });
     byPass.forEach(cs => {
       if (cs.length<2) return;
-      for (let i=0;i<cs.length;i++) for (let j=i+1;j<cs.length;j++) addPair(cs[i],cs[j],"護照號碼相同");
+      for (let i=0;i<cs.length;i++) for (let j=i+1;j<cs.length;j++)
+        addPair(cs[i],cs[j],"護照號碼相同");
     });
-    // group by id_number
+
+    // ③ 身分證字號相同
     const byId = new Map<string,Customer[]>();
     customers.forEach(c => {
       if (!c.id_number?.trim()) return;
@@ -904,8 +943,63 @@ export default function CRMPage() {
     });
     byId.forEach(cs => {
       if (cs.length<2) return;
-      for (let i=0;i<cs.length;i++) for (let j=i+1;j<cs.length;j++) addPair(cs[i],cs[j],"身分證字號相同");
+      for (let i=0;i<cs.length;i++) for (let j=i+1;j<cs.length;j++)
+        addPair(cs[i],cs[j],"身分證字號相同");
     });
+
+    // ④ 台胞證號碼相同
+    const byTaibao = new Map<string,Customer[]>();
+    customers.forEach(c => {
+      if (!c.taibao_number?.trim()) return;
+      const k = c.taibao_number.trim().toUpperCase();
+      if (!byTaibao.has(k)) byTaibao.set(k,[]);
+      byTaibao.get(k)!.push(c);
+    });
+    byTaibao.forEach(cs => {
+      if (cs.length<2) return;
+      for (let i=0;i<cs.length;i++) for (let j=i+1;j<cs.length;j++)
+        addPair(cs[i],cs[j],"台胞證號碼相同");
+    });
+
+    // ⑤ 手機號碼相同（去除空格/符號，至少 8 碼）
+    const byPhone = new Map<string,Customer[]>();
+    customers.forEach(c => {
+      if (!c.phone?.trim()) return;
+      const k = c.phone.replace(/[\s\-\(\)\+]/g,'').replace(/^886/,'0').replace(/^0886/,'0');
+      if (k.length < 8) return;
+      if (!byPhone.has(k)) byPhone.set(k,[]);
+      byPhone.get(k)!.push(c);
+    });
+    byPhone.forEach(cs => {
+      if (cs.length<2) return;
+      for (let i=0;i<cs.length;i++) for (let j=i+1;j<cs.length;j++)
+        addPair(cs[i],cs[j],"手機號碼相同");
+    });
+
+    // ⑥ 模糊姓名：編輯距離 ≤ 1（名字 ≥ 3 字才比，避免誤判）
+    for (let i=0;i<customers.length;i++) {
+      for (let j=i+1;j<customers.length;j++) {
+        const a = customers[i], b = customers[j];
+        const na = normalizeChineseName(a.name||'');
+        const nb = normalizeChineseName(b.name||'');
+        if (na===nb || na.length<3 || nb.length<3) continue;
+        if (editDistance(na,nb)===1)
+          addPair(a,b,`姓名相似（差1字）`);
+      }
+    }
+
+    // ⑦ 相同生日 + 姓名前兩字相同（常見於繁簡字差異未被轉換到的情形）
+    for (let i=0;i<customers.length;i++) {
+      for (let j=i+1;j<customers.length;j++) {
+        const a = customers[i], b = customers[j];
+        if (!a.birthday || !b.birthday || a.birthday!==b.birthday) continue;
+        const na = normalizeChineseName(a.name||'');
+        const nb = normalizeChineseName(b.name||'');
+        if (na.length<2 || nb.length<2) continue;
+        if (na.slice(0,2)===nb.slice(0,2))
+          addPair(a,b,'生日相同且姓名相似');
+      }
+    }
     const groups: DupGroup[] = [];
     pairs.forEach(({customers,reasons},key) => {
       const { choices, smartInfo } = buildSmartChoices(customers[0], customers[1]);
@@ -1259,7 +1353,7 @@ export default function CRMPage() {
                 </h2>
                 {!mergeResult && (
                   <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">
-                    依姓名、護照號碼、身分證字號偵測到以下可能重複的旅客
+                    依姓名（繁簡視同）、護照、身分證、台胞證、手機、模糊姓名、生日+姓名偵測可能重複
                   </p>
                 )}
               </div>
@@ -1279,7 +1373,7 @@ export default function CRMPage() {
                 <div className="text-center py-16 space-y-3">
                   <CheckCircle2 className="w-14 h-14 text-emerald-400 mx-auto" />
                   <p className="text-lg font-semibold text-slate-700 dark:text-slate-200">沒有發現重複旅客</p>
-                  <p className="text-sm text-slate-400">所有旅客的姓名、護照號碼、身分證字號均無重複</p>
+                  <p className="text-sm text-slate-400">依 7 種條件（姓名、護照、身分證、台胞證、手機、模糊姓名、生日+姓名）均無重複</p>
                 </div>
               ) : (
                 <div className="space-y-3">
