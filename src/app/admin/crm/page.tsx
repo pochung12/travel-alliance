@@ -387,8 +387,11 @@ export default function CRMPage() {
   const [dragCol,     setDragCol]     = useState<string|null>(null);
   const [dragOverCol, setDragOverCol] = useState<string|null>(null);
   const resizeRef = useRef<{key:string;startX:number;startW:number}|null>(null);
+  // freeze
+  const [frozenHeader, setFrozenHeader] = useState(true);
+  const [frozenCols,   setFrozenCols]   = useState<0|1|2>(1);
 
-  // ── localStorage cols ─────────────────────────────────────────────────────
+  // ── localStorage cols + freeze ────────────────────────────────────────────
   useEffect(() => {
     try {
       const saved = localStorage.getItem("ta_crm_columns");
@@ -397,16 +400,26 @@ export default function CRMPage() {
         const savedKeys = new Set(parsed.map(c=>c.key));
         setColumns([...parsed, ...ALL_COLS.filter(c=>!savedKeys.has(c.key))]);
       }
+      const freeze = localStorage.getItem("ta_crm_freeze");
+      if (freeze) {
+        const f = JSON.parse(freeze);
+        if (typeof f.frozenHeader === "boolean") setFrozenHeader(f.frozenHeader);
+        if ([0,1,2].includes(f.frozenCols)) setFrozenCols(f.frozenCols as 0|1|2);
+      }
     } catch {}
   }, []);
 
   const saveColumns = () => {
     localStorage.setItem("ta_crm_columns", JSON.stringify(columns));
+    localStorage.setItem("ta_crm_freeze", JSON.stringify({ frozenHeader, frozenCols }));
     setColSaved(true); setTimeout(()=>setColSaved(false), 1500);
   };
   const resetColumns = () => {
     localStorage.removeItem("ta_crm_columns");
+    localStorage.removeItem("ta_crm_freeze");
     setColumns(ALL_COLS.map(c=>({...c})));
+    setFrozenHeader(true);
+    setFrozenCols(1);
   };
 
   // ── load ──────────────────────────────────────────────────────────────────
@@ -547,6 +560,12 @@ export default function CRMPage() {
   };
 
   const visibleCols = columns.filter(c => c.visible);
+
+  // 計算凍結欄的 left offset
+  const colLeftOffset: number[] = visibleCols.reduce<number[]>((acc, col, i) => {
+    acc.push(i === 0 ? 0 : acc[i - 1] + visibleCols[i - 1].width);
+    return acc;
+  }, []);
 
   // ── col drag ──────────────────────────────────────────────────────────────
   const handleColDragStart = (key:string, e:React.DragEvent) => { setDragCol(key); e.dataTransfer.effectAllowed="move"; };
@@ -943,7 +962,22 @@ export default function CRMPage() {
                     </label>
                   ))}
                 </div>
-                <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-700 space-y-1.5">
+                <div className="mt-2 pt-2 border-t border-slate-100 dark:border-slate-700 space-y-2">
+                  {/* 凍結設定 */}
+                  <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 px-1 uppercase tracking-wide">凍結</p>
+                  <label className="flex items-center gap-2 px-1 cursor-pointer text-xs text-slate-700 dark:text-slate-300">
+                    <input type="checkbox" checked={frozenHeader} onChange={e=>setFrozenHeader(e.target.checked)} className="accent-violet-600 w-3.5 h-3.5" />
+                    凍結標題列
+                  </label>
+                  <div className="flex items-center gap-1 px-1">
+                    <span className="text-xs text-slate-500 dark:text-slate-400 mr-1">凍結欄：</span>
+                    {([0,1,2] as const).map(n => (
+                      <button key={n} onClick={()=>setFrozenCols(n)}
+                        className={`w-7 h-6 text-xs rounded transition-colors font-medium ${
+                          frozenCols===n ? "bg-violet-600 text-white" : "bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600"
+                        }`}>{n}</button>
+                    ))}
+                  </div>
                   <button onClick={saveColumns}
                     className={`w-full text-xs font-medium py-1.5 rounded-lg transition-colors ${
                       colSaved ? "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300" : "bg-violet-600 hover:bg-violet-700 text-white"
@@ -1001,14 +1035,14 @@ export default function CRMPage() {
         ) : (
           <table className="text-sm table-fixed" style={{width:visibleCols.reduce((s,c)=>s+c.width,0)}}>
             <colgroup>{visibleCols.map(col=><col key={col.key} style={{width:col.width}} />)}</colgroup>
-            <thead className="bg-slate-50 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 text-xs uppercase select-none">
+            <thead className={`bg-slate-50 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 text-xs uppercase select-none ${frozenHeader ? "sticky top-0 z-20" : ""}`}>
               <tr>
-                {visibleCols.map(col=>(
+                {visibleCols.map((col, ci)=>(
                   <th key={col.key}
-                    className={`text-left px-4 py-3 relative cursor-grab active:cursor-grabbing ${
+                    className={`text-left px-4 py-3 relative cursor-grab active:cursor-grabbing bg-slate-50 dark:bg-slate-700/80 ${
                       dragOverCol===col.key&&dragCol!==col.key ? "bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300" : ""
-                    }`}
-                    style={{width:col.width}} draggable
+                    } ${ci < frozenCols ? "sticky z-30" : ""} ${ci === frozenCols - 1 ? "shadow-[2px_0_4px_-2px_rgba(0,0,0,0.15)]" : ""}`}
+                    style={{width:col.width, ...(ci < frozenCols ? {left: colLeftOffset[ci]} : {})}} draggable
                     onDragStart={e=>handleColDragStart(col.key,e)}
                     onDragOver={e=>handleColDragOver(col.key,e)}
                     onDrop={()=>handleColDrop(col.key)}
@@ -1036,9 +1070,11 @@ export default function CRMPage() {
             </thead>
             <tbody className="divide-y divide-slate-50 dark:divide-slate-700/50">
               {sorted.map(c=>(
-                <tr key={c.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors">
-                  {visibleCols.map(col=>(
-                    <td key={col.key} className="px-4 py-2.5 truncate" style={{width:col.width,maxWidth:col.width}}>
+                <tr key={c.id} className="group/row hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors">
+                  {visibleCols.map((col, ci)=>(
+                    <td key={col.key}
+                      className={`px-4 py-2.5 truncate bg-white dark:bg-slate-800 group-hover/row:bg-slate-50 dark:group-hover/row:bg-slate-700/40 ${ci < frozenCols ? "sticky z-10" : ""} ${ci === frozenCols - 1 ? "shadow-[2px_0_4px_-2px_rgba(0,0,0,0.10)]" : ""}`}
+                      style={{width:col.width,maxWidth:col.width, ...(ci < frozenCols ? {left: colLeftOffset[ci]} : {})}}>
                       {col.key==="name" ? (
                         <div className="group/cell flex items-center gap-1.5 flex-wrap min-w-0">
                           <Link href={`/admin/crm/${c.id}`} className="font-medium text-blue-500 hover:text-blue-400 hover:underline flex-shrink-0">{c.name}</Link>
