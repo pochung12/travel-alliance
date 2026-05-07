@@ -163,7 +163,7 @@ export default function FlightsTab({ tourId }: { tourId: string }) {
   };
 
   // ── save preview ──────────────────────────────────────────────────────────
-  const MIGRATION_SQL = `-- 在 Supabase SQL Editor 執行以下 SQL 建立 tour_flights 資料表：
+  const MIGRATION_SQL = `-- 在 Supabase SQL Editor 執行以下 SQL：
 CREATE TABLE IF NOT EXISTS tour_flights (
   id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tour_id              UUID NOT NULL REFERENCES tours(id) ON DELETE CASCADE,
@@ -183,7 +183,13 @@ CREATE TABLE IF NOT EXISTS tour_flights (
   notes                TEXT NOT NULL DEFAULT '',
   created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-CREATE INDEX IF NOT EXISTS idx_tour_flights_tour_id ON tour_flights(tour_id);`;
+CREATE INDEX IF NOT EXISTS idx_tour_flights_tour_id ON tour_flights(tour_id);
+-- 若資料表已存在但缺少欄位，補執行：
+ALTER TABLE tour_flights ADD COLUMN IF NOT EXISTS special_meal TEXT NOT NULL DEFAULT '';
+ALTER TABLE tour_flights ADD COLUMN IF NOT EXISTS notes TEXT NOT NULL DEFAULT '';
+ALTER TABLE tour_flights ADD COLUMN IF NOT EXISTS ticket_number_return TEXT NOT NULL DEFAULT '';
+ALTER TABLE tour_flights ADD COLUMN IF NOT EXISTS departure_terminal TEXT NOT NULL DEFAULT '';
+ALTER TABLE tour_flights ADD COLUMN IF NOT EXISTS arrival_terminal TEXT NOT NULL DEFAULT '';`;
 
   const savePreview = async () => {
     if (preview.length === 0) return;
