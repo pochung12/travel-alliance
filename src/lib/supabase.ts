@@ -90,6 +90,7 @@ export interface CustomerTour {
   status: 'registered' | 'confirmed' | 'cancelled';
   paid_amount: number;
   notes: string;
+  room_number: string;
   tour?: Tour;
   customer?: Customer;
 }

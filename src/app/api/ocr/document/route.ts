@@ -19,7 +19,25 @@ export async function POST(req: NextRequest) {
       : `data:image/jpeg;base64,${imageBase64}`;
 
     const prompt =
-      docType === "passport"
+      docType === "auto"
+        ? `你是一個多功能證件 OCR 系統。請辨識圖片中的證件類型並提取所有可見資訊。
+只回傳一個合法的 JSON 物件，不要有任何說明文字。
+
+欄位說明（無法辨識或不適用填 null）：
+- docType："passport"（護照）/"idCard"（台灣身分證）/"taibao"（台胞證/回鄉證）
+- name：中文姓名
+- nameEn：英文/拼音姓名（若有）
+- birthday：生日（YYYY-MM-DD，民國年換算西元年，例如民國74年=1985年）
+- gender："male" 或 "female"
+- passport：護照號碼（護照時填）
+- passportExpiry：護照效期（YYYY-MM-DD，護照時填）
+- idNumber：身分證字號（身分證時填）
+- taibaoNumber：台胞證號碼（台胞證時填）
+- taibaoExpiry：台胞證效期（YYYY-MM-DD，台胞證時填）
+
+回傳範例：
+{"docType":"passport","name":"王小明","nameEn":"WANG XIAO MING","birthday":"1985-03-15","gender":"male","passport":"A12345678","passportExpiry":"2030-06-20","idNumber":null,"taibaoNumber":null,"taibaoExpiry":null}`
+      : docType === "passport"
         ? `你是一個護照 OCR 系統。請仔細辨識這張護照圖片，擷取以下欄位資訊。
 只回傳一個合法的 JSON 物件，不要有任何說明文字。
 

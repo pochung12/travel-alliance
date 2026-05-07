@@ -5,7 +5,7 @@ import { supabase, Tour, TourStatus, Customer, CustomerTour } from "@/lib/supaba
 import CostSpreadsheet from "@/components/CostSpreadsheet";
 import PaymentsTab from "@/components/PaymentsTab";
 import ItineraryTab from "@/components/ItineraryTab";
-import { ArrowLeft, Save, Trash2, UserPlus, X, Search } from "lucide-react";
+import { ArrowLeft, Save, Trash2, UserPlus, X, Search, BedDouble, Pencil } from "lucide-react";
 import Link from "next/link";
 
 const STATUS_OPTIONS: { value: TourStatus; label: string }[] = [
@@ -38,6 +38,8 @@ export default function GroupDetailPage() {
   const [addSearch, setAddSearch]       = useState("");
   const [saving, setSaving]            = useState(false);
   const [activeTab, setActiveTab]      = useState<"info"|"costs"|"payments"|"participants"|"itin_c"|"itin_t">("info");
+  const [editingRoomId, setEditingRoomId] = useState<string|null>(null);
+  const [roomInput,     setRoomInput]     = useState("");
 
   const loadTour = async () => {
     const { data } = await supabase.from("tours").select("*").eq("id", id).single();
@@ -104,6 +106,12 @@ export default function GroupDetailPage() {
     if (!confirm("移除此旅客？")) return;
     await supabase.from("customer_tours").delete().eq("id", ctId);
     loadParticipants();
+  };
+
+  const saveRoomNumber = async (ctId: string, room: string) => {
+    setEditingRoomId(null);
+    await supabase.from("customer_tours").update({ room_number: room.trim() }).eq("id", ctId);
+    setParticipants(prev => prev.map(p => p.id===ctId ? {...p, room_number: room.trim()} : p));
   };
 
   if (!tour) return (
@@ -230,54 +238,161 @@ export default function GroupDetailPage() {
       )}
 
       {/* ── Tab: Participants ── */}
-      {activeTab === "participants" && (
-        <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-700">
-            <h3 className="font-semibold text-slate-700 dark:text-slate-200 text-sm">報名旅客 ({participants.length} 人)</h3>
-            <button onClick={() => setShowAddModal(true)}
-              className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-              <UserPlus className="w-3.5 h-3.5" /> 加入旅客
-            </button>
+      {activeTab === "participants" && (() => {
+        const ROOM_PALETTES = [
+          { bar:"bg-blue-500",   bg:"bg-blue-50 dark:bg-blue-900/20",   badge:"bg-blue-500 text-white",   header:"text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800/60"   },
+          { bar:"bg-emerald-500",bg:"bg-emerald-50 dark:bg-emerald-900/20",badge:"bg-emerald-500 text-white",header:"text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60"},
+          { bar:"bg-violet-500", bg:"bg-violet-50 dark:bg-violet-900/20", badge:"bg-violet-500 text-white", header:"text-violet-700 dark:text-violet-300 border-violet-200 dark:border-violet-800/60" },
+          { bar:"bg-amber-500",  bg:"bg-amber-50 dark:bg-amber-900/20",   badge:"bg-amber-500 text-white",  header:"text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/60"   },
+          { bar:"bg-rose-500",   bg:"bg-rose-50 dark:bg-rose-900/20",     badge:"bg-rose-500 text-white",   header:"text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800/60"     },
+          { bar:"bg-cyan-500",   bg:"bg-cyan-50 dark:bg-cyan-900/20",     badge:"bg-cyan-500 text-white",   header:"text-cyan-700 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800/60"     },
+          { bar:"bg-pink-500",   bg:"bg-pink-50 dark:bg-pink-900/20",     badge:"bg-pink-500 text-white",   header:"text-pink-700 dark:text-pink-300 border-pink-200 dark:border-pink-800/60"     },
+          { bar:"bg-teal-500",   bg:"bg-teal-50 dark:bg-teal-900/20",     badge:"bg-teal-500 text-white",   header:"text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-800/60"     },
+        ];
+
+        // Group and sort
+        const sorted = [...participants].sort((a,b) => {
+          const ra = a.room_number||""; const rb = b.room_number||"";
+          if (!ra && !rb) return 0; if (!ra) return 1; if (!rb) return -1;
+          return ra.localeCompare(rb, undefined, {numeric:true});
+        });
+        const roomNums = [...new Set(sorted.map(p=>p.room_number).filter(Boolean))];
+        const paletteMap = new Map(roomNums.map((r,i)=>[r, ROOM_PALETTES[i%ROOM_PALETTES.length]]));
+
+        // Build grouped structure
+        const groups: { room: string; members: typeof sorted }[] = [];
+        for (const p of sorted) {
+          const r = p.room_number||"";
+          const last = groups[groups.length-1];
+          if (last && last.room===r) last.members.push(p);
+          else groups.push({room:r, members:[p]});
+        }
+
+        return (
+          <div className="space-y-4">
+            {/* header */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <h3 className="font-semibold text-slate-700 dark:text-slate-200 text-sm">報名旅客</h3>
+                <span className="text-xs bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 px-2 py-0.5 rounded-full">{participants.length} 人</span>
+                {roomNums.length>0 && (
+                  <span className="text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300 px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <BedDouble className="w-3 h-3" /> {roomNums.length} 間房
+                  </span>
+                )}
+              </div>
+              <button onClick={()=>setShowAddModal(true)}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                <UserPlus className="w-3.5 h-3.5" /> 加入旅客
+              </button>
+            </div>
+
+            {participants.length===0 ? (
+              <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 py-12 text-center text-slate-400 text-sm">
+                還沒有旅客報名此團
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {groups.map(({room, members}) => {
+                  const palette = room ? paletteMap.get(room) : null;
+                  return (
+                    <div key={room||"__unassigned"} className={`rounded-xl overflow-hidden border ${
+                      room ? "border-slate-100 dark:border-slate-700 shadow-sm" : "border-dashed border-slate-200 dark:border-slate-700"
+                    }`}>
+                      {/* group header */}
+                      <div className={`flex items-center gap-2 px-4 py-2.5 ${
+                        room ? `bg-white dark:bg-slate-800 border-b ${palette!.header}` : "bg-slate-50 dark:bg-slate-700/50 border-b border-slate-100 dark:border-slate-700"
+                      }`}>
+                        {room ? (
+                          <>
+                            <div className={`w-2 h-2 rounded-full ${palette!.bar}`} />
+                            <BedDouble className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500" />
+                            <span className={`text-xs font-bold ${palette!.header.split(" ")[0]}`}>{room} 號房</span>
+                            <span className="text-xs text-slate-400 dark:text-slate-500 ml-1">· {members.length} 人</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="text-xs font-medium text-slate-400 dark:text-slate-500">未分配房號</span>
+                            <span className="text-xs text-slate-300 dark:text-slate-600 ml-1">· {members.length} 人</span>
+                          </>
+                        )}
+                      </div>
+
+                      {/* members */}
+                      <div className="bg-white dark:bg-slate-800 divide-y divide-slate-50 dark:divide-slate-700/50">
+                        {members.map((p, mIdx) => (
+                          <div key={p.id} className={`flex items-center gap-0 ${room ? palette!.bg : "hover:bg-slate-50 dark:hover:bg-slate-700/20"} transition-colors`}>
+                            {/* colored left bar */}
+                            <div className={`w-1 self-stretch flex-shrink-0 ${room ? palette!.bar : "bg-transparent"} ${mIdx===0?"rounded-none":""}`} />
+
+                            <div className="flex-1 flex items-center gap-0 min-w-0 px-4 py-3">
+                              {/* name */}
+                              <div className="w-32 flex-shrink-0">
+                                <Link href={`/admin/crm/${p.customer_id}`} className="font-medium text-blue-600 dark:text-blue-400 hover:underline text-sm">
+                                  {p.customer.name}
+                                </Link>
+                              </div>
+                              {/* phone */}
+                              <div className="flex-1 text-sm text-slate-500 dark:text-slate-400 truncate min-w-0">
+                                {p.customer.phone||"—"}
+                              </div>
+                              {/* email */}
+                              <div className="flex-1 text-sm text-slate-500 dark:text-slate-400 truncate min-w-0 hidden sm:block">
+                                {p.customer.email||"—"}
+                              </div>
+                              {/* paid */}
+                              <div className="w-28 text-sm text-right text-slate-500 dark:text-slate-400 flex-shrink-0">
+                                {p.paid_amount ? `NT$${p.paid_amount.toLocaleString()}` : "—"}
+                              </div>
+                              {/* room badge / editor */}
+                              <div className="w-28 flex-shrink-0 flex justify-end pr-1">
+                                {editingRoomId===p.id ? (
+                                  <input
+                                    autoFocus
+                                    className="w-20 text-xs border border-blue-400 rounded-lg px-2 py-1 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                    value={roomInput}
+                                    onChange={e=>setRoomInput(e.target.value)}
+                                    onBlur={()=>saveRoomNumber(p.id, roomInput)}
+                                    onKeyDown={e=>{
+                                      if (e.key==="Enter") saveRoomNumber(p.id, roomInput);
+                                      if (e.key==="Escape") setEditingRoomId(null);
+                                    }}
+                                    placeholder="房號…"
+                                  />
+                                ) : (
+                                  <button
+                                    onClick={()=>{setEditingRoomId(p.id);setRoomInput(p.room_number||"");}}
+                                    className={`group/room flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-all ${
+                                      p.room_number
+                                        ? `${palette!.badge} font-medium shadow-sm hover:opacity-80`
+                                        : "text-slate-400 dark:text-slate-500 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 border border-dashed border-slate-200 dark:border-slate-600 hover:border-blue-400"
+                                    }`}
+                                  >
+                                    {p.room_number ? (
+                                      <>{p.room_number} <Pencil className="w-2.5 h-2.5 opacity-70" /></>
+                                    ) : (
+                                      <><BedDouble className="w-3 h-3" /> 分配房號</>
+                                    )}
+                                  </button>
+                                )}
+                              </div>
+                              {/* remove */}
+                              <button onClick={()=>removeParticipant(p.id)}
+                                className="ml-1 p-1 text-slate-200 dark:text-slate-600 hover:text-red-500 transition-colors rounded flex-shrink-0">
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
-          {participants.length === 0 ? (
-            <div className="py-10 text-center text-slate-400 text-sm">還沒有旅客報名此團</div>
-          ) : (
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 dark:bg-slate-700/50 text-xs text-slate-500 dark:text-slate-400 uppercase">
-                <tr>
-                  <th className="text-left px-4 py-3">姓名</th>
-                  <th className="text-left px-4 py-3">電話</th>
-                  <th className="text-left px-4 py-3">Email</th>
-                  <th className="text-right px-4 py-3">已付款</th>
-                  <th className="w-8 px-2 py-3"></th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50 dark:divide-slate-700">
-                {participants.map(p => (
-                  <tr key={p.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30">
-                    <td className="px-4 py-3">
-                      <Link href={`/admin/crm/${p.customer_id}`} className="font-medium text-blue-600 hover:underline">
-                        {p.customer.name}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{p.customer.phone || "—"}</td>
-                    <td className="px-4 py-3 text-slate-600 dark:text-slate-300">{p.customer.email || "—"}</td>
-                    <td className="px-4 py-3 text-right text-slate-600 dark:text-slate-300">
-                      {p.paid_amount ? `NT$${p.paid_amount.toLocaleString()}` : "—"}
-                    </td>
-                    <td className="px-2 py-3 text-center">
-                      <button onClick={() => removeParticipant(p.id)}
-                        className="p-1 text-slate-300 hover:text-red-500 transition-colors rounded">
-                        <X className="w-4 h-4" />
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── Tab: Customer Itinerary ── */}
       {activeTab === "itin_c" && (
