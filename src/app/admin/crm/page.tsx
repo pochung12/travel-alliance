@@ -201,6 +201,7 @@ function buildFormFromOcr(ocr: OcrResult, imageB64: string): Omit<Customer, "id"
     form.passport        = ocr.passport       ?? "";
     form.passport_expiry = ocr.passportExpiry ?? "";
     form.passport_image  = imageB64;
+    if (ocr.idNumber) form.id_number = ocr.idNumber;
   } else if (dt === "taibao") {
     form.taibao_number = ocr.taibaoNumber ?? "";
     form.taibao_expiry = ocr.taibaoExpiry ?? "";

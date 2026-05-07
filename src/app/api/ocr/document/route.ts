@@ -48,6 +48,7 @@ export async function POST(req: NextRequest) {
 - birthday：生日，格式 YYYY-MM-DD
 - gender：性別，只能是 "male" 或 "female"
 - passportExpiry：護照效期，格式 YYYY-MM-DD
+- idNumber：中華民國國民身分證字號（1個英文字母+9個數字，例如「A123456789」）。部分護照的個人資料頁或備註欄會印有身分證字號，若有請填入；若無則填 null。
 
 若某欄位無法辨識請填 null。
 
@@ -58,7 +59,8 @@ export async function POST(req: NextRequest) {
   "passport": "A12345678",
   "birthday": "1985-03-15",
   "gender": "male",
-  "passportExpiry": "2030-06-20"
+  "passportExpiry": "2030-06-20",
+  "idNumber": "A123456789"
 }`
       : docType === "idCard"
         ? `你是一個台灣國民身分證 OCR 系統。請仔細辨識這張中華民國國民身分證圖片，擷取以下欄位資訊。

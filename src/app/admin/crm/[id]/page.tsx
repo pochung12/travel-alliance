@@ -168,6 +168,11 @@ export default function CustomerDetailPage() {
         if (result.passport)       { updates.passport        = result.passport;       detected.push("passport");        }
         if (result.passportExpiry) { updates.passport_expiry = result.passportExpiry; detected.push("passport_expiry"); }
       }
+      // 護照上若有身分證字號，且目前欄位為空，則一起填入
+      if (result.idNumber && !form.id_number) {
+        updates.id_number = result.idNumber;
+        detected.push("id_number");
+      }
     } else if (docType === "taibao") {
       // 台胞證號碼不變：無條件保存號碼；效期以最新為準
       if (result.taibaoNumber) { updates.taibao_number = result.taibaoNumber; detected.push("taibao_number"); }
