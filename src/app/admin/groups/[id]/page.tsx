@@ -21,12 +21,16 @@ import Link from "next/link";
 // ─── Participant column config ─────────────────────────────────────────────────
 type PartCol = { key: string; label: string; visible: boolean };
 const PART_COLS_DEFAULT: PartCol[] = [
-  { key: "phone",           label: "電話",    visible: true  },
-  { key: "email",           label: "Email",   visible: false },
-  { key: "deposit_amount",  label: "訂金",    visible: true  },
-  { key: "balance_amount",  label: "尾款",    visible: true  },
-  { key: "meal_preference", label: "餐食偏好", visible: true  },
-  { key: "room_number",     label: "房號",    visible: true  },
+  { key: "phone",            label: "電話",      visible: true  },
+  { key: "email",            label: "Email",     visible: false },
+  { key: "passport",         label: "護照號碼",   visible: false },
+  { key: "passport_expiry",  label: "護照效期",   visible: false },
+  { key: "taibao_number",    label: "台胞證號碼", visible: false },
+  { key: "taibao_expiry",    label: "台胞證效期", visible: false },
+  { key: "deposit_amount",   label: "訂金",      visible: true  },
+  { key: "balance_amount",   label: "尾款",      visible: true  },
+  { key: "meal_preference",  label: "餐食偏好",   visible: true  },
+  { key: "room_number",      label: "房號",      visible: true  },
 ];
 
 // ─── Participant type config ───────────────────────────────────────────────────
@@ -600,6 +604,24 @@ export default function GroupDetailPage() {
                     </>
                   )}
                 </div>
+                {/* 按房號排序 */}
+                {roomNums.length > 0 && (
+                  <button
+                    onClick={() => {
+                      const sorted = [...orderedParts].sort((a, b) => {
+                        const ra = a.room_number || "";
+                        const rb = b.room_number || "";
+                        if (!ra && !rb) return 0;
+                        if (!ra) return 1;
+                        if (!rb) return -1;
+                        return ra.localeCompare(rb, undefined, { numeric: true });
+                      });
+                      savePartOrder(sorted.map(p => p.id));
+                    }}
+                    className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors">
+                    <BedDouble className="w-3.5 h-3.5" /> 按房號排序
+                  </button>
+                )}
                 <button onClick={() => setShowAddModal(true)}
                   className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
                   <UserPlus className="w-3.5 h-3.5" /> 加入旅客
@@ -761,6 +783,42 @@ export default function GroupDetailPage() {
                               {p.customer.email || "—"}
                             </div>
                           );
+                          if (col.key === "passport") return (
+                            <div key="passport" className="w-28 flex-shrink-0 text-xs text-slate-500 dark:text-slate-400 truncate font-mono">
+                              {p.customer.passport || <span className="text-slate-300 dark:text-slate-600">—</span>}
+                            </div>
+                          );
+                          if (col.key === "passport_expiry") {
+                            const expired = p.customer.passport_expiry && new Date(p.customer.passport_expiry) < new Date();
+                            return (
+                              <div key="passport_expiry" className={`w-24 flex-shrink-0 text-xs font-mono ${
+                                !p.customer.passport_expiry ? "text-slate-300 dark:text-slate-600" :
+                                expired ? "text-red-500 dark:text-red-400 font-semibold" :
+                                "text-slate-500 dark:text-slate-400"
+                              }`}>
+                                {p.customer.passport_expiry || "—"}
+                                {expired && <span className="ml-1 text-[9px] bg-red-100 dark:bg-red-900/40 text-red-500 px-1 rounded">已到期</span>}
+                              </div>
+                            );
+                          }
+                          if (col.key === "taibao_number") return (
+                            <div key="taibao_number" className="w-28 flex-shrink-0 text-xs text-slate-500 dark:text-slate-400 truncate font-mono">
+                              {p.customer.taibao_number || <span className="text-slate-300 dark:text-slate-600">—</span>}
+                            </div>
+                          );
+                          if (col.key === "taibao_expiry") {
+                            const expired = p.customer.taibao_expiry && new Date(p.customer.taibao_expiry) < new Date();
+                            return (
+                              <div key="taibao_expiry" className={`w-24 flex-shrink-0 text-xs font-mono ${
+                                !p.customer.taibao_expiry ? "text-slate-300 dark:text-slate-600" :
+                                expired ? "text-red-500 dark:text-red-400 font-semibold" :
+                                "text-slate-500 dark:text-slate-400"
+                              }`}>
+                                {p.customer.taibao_expiry || "—"}
+                                {expired && <span className="ml-1 text-[9px] bg-red-100 dark:bg-red-900/40 text-red-500 px-1 rounded">已到期</span>}
+                              </div>
+                            );
+                          }
                           if (col.key === "deposit_amount" || col.key === "balance_amount") {
                             const field = col.key as "deposit_amount" | "balance_amount";
                             const label = field === "deposit_amount" ? "訂金" : "尾款";
