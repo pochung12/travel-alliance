@@ -486,17 +486,24 @@ export default function CRMPage() {
     const already = (custTours[custId] || []).find(t => t.id === tour.id);
     if (already) {
       if (!confirm(`確定移除「${customers.find(c=>c.id===custId)?.name}」從「${tour.name}」？`)) return;
-      await supabase.from("customer_tours").delete()
+      const { error } = await supabase.from("customer_tours").delete()
         .eq("customer_id", custId).eq("tour_id", tour.id);
+      if (error) { alert("移除失敗：" + error.message); return; }
       setCustTours(prev => ({ ...prev, [custId]: (prev[custId]||[]).filter(t=>t.id!==tour.id) }));
     } else {
-      // 取該旅客的預設餐食偏好
       const cust = customers.find(c => c.id === custId);
-      await supabase.from("customer_tours").insert([{
+      const { error } = await supabase.from("customer_tours").insert([{
         customer_id: custId,
         tour_id: tour.id,
+        status: "registered",
+        paid_amount: 0,
+        deposit_amount: 0,
+        balance_amount: 0,
+        notes: "",
+        room_number: "",
         meal_preference: cust?.meal_preference || "",
       }]);
+      if (error) { alert("加入失敗：" + error.message); return; }
       setCustTours(prev => ({ ...prev, [custId]: [...(prev[custId]||[]), { id: tour.id, name: tour.name }] }));
     }
   };
