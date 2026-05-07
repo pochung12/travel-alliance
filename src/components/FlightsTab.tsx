@@ -66,6 +66,7 @@ export default function FlightsTab({ tourId }: { tourId: string }) {
   const [parsing, setParsing]       = useState(false);
   const [parseError, setParseError] = useState("");
   const [preview, setPreview]       = useState<ParsedFlight[]>([]);
+  const [parseSource, setParseSource] = useState<"gds_parser" | "ai" | null>(null);
   const [saving, setSaving]         = useState(false);
   const [saved, setSaved]           = useState(false);
 
@@ -100,6 +101,7 @@ export default function FlightsTab({ tourId }: { tourId: string }) {
     });
     const data = await res.json();
     if (data.error) throw new Error(data.error);
+    setParseSource(data.source ?? null);
     return (data.flights || []) as ParsedFlight[];
   };
 
@@ -161,13 +163,47 @@ export default function FlightsTab({ tourId }: { tourId: string }) {
   };
 
   // ── save preview ──────────────────────────────────────────────────────────
+  const MIGRATION_SQL = `-- 在 Supabase SQL Editor 執行以下 SQL 建立 tour_flights 資料表：
+CREATE TABLE IF NOT EXISTS tour_flights (
+  id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tour_id              UUID NOT NULL REFERENCES tours(id) ON DELETE CASCADE,
+  passenger_name       TEXT NOT NULL DEFAULT '',
+  pnr                  TEXT NOT NULL DEFAULT '',
+  ticket_number        TEXT NOT NULL DEFAULT '',
+  ticket_number_return TEXT NOT NULL DEFAULT '',
+  flight_number        TEXT NOT NULL DEFAULT '',
+  flight_date          DATE,
+  departure_time       TEXT NOT NULL DEFAULT '',
+  arrival_time         TEXT NOT NULL DEFAULT '',
+  departure_airport    TEXT NOT NULL DEFAULT '',
+  departure_terminal   TEXT NOT NULL DEFAULT '',
+  arrival_airport      TEXT NOT NULL DEFAULT '',
+  arrival_terminal     TEXT NOT NULL DEFAULT '',
+  special_meal         TEXT NOT NULL DEFAULT '',
+  notes                TEXT NOT NULL DEFAULT '',
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_tour_flights_tour_id ON tour_flights(tour_id);`;
+
   const savePreview = async () => {
     if (preview.length === 0) return;
     setSaving(true);
-    await supabase.from("tour_flights").insert(preview.map(f => ({ ...f, tour_id: tourId })));
+    const { error } = await supabase
+      .from("tour_flights")
+      .insert(preview.map(f => ({ ...f, tour_id: tourId })));
+    setSaving(false);
+    if (error) {
+      const isMissingTable = error.code === "42P01" || error.message?.includes("does not exist");
+      if (isMissingTable) {
+        alert("儲存失敗：tour_flights 資料表不存在。\n\n請到 Supabase Dashboard → SQL Editor，貼上以下 SQL 建立資料表後再試：\n\n" + MIGRATION_SQL);
+      } else {
+        alert("儲存失敗：" + error.message);
+      }
+      return;
+    }
     setPreview([]); setPasteText(""); setInputMode(null);
     setSaved(true); setTimeout(() => setSaved(false), 2000);
-    await load(); setSaving(false);
+    await load();
   };
 
   // ── delete ────────────────────────────────────────────────────────────────
@@ -266,14 +302,20 @@ export default function FlightsTab({ tourId }: { tourId: string }) {
       {preview.length > 0 && (
         <div className="bg-white dark:bg-slate-800 rounded-xl border-2 border-blue-200 dark:border-blue-800/60 shadow-sm overflow-hidden">
           <div className="px-5 py-3 border-b border-blue-100 dark:border-blue-800/40 flex items-center justify-between">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <CheckCircle className="w-4 h-4 text-blue-500" />
               <span className="font-semibold text-sm text-slate-700 dark:text-slate-200">解析結果</span>
-              <span className="text-xs bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-full">{preview.length} 個航段</span>
+              <span className="text-xs bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-full">{preview.length} 筆</span>
+              {parseSource === "gds_parser" && (
+                <span className="text-xs bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-full">✓ GDS 精確解析</span>
+              )}
+              {parseSource === "ai" && (
+                <span className="text-xs bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-full">AI 解析</span>
+              )}
               <span className="text-xs text-slate-400">請確認後儲存，可直接在格子內修改</span>
             </div>
             <div className="flex gap-2">
-              <button onClick={() => { setPreview([]); setInputMode(null); }}
+              <button onClick={() => { setPreview([]); setInputMode(null); setParseSource(null); }}
                 className="text-xs px-3 py-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors">
                 <X className="w-3.5 h-3.5 inline mr-1" />捨棄
               </button>
