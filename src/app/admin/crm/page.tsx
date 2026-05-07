@@ -405,38 +405,58 @@ export default function CRMPage() {
   };
 
   // ── load ──────────────────────────────────────────────────────────────────
+  // ⚡ 不載入 base64 圖片欄位（id_card_image/passport_image/taibao_image），列表頁用不到
+  const LIST_COLS = [
+    "id","name","name_en","gender","birthday","phone","email",
+    "id_number","passport","passport_expiry",
+    "taibao_number","taibao_expiry",
+    "address","emergency_contact","emergency_phone",
+    "notes","meal_preference","created_at",
+  ].join(",");
+
   const load = async () => {
-    const { data } = await supabase.from("customers").select("*").order("created_at",{ascending:false});
-    setCustomers(data||[]); setLoading(false);
+    const { data } = await supabase
+      .from("customers")
+      .select(LIST_COLS)
+      .order("created_at", { ascending: false });
+    setCustomers((data || []) as unknown as Customer[]);
+    setLoading(false);
   };
+
   const loadLabels = async () => {
-    const { data: labels } = await supabase.from("crm_labels").select("*").order("created_at");
-    setAllLabels((labels||[]) as CrmLabel[]);
-    const { data: cl } = await supabase.from("customer_labels").select("customer_id, label_id");
-    const map: Record<string,string[]> = {};
-    (cl||[]).forEach((row:{customer_id:string;label_id:string}) => {
+    // ⚡ 兩個 query 並行
+    const [{ data: labels }, { data: cl }] = await Promise.all([
+      supabase.from("crm_labels").select("*").order("created_at"),
+      supabase.from("customer_labels").select("customer_id, label_id"),
+    ]);
+    setAllLabels((labels || []) as CrmLabel[]);
+    const map: Record<string, string[]> = {};
+    (cl || []).forEach((row: { customer_id: string; label_id: string }) => {
       if (!map[row.customer_id]) map[row.customer_id] = [];
       map[row.customer_id].push(row.label_id);
     });
     setCustLabels(map);
   };
+
   const loadCustTours = async () => {
     const { data } = await supabase
       .from("customer_tours")
       .select("customer_id, tours(id, name)")
       .neq("status", "cancelled");
-    const map: Record<string, Pick<Tour,"id"|"name">[]> = {};
-    (data||[]).forEach((row: {customer_id:string; tours: {id:string;name:string}[]|null}) => {
+    const map: Record<string, Pick<Tour, "id" | "name">[]> = {};
+    (data || []).forEach((row: { customer_id: string; tours: { id: string; name: string }[] | null }) => {
       const tourArr = Array.isArray(row.tours) ? row.tours : (row.tours ? [row.tours] : []);
       tourArr.forEach(t => {
         if (!map[row.customer_id]) map[row.customer_id] = [];
-        if (!map[row.customer_id].find(x=>x.id===t.id))
+        if (!map[row.customer_id].find(x => x.id === t.id))
           map[row.customer_id].push({ id: t.id, name: t.name });
       });
     });
     setCustTours(map);
   };
-  useEffect(() => { load(); loadLabels(); loadCustTours(); }, []);
+
+  // ⚡ 三個查詢全部並行
+  useEffect(() => { Promise.all([load(), loadLabels(), loadCustTours()]); }, []);
 
   // ── resize ────────────────────────────────────────────────────────────────
   useEffect(() => {
