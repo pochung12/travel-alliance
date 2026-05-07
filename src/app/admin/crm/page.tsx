@@ -29,6 +29,7 @@ interface DupGroup {
   customers: [Customer, Customer];
   selected: boolean;
   keepId: string;
+  fieldChoices: Record<string, 'a' | 'b' | 'clear'>;
 }
 
 interface BulkItem {
@@ -90,6 +91,37 @@ const T2S: Record<string,string> = {
 function normalizeChineseName(name: string): string {
   return name.trim().split('').map(ch => T2S[ch] ?? ch).join('').toLowerCase();
 }
+// ─── Merge field definitions ─────────────────────────────────────────────────
+const MERGE_FIELD_DEFS: {
+  key: keyof Omit<Customer,'id'|'created_at'>;
+  label: string;
+  linked?: keyof Omit<Customer,'id'|'created_at'>;
+}[] = [
+  { key:'name',              label:'姓名' },
+  { key:'name_en',           label:'英文姓名' },
+  { key:'phone',             label:'電話' },
+  { key:'email',             label:'Email' },
+  { key:'birthday',          label:'生日' },
+  { key:'id_number',         label:'身分證字號',   linked:'id_card_image' },
+  { key:'passport',          label:'護照號碼',     linked:'passport_image' },
+  { key:'passport_expiry',   label:'護照效期' },
+  { key:'taibao_number',     label:'台胞證號碼',   linked:'taibao_image' },
+  { key:'taibao_expiry',     label:'台胞證效期' },
+  { key:'address',           label:'地址' },
+  { key:'emergency_contact', label:'緊急聯絡人' },
+  { key:'emergency_phone',   label:'緊急電話' },
+  { key:'notes',             label:'備註' },
+];
+function buildDefaultChoices(side: 'a'|'b'): Record<string,'a'|'b'|'clear'> {
+  const c: Record<string,'a'|'b'|'clear'> = {};
+  for (const fd of MERGE_FIELD_DEFS) {
+    c[fd.key] = side;
+    if (fd.linked) c[fd.linked] = side;
+  }
+  c['gender'] = side;
+  return c;
+}
+
 // Generate a stable pastel color from a tour ID string
 const TOUR_TAG_COLORS = [
   { bg:"#dbeafe", text:"#1e40af" }, // blue
@@ -685,58 +717,48 @@ export default function CRMPage() {
     });
     const groups: DupGroup[] = [];
     pairs.forEach(({customers,reasons},key) => {
-      groups.push({id:key, reasons, customers, selected:false, keepId:customers[0].id});
+      groups.push({id:key, reasons, customers, selected:false, keepId:customers[0].id, fieldChoices:buildDefaultChoices('a')});
     });
     setDupGroups(groups);
     setMergeResult(null);
     setShowMerge(true);
   };
 
+  const setFieldChoice = (gi: number, key: string, choice: 'a'|'b'|'clear') => {
+    setDupGroups(prev => prev.map((g, i) => {
+      if (i !== gi) return g;
+      const newChoices = {...g.fieldChoices, [key]: choice};
+      // Auto-update linked image field
+      const fd = MERGE_FIELD_DEFS.find(f => f.key === key);
+      if (fd?.linked) newChoices[fd.linked] = choice;
+      return {...g, fieldChoices: newChoices};
+    }));
+  };
+
   const executeMerge = async () => {
-    const toMerge = dupGroups.filter(g=>g.selected);
-    if (toMerge.length===0) return;
+    const toMerge = dupGroups.filter(g => g.selected);
+    if (toMerge.length === 0) return;
     setMerging(true);
-    let merged=0;
-    // Fields: copy from secondary to primary if primary is empty (or "other" for gender)
-    const FILL_FIELDS: (keyof Omit<Customer,"id"|"created_at">)[] = [
-      "name","name_en","phone","email","birthday","gender","address",
-      "emergency_contact","emergency_phone",
-      "id_number","id_card_image",
-      "passport","passport_expiry","passport_image",
-      "taibao_number","taibao_expiry","taibao_image",
+    let merged = 0;
+    const ALL_KEYS: (keyof Omit<Customer,'id'|'created_at'>)[] = [
+      'name','name_en','phone','email','birthday','gender','address',
+      'emergency_contact','emergency_phone','notes',
+      'id_number','id_card_image','passport','passport_expiry','passport_image',
+      'taibao_number','taibao_expiry','taibao_image',
     ];
     for (const group of toMerge) {
-      const [a,b] = group.customers;
-      const primary   = group.keepId===a.id ? a : b;
-      const secondary = group.keepId===a.id ? b : a;
-      const patch: Partial<Omit<Customer,"id"|"created_at">> = {};
-
-      // Fill empty fields from secondary
-      for (const f of FILL_FIELDS) {
-        const pv = primary[f] as string|null|undefined;
-        const sv = secondary[f] as string|null|undefined;
-        if ((!pv || pv==="other") && sv && sv!=="other") {
-          patch[f] = sv as never;
-        }
+      const [a, b] = group.customers;
+      const secondary = group.keepId === a.id ? b : a;
+      const patch: Partial<Omit<Customer,'id'|'created_at'>> = {};
+      for (const key of ALL_KEYS) {
+        const defaultSide = group.keepId === a.id ? 'a' : 'b';
+        const choice = group.fieldChoices[key] ?? defaultSide;
+        const val = choice === 'a' ? (a[key] ?? '') : choice === 'b' ? (b[key] ?? '') : (key === 'gender' ? 'other' : '');
+        (patch as Record<string, unknown>)[key] = val;
       }
-
-      // Special: merge notes (concatenate if both have content)
-      const pNotes = (primary.notes ?? "").trim();
-      const sNotes = (secondary.notes ?? "").trim();
-      if (pNotes && sNotes && pNotes !== sNotes) {
-        patch.notes = `${pNotes}\n---（合併自：${secondary.name}）---\n${sNotes}`;
-      } else if (!pNotes && sNotes) {
-        patch.notes = sNotes;
-      }
-
-      if (Object.keys(patch).length > 0)
-        await supabase.from("customers").update(patch).eq("id", primary.id);
-
-      // Migrate all tour registrations to primary
-      await supabase.from("customer_tours").update({customer_id: primary.id}).eq("customer_id", secondary.id);
-      // Migrate customer_labels (ignore conflict — primary may already have same label)
-      await supabase.from("customer_labels").update({customer_id: primary.id}).eq("customer_id", secondary.id);
-      // Delete secondary record
+      await supabase.from("customers").update(patch).eq("id", group.keepId);
+      await supabase.from("customer_tours").update({customer_id: group.keepId}).eq("customer_id", secondary.id);
+      await supabase.from("customer_labels").update({customer_id: group.keepId}).eq("customer_id", secondary.id);
       await supabase.from("customers").delete().eq("id", secondary.id);
       merged++;
     }
@@ -998,14 +1020,11 @@ export default function CRMPage() {
 
                   {dupGroups.map((group, gi) => {
                     const [a, b] = group.customers;
-                    const fieldRows: {label:string; va:string; vb:string}[] = [
-                      {label:"姓名",       va:a.name,         vb:b.name},
-                      {label:"身分證",     va:a.id_number||"—",  vb:b.id_number||"—"},
-                      {label:"護照號碼",   va:a.passport||"—",   vb:b.passport||"—"},
-                      {label:"台胞證",     va:a.taibao_number||"—", vb:b.taibao_number||"—"},
-                      {label:"生日",       va:a.birthday||"—",   vb:b.birthday||"—"},
-                      {label:"電話",       va:a.phone||"—",      vb:b.phone||"—"},
-                    ].filter(r => r.va!=="—" || r.vb!=="—");
+                    const getVal = (c: Customer, fd: typeof MERGE_FIELD_DEFS[0]) => {
+                      const v = c[fd.key] as string;
+                      return v || '';
+                    };
+                    const clearCount = Object.values(group.fieldChoices).filter(v=>v==='clear').length;
                     return (
                       <div key={group.id}
                         className={`rounded-xl border-2 transition-colors overflow-hidden ${
@@ -1013,7 +1032,8 @@ export default function CRMPage() {
                             ? "border-violet-400 dark:border-violet-600"
                             : "border-slate-100 dark:border-slate-700"
                         }`}>
-                        {/* group header row */}
+
+                        {/* group header */}
                         <div className={`flex items-center gap-3 px-4 py-2.5 ${
                           group.selected ? "bg-violet-50 dark:bg-violet-900/20" : "bg-slate-50 dark:bg-slate-700/50"
                         }`}>
@@ -1026,61 +1046,133 @@ export default function CRMPage() {
                                 {r}
                               </span>
                             ))}
+                            {clearCount > 0 && (
+                              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400">
+                                已標記清空 {clearCount} 欄
+                              </span>
+                            )}
                           </div>
-                          <span className="ml-auto text-xs text-slate-400 dark:text-slate-500">勾選後選擇保留哪一筆 →</span>
+                          <span className="ml-auto text-xs text-slate-400 dark:text-slate-500 hidden sm:block">點選欄位選擇要保留哪筆資料</span>
                         </div>
 
                         {/* comparison table */}
-                        <div className="bg-white dark:bg-slate-800 grid grid-cols-[auto_1fr_1fr] text-sm">
+                        <div className="bg-white dark:bg-slate-800 grid grid-cols-[6rem_1fr_1fr] text-sm">
                           {/* col headers */}
-                          <div className="px-3 py-2 bg-slate-50 dark:bg-slate-700/30" />
+                          <div className="px-3 py-2 bg-slate-50 dark:bg-slate-700/40 text-[10px] font-semibold text-slate-400 uppercase tracking-wide flex items-end">欄位</div>
                           {[a,b].map((c,ci)=>(
-                            <div key={c.id} className={`px-4 py-2 border-l border-slate-100 dark:border-slate-700 bg-slate-50 dark:bg-slate-700/30 ${
-                              group.keepId===c.id ? "bg-emerald-50 dark:bg-emerald-900/20" : ""
+                            <div key={c.id} className={`px-4 py-2 border-l border-slate-100 dark:border-slate-700 ${
+                              group.keepId===c.id
+                                ? "bg-emerald-50 dark:bg-emerald-900/20"
+                                : "bg-slate-50 dark:bg-slate-700/40"
                             }`}>
                               <label className="flex items-center gap-2 cursor-pointer">
                                 <input type="radio" name={`keep-${group.id}`} checked={group.keepId===c.id}
-                                  onChange={()=>setDupGroups(prev=>prev.map((g,i)=>i===gi?{...g,keepId:c.id}:g))}
+                                  onChange={()=>{
+                                    const newSide = ci===0 ? 'a' : 'b';
+                                    setDupGroups(prev=>prev.map((g,i)=>i===gi
+                                      ? {...g, keepId:c.id, fieldChoices:buildDefaultChoices(newSide)}
+                                      : g));
+                                  }}
                                   className="accent-emerald-600" />
                                 <span className={`text-xs font-semibold ${
                                   group.keepId===c.id ? "text-emerald-700 dark:text-emerald-400" : "text-slate-500 dark:text-slate-400"
                                 }`}>
-                                  {group.keepId===c.id ? "✓ 保留此筆" : `旅客 ${ci===0?"A":"B"}`}
+                                  {group.keepId===c.id ? "✓ 保留帳號" : `旅客 ${ci===0?"A":"B"}`}
                                 </span>
                               </label>
                               <Link href={`/admin/crm/${c.id}`} target="_blank"
                                 className="text-[10px] text-violet-500 hover:underline mt-0.5 block truncate">
-                                {c.name}（查看完整資料 ↗）
+                                {c.name}（查看 ↗）
                               </Link>
                             </div>
                           ))}
 
-                          {/* field rows */}
-                          {fieldRows.map(row=>{
-                            const diff = row.va !== row.vb;
+                          {/* per-field rows */}
+                          {MERGE_FIELD_DEFS.map(fd => {
+                            const va = getVal(a, fd);
+                            const vb = getVal(b, fd);
+                            if (!va && !vb) return null;
+                            const diff = va !== vb;
+                            const choice = group.fieldChoices[fd.key] ?? 'a';
+                            const hasImgA = !!(fd.linked && (a[fd.linked] as string));
+                            const hasImgB = !!(fd.linked && (b[fd.linked] as string));
+                            const cells = [
+                              {v: va, side:'a' as const, cust:a, hasImg:hasImgA},
+                              {v: vb, side:'b' as const, cust:b, hasImg:hasImgB},
+                            ];
                             return (
-                              <Fragment key={row.label}>
-                                <div className="px-3 py-2 text-xs font-medium text-slate-400 dark:text-slate-500 border-t border-slate-50 dark:border-slate-700/50 flex items-center">
-                                  {row.label}
+                              <Fragment key={fd.key}>
+                                {/* label col */}
+                                <div className="px-3 py-2.5 text-[11px] font-medium text-slate-400 dark:text-slate-500 border-t border-slate-50 dark:border-slate-700/50 flex items-center gap-1">
+                                  <span className="truncate leading-tight">{fd.label}</span>
+                                  {/* trash: toggle clear */}
+                                  <button
+                                    title={choice==='clear' ? '恢復' : '清空此欄'}
+                                    onClick={()=>setFieldChoice(gi, fd.key,
+                                      choice==='clear'
+                                        ? (group.keepId===a.id?'a':'b')
+                                        : 'clear'
+                                    )}
+                                    className={`ml-auto flex-shrink-0 p-0.5 rounded transition-colors ${
+                                      choice==='clear'
+                                        ? 'text-red-500 dark:text-red-400'
+                                        : 'text-slate-200 dark:text-slate-600 hover:text-red-400'
+                                    }`}>
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
                                 </div>
-                                {([row.va,row.vb] as const).map((v,vi)=>(
-                                  <div key={vi} className={`px-4 py-2 border-l border-t border-slate-50 dark:border-slate-700/50 ${
-                                    diff ? "text-amber-700 dark:text-amber-400 font-medium" : "text-slate-600 dark:text-slate-300"
-                                  } ${group.keepId===(vi===0?a:b).id ? "bg-emerald-50/50 dark:bg-emerald-900/10" : ""}`}>
-                                    <span className="font-mono text-xs">{v}</span>
-                                    {diff && <span className="text-[9px] ml-1 opacity-50">⚠</span>}
-                                  </div>
-                                ))}
+                                {/* value cells */}
+                                {cells.map(({v, side, hasImg}) => {
+                                  const isChosen = choice === side;
+                                  const isCleared = choice === 'clear';
+                                  return (
+                                    <div key={side}
+                                      onClick={()=> { if (diff && !isCleared) setFieldChoice(gi, fd.key, side); }}
+                                      className={`px-3 py-2.5 border-l border-t border-slate-50 dark:border-slate-700/50 transition-all
+                                        ${diff && !isCleared ? 'cursor-pointer' : ''}
+                                        ${isCleared
+                                          ? 'bg-red-50/50 dark:bg-red-900/10'
+                                          : isChosen
+                                            ? 'bg-emerald-50 dark:bg-emerald-900/15'
+                                            : diff ? 'opacity-40' : ''
+                                        }`}>
+                                      <div className="flex items-start gap-1.5 min-w-0">
+                                        {diff && !isCleared && (
+                                          <input type="radio" checked={isChosen}
+                                            onChange={()=>setFieldChoice(gi, fd.key, side)}
+                                            className="mt-0.5 accent-emerald-600 flex-shrink-0"
+                                            onClick={e=>e.stopPropagation()} />
+                                        )}
+                                        {isCleared && <span className="mt-0.5 flex-shrink-0 text-red-400 text-xs">✕</span>}
+                                        <div className="min-w-0 flex-1">
+                                          <span className={`text-xs break-all ${
+                                            isCleared
+                                              ? 'line-through text-red-300 dark:text-red-700'
+                                              : isChosen && diff
+                                                ? 'text-emerald-700 dark:text-emerald-300 font-medium'
+                                                : 'text-slate-600 dark:text-slate-300'
+                                          }`}>
+                                            {v || <span className="text-slate-300 dark:text-slate-600 not-italic">—</span>}
+                                          </span>
+                                          {hasImg && !isCleared && (
+                                            <span className="ml-1 text-[9px] text-slate-400 dark:text-slate-500">📷</span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
                               </Fragment>
                             );
                           })}
                         </div>
 
-                        {/* merge note */}
+                        {/* footer note */}
                         {group.selected && (
                           <div className="px-4 py-2 bg-violet-50 dark:bg-violet-900/20 border-t border-violet-100 dark:border-violet-800/40 text-xs text-violet-600 dark:text-violet-400 flex items-center gap-1.5">
-                            <ChevronRight className="w-3 h-3" />
-                            合併後：保留「{group.keepId===a.id?a.name:b.name}」的資料，空缺欄位從另一筆補入，出團報名記錄一併移轉，另一筆資料刪除
+                            <ChevronRight className="w-3 h-3 flex-shrink-0" />
+                            <span>保留帳號「{group.keepId===a.id?a.name:b.name}」，各欄位依上方選擇套用
+                              {clearCount>0 && `（${clearCount} 欄將清空）`}，出團記錄一併移轉，另一筆刪除</span>
                           </div>
                         )}
                       </div>
