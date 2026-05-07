@@ -89,6 +89,8 @@ export interface CustomerTour {
   tour_id: string;
   status: 'registered' | 'confirmed' | 'cancelled';
   paid_amount: number;
+  deposit_amount: number;   // 旅客訂金（手動分配）
+  balance_amount: number;   // 旅客尾款（手動分配）
   notes: string;
   room_number: string;
   meal_preference: string;  // comma-separated: "蛋奶素,不吃牛"

@@ -51,6 +51,12 @@ export default function GroupDetailPage() {
   const [editingRoomId, setEditingRoomId] = useState<string|null>(null);
   const [roomInput,     setRoomInput]     = useState("");
   const [mealPickerId,  setMealPickerId]  = useState<string|null>(null);
+  // 收付款總計（從 tour_payments 載入，用於顯示聯動）
+  const [payTotals, setPayTotals] = useState<{ deposit: number; balance: number }>({ deposit: 0, balance: 0 });
+  // 訂金/尾款 inline edit
+  const [editingAmtId,   setEditingAmtId]   = useState<string|null>(null);
+  const [editingAmtField, setEditingAmtField] = useState<"deposit_amount"|"balance_amount"|null>(null);
+  const [amtInput,       setAmtInput]       = useState("");
 
   const loadTour = async () => {
     const { data } = await supabase.from("tours").select("*").eq("id", id).single();
@@ -67,9 +73,24 @@ export default function GroupDetailPage() {
     setParticipants((data || []) as (CustomerTour & { customer: Customer })[]);
   };
 
+  const loadPayTotals = async () => {
+    const { data } = await supabase
+      .from("tour_payments")
+      .select("category, amount")
+      .eq("tour_id", id)
+      .eq("type", "income");
+    let deposit = 0, balance = 0;
+    (data || []).forEach((r: { category: string; amount: number }) => {
+      if (r.category === "deposit") deposit += r.amount;
+      else if (r.category === "balance") balance += r.amount;
+    });
+    setPayTotals({ deposit, balance });
+  };
+
   useEffect(() => {
     loadTour();
     loadParticipants();
+    loadPayTotals();
     supabase.from("customers").select("id,name,phone,email").order("name")
       .then(({ data }) => setAllCustomers((data || []) as Customer[]));
   }, [id]);
@@ -123,6 +144,13 @@ export default function GroupDetailPage() {
     setEditingRoomId(null);
     await supabase.from("customer_tours").update({ room_number: room.trim() }).eq("id", ctId);
     setParticipants(prev => prev.map(p => p.id===ctId ? {...p, room_number: room.trim()} : p));
+  };
+
+  const saveAmount = async (ctId: string, field: "deposit_amount" | "balance_amount", val: string) => {
+    const num = parseInt(val.replace(/[^0-9]/g, ""), 10) || 0;
+    await supabase.from("customer_tours").update({ [field]: num }).eq("id", ctId);
+    setParticipants(prev => prev.map(p => p.id === ctId ? { ...p, [field]: num } : p));
+    setEditingAmtId(null); setEditingAmtField(null); setAmtInput("");
   };
 
   const toggleMeal = async (ctId: string, option: string) => {
@@ -310,6 +338,41 @@ export default function GroupDetailPage() {
               </button>
             </div>
 
+            {/* ── Payment totals summary bar ── */}
+            {(() => {
+              const allocDeposit = participants.reduce((s,p)=>s+(p.deposit_amount||0),0);
+              const allocBalance = participants.reduce((s,p)=>s+(p.balance_amount||0),0);
+              const remDeposit = payTotals.deposit - allocDeposit;
+              const remBalance = payTotals.balance - allocBalance;
+              if (payTotals.deposit === 0 && payTotals.balance === 0) return null;
+              return (
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    { label:"訂金", received: payTotals.deposit, alloc: allocDeposit, rem: remDeposit, color:"emerald" },
+                    { label:"尾款", received: payTotals.balance,  alloc: allocBalance, rem: remBalance, color:"blue" },
+                  ].map(({ label, received, alloc, rem, color }) => received > 0 && (
+                    <div key={label} className={`bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 px-4 py-3`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">{label}（收付款合計）</span>
+                        <span className="text-sm font-bold text-slate-800 dark:text-slate-100">NT${received.toLocaleString()}</span>
+                      </div>
+                      {/* progress bar */}
+                      <div className="h-1.5 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden mb-2">
+                        <div className={`h-full rounded-full bg-${color}-500 transition-all`}
+                          style={{ width: received > 0 ? `${Math.min(100, alloc/received*100)}%` : "0%" }} />
+                      </div>
+                      <div className="flex justify-between text-[10px] text-slate-400 dark:text-slate-500">
+                        <span>已分配 <strong className={`text-${color}-600 dark:text-${color}-400`}>NT${alloc.toLocaleString()}</strong></span>
+                        <span className={rem !== 0 ? "text-amber-500 font-semibold" : ""}>
+                          {rem > 0 ? `未分配 NT$${rem.toLocaleString()}` : rem < 0 ? `超出 NT$${Math.abs(rem).toLocaleString()}` : "✓ 全部分配"}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+
             {participants.length===0 ? (
               <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 py-12 text-center text-slate-400 text-sm">
                 還沒有旅客報名此團
@@ -363,10 +426,43 @@ export default function GroupDetailPage() {
                               <div className="flex-1 text-sm text-slate-500 dark:text-slate-400 truncate min-w-0 hidden sm:block">
                                 {p.customer.email||"—"}
                               </div>
-                              {/* paid */}
-                              <div className="w-24 text-sm text-right text-slate-500 dark:text-slate-400 flex-shrink-0 hidden md:block">
-                                {p.paid_amount ? `NT$${p.paid_amount.toLocaleString()}` : "—"}
-                              </div>
+                              {/* 訂金 / 尾款 */}
+                              {(["deposit_amount","balance_amount"] as const).map(field => {
+                                const label = field === "deposit_amount" ? "訂金" : "尾款";
+                                const val   = p[field] || 0;
+                                const isEdit = editingAmtId === p.id && editingAmtField === field;
+                                return (
+                                  <div key={field} className="w-24 flex-shrink-0 hidden sm:flex items-center justify-end">
+                                    {isEdit ? (
+                                      <input
+                                        autoFocus
+                                        type="text"
+                                        inputMode="numeric"
+                                        className="w-20 text-xs border border-blue-400 rounded-lg px-2 py-1 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-right focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                        value={amtInput}
+                                        onChange={e => setAmtInput(e.target.value)}
+                                        onBlur={() => saveAmount(p.id, field, amtInput)}
+                                        onKeyDown={e => {
+                                          if (e.key === "Enter") saveAmount(p.id, field, amtInput);
+                                          if (e.key === "Escape") { setEditingAmtId(null); setEditingAmtField(null); }
+                                        }}
+                                        placeholder="0"
+                                      />
+                                    ) : (
+                                      <button
+                                        onClick={() => { setEditingAmtId(p.id); setEditingAmtField(field); setAmtInput(val ? String(val) : ""); }}
+                                        className={`group/amt text-xs px-2 py-1 rounded-lg transition-all text-right ${
+                                          val > 0
+                                            ? "text-emerald-700 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/30"
+                                            : "text-slate-300 dark:text-slate-600 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                                        }`}
+                                        title={`點擊編輯${label}`}>
+                                        {val > 0 ? `NT$${val.toLocaleString()}` : <span className="group-hover/amt:text-blue-400">{label}</span>}
+                                      </button>
+                                    )}
+                                  </div>
+                                );
+                              })}
                               {/* meal tag */}
                               <div className="w-28 flex-shrink-0 flex items-center">
                                 {(() => {
