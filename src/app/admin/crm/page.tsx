@@ -159,7 +159,7 @@ const ALL_COLS: ColDef[] = [
   { key: "email",             label: "Email",      width: 180, visible: true  },
   { key: "id_number",         label: "身分證",     width: 140, visible: false },
   { key: "passport",          label: "護照號碼",   width: 120, visible: true  },
-  { key: "passport_expiry",   label: "護照效期",   width: 120, visible: false },
+  { key: "passport_expiry",   label: "護照效期",   width: 110, visible: false },
   { key: "taibao_number",     label: "台胞證",     width: 140, visible: false },
   { key: "taibao_expiry",     label: "台胞證效期", width: 120, visible: false },
   { key: "address",           label: "地址",       width: 200, visible: false },
@@ -216,6 +216,33 @@ function getCellValue(c: Customer, key: string): string {
   if (key === "gender") return c.gender === "male" ? "男" : c.gender === "female" ? "女" : "其他";
   if (key === "created_at") return new Date(c.created_at).toLocaleDateString("zh-TW");
   return ((c as unknown as Record<string, unknown>)[key] as string) || "—";
+}
+
+// ─── Expiry badge ─────────────────────────────────────────────────────────────
+function ExpiryBadge({ dateStr }: { dateStr?: string }) {
+  if (!dateStr) return <span className="text-slate-300 dark:text-slate-600 text-xs">—</span>;
+  const today = new Date(); today.setHours(0,0,0,0);
+  const exp   = new Date(dateStr);
+  const days  = Math.floor((exp.getTime() - today.getTime()) / 86400000);
+  const label = exp.toLocaleDateString("zh-TW");
+  if (days < 0)   return (
+    <div className="flex flex-col gap-0.5">
+      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 whitespace-nowrap">過期</span>
+      <span className="text-[11px] text-red-400 dark:text-red-500 font-mono">{label}</span>
+    </div>
+  );
+  if (days <= 90) return (
+    <div className="flex flex-col gap-0.5">
+      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400 whitespace-nowrap">快到期</span>
+      <span className="text-[11px] text-yellow-600 dark:text-yellow-500 font-mono">{label}</span>
+    </div>
+  );
+  return (
+    <div className="flex flex-col gap-0.5">
+      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 whitespace-nowrap">有效</span>
+      <span className="text-[11px] text-slate-400 dark:text-slate-500 font-mono">{label}</span>
+    </div>
+  );
 }
 
 // ─── import helpers ───────────────────────────────────────────────────────────
@@ -981,6 +1008,8 @@ export default function CRMPage() {
                             );
                           })}
                         </div>
+                      ) : col.key==="passport_expiry"||col.key==="taibao_expiry" ? (
+                        <ExpiryBadge dateStr={(c as unknown as Record<string,string>)[col.key]} />
                       ) : col.key==="passport"||col.key==="id_number"||col.key==="taibao_number" ? (
                         <span className="text-slate-600 dark:text-slate-300 font-mono text-xs">{getCellValue(c,col.key)}</span>
                       ) : col.key==="created_at" ? (
