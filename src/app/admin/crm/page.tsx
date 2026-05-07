@@ -415,10 +415,18 @@ export default function CRMPage() {
   ].join(",");
 
   const load = async () => {
-    const { data } = await supabase
+    // 先嘗試精簡欄位查詢；若欄位不存在（如 meal_preference 尚未 migrate）自動降級為 select("*")
+    let { data, error } = await supabase
       .from("customers")
       .select(LIST_COLS)
       .order("created_at", { ascending: false });
+    if (error) {
+      console.warn("CRM list select fallback:", error.message);
+      ({ data, error } = await supabase
+        .from("customers")
+        .select("*")
+        .order("created_at", { ascending: false }));
+    }
     setCustomers((data || []) as unknown as Customer[]);
     setLoading(false);
   };
