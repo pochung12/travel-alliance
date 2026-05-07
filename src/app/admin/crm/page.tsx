@@ -1,7 +1,7 @@
 "use client";
 import { Fragment, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase, Customer } from "@/lib/supabase";
+import { supabase, Customer, Tour } from "@/lib/supabase";
 import {
   Plus, Search, Users, ScanLine, Upload, FileSpreadsheet,
   Loader2, CheckCircle, AlertCircle, X, Settings, Tag, Trash2, CheckCircle2, Layers,
@@ -63,6 +63,52 @@ const LABEL_COLORS = [
   "#6366f1","#8b5cf6","#ec4899","#64748b","#0ea5e9",
 ];
 
+// ─── Traditional → Simplified Chinese character map ──────────────────────────
+const T2S: Record<string,string> = {
+  // Common surnames
+  '陳':'陈','張':'张','劉':'刘','楊':'杨','趙':'赵','吳':'吴','孫':'孙','馬':'马',
+  '鄭':'郑','盧':'卢','謝':'谢','許':'许','韓':'韩','鄧':'邓','蕭':'萧','馮':'冯',
+  '蔣':'蒋','錢':'钱','葉':'叶','龔':'龚','蘇':'苏','嚴':'严','龍':'龙','鐘':'钟',
+  '賴':'赖','歐':'欧','區':'区','莊':'庄','呂':'吕','顏':'颜','顧':'顾','龐':'庞',
+  '陸':'陆','簡':'简','關':'关','繆':'缪','鄒':'邹','鄔':'邬','鮑':'鲍','齊':'齐',
+  '魏':'魏','薛':'薛','賀':'贺','賈':'贾','駱':'骆','鞏':'巩','鄺':'邝','覃':'覃',
+  // Common given name characters
+  '國':'国','華':'华','學':'学','軍':'军','東':'东','麗':'丽','鳳':'凤','偉':'伟',
+  '慶':'庆','愛':'爱','賢':'贤','輝':'辉','強':'强','興':'兴','維':'维','穎':'颖',
+  '瑩':'莹','躍':'跃','凱':'凯','騰':'腾','鵬':'鹏','曉':'晓','藝':'艺','歡':'欢',
+  '億':'亿','燁':'烨','濤':'涛','駿':'骏','嫻':'娴','聰':'聪','藍':'蓝','蘭':'兰',
+  '詩':'诗','雲':'云','鴻':'鸿','銘':'铭','寶':'宝','鋒':'锋','錦':'锦','禎':'祯',
+  '傳':'传','遠':'远','實':'实','達':'达','貴':'贵','義':'义','開':'开','長':'长',
+  '鄉':'乡','靜':'静','獻':'献','廣':'广','豐':'丰','應':'应','總':'总','經':'经',
+  '電':'电','數':'数','業':'业','動':'动','當':'当','現':'现','發':'发','來':'来',
+  '問':'问','員':'员','語':'语','級':'级','進':'进','這':'这','書':'书','產':'产',
+  '設':'设','構':'构','號':'号','讓':'让','點':'点','線':'线','幾':'几','歲':'岁',
+  '輕':'轻','過':'过','還':'还','說':'说','後':'后','看':'看','機':'机','帶':'带',
+  '會':'会','對':'对','樣':'样','給':'给','話':'话','錯':'错','親':'亲',
+  '頭':'头','門':'门','邊':'边','塊':'块','種':'种','風':'风','歷':'历',
+};
+function normalizeChineseName(name: string): string {
+  return name.trim().split('').map(ch => T2S[ch] ?? ch).join('').toLowerCase();
+}
+// Generate a stable pastel color from a tour ID string
+const TOUR_TAG_COLORS = [
+  { bg:"#dbeafe", text:"#1e40af" }, // blue
+  { bg:"#d1fae5", text:"#065f46" }, // emerald
+  { bg:"#fce7f3", text:"#9d174d" }, // pink
+  { bg:"#ede9fe", text:"#4c1d95" }, // violet
+  { bg:"#fef3c7", text:"#92400e" }, // amber
+  { bg:"#ffedd5", text:"#9a3412" }, // orange
+  { bg:"#cffafe", text:"#164e63" }, // cyan
+  { bg:"#f0fdf4", text:"#14532d" }, // green
+  { bg:"#fdf4ff", text:"#701a75" }, // fuchsia
+  { bg:"#fff7ed", text:"#7c2d12" }, // red-orange
+];
+function tourTagColor(tourId: string) {
+  let hash = 0;
+  for (let i = 0; i < tourId.length; i++) hash = (hash * 31 + tourId.charCodeAt(i)) & 0xffffffff;
+  return TOUR_TAG_COLORS[Math.abs(hash) % TOUR_TAG_COLORS.length];
+}
+
 const ALL_COLS: ColDef[] = [
   { key: "name",              label: "姓名",       width: 180, visible: true  },
   { key: "name_en",           label: "英文姓名",   width: 160, visible: false },
@@ -79,6 +125,7 @@ const ALL_COLS: ColDef[] = [
   { key: "emergency_contact", label: "緊急聯絡人", width: 120, visible: false },
   { key: "emergency_phone",   label: "緊急電話",   width: 140, visible: false },
   { key: "notes",             label: "備註",       width: 160, visible: false },
+  { key: "tours",             label: "參團紀錄",   width: 240, visible: true  },
   { key: "created_at",        label: "加入時間",   width: 110, visible: true  },
 ];
 
@@ -212,6 +259,9 @@ export default function CRMPage() {
   const [search, setSearch]       = useState("");
   const [loading, setLoading]     = useState(true);
 
+  // tour records per customer
+  const [custTours, setCustTours] = useState<Record<string, Pick<Tour,"id"|"name">[]>>({});
+
   // labels
   const [allLabels,     setAllLabels]     = useState<CrmLabel[]>([]);
   const [custLabels,    setCustLabels]    = useState<Record<string,string[]>>({});
@@ -309,7 +359,23 @@ export default function CRMPage() {
     });
     setCustLabels(map);
   };
-  useEffect(() => { load(); loadLabels(); }, []);
+  const loadCustTours = async () => {
+    const { data } = await supabase
+      .from("customer_tours")
+      .select("customer_id, tours(id, name)")
+      .neq("status", "cancelled");
+    const map: Record<string, Pick<Tour,"id"|"name">[]> = {};
+    (data||[]).forEach((row: {customer_id:string; tours: {id:string;name:string}[]|null}) => {
+      const tourArr = Array.isArray(row.tours) ? row.tours : (row.tours ? [row.tours] : []);
+      tourArr.forEach(t => {
+        if (!map[row.customer_id]) map[row.customer_id] = [];
+        if (!map[row.customer_id].find(x=>x.id===t.id))
+          map[row.customer_id].push({ id: t.id, name: t.name });
+      });
+    });
+    setCustTours(map);
+  };
+  useEffect(() => { load(); loadLabels(); loadCustTours(); }, []);
 
   // ── resize ────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -581,16 +647,17 @@ export default function CRMPage() {
       if (!pairs.has(key)) pairs.set(key,{customers:[a,b],reasons:[]});
       pairs.get(key)!.reasons.push(reason);
     };
-    // group by name
+    // group by name (繁體/簡體視為相同)
     const byName = new Map<string,Customer[]>();
     customers.forEach(c => {
-      const k = c.name.trim().toLowerCase();
+      if (!c.name?.trim()) return;
+      const k = normalizeChineseName(c.name);
       if (!byName.has(k)) byName.set(k,[]);
       byName.get(k)!.push(c);
     });
     byName.forEach(cs => {
       if (cs.length<2) return;
-      for (let i=0;i<cs.length;i++) for (let j=i+1;j<cs.length;j++) addPair(cs[i],cs[j],"姓名相同");
+      for (let i=0;i<cs.length;i++) for (let j=i+1;j<cs.length;j++) addPair(cs[i],cs[j],"姓名相同（含繁簡轉換）");
     });
     // group by passport
     const byPass = new Map<string,Customer[]>();
@@ -630,34 +697,52 @@ export default function CRMPage() {
     if (toMerge.length===0) return;
     setMerging(true);
     let merged=0;
-    const MERGE_FIELDS: (keyof Omit<Customer,"id"|"created_at">)[] = [
-      "name_en","phone","email","birthday","gender","address",
-      "emergency_contact","emergency_phone","notes",
-      "id_number","id_card_image","passport","passport_expiry","passport_image",
+    // Fields: copy from secondary to primary if primary is empty (or "other" for gender)
+    const FILL_FIELDS: (keyof Omit<Customer,"id"|"created_at">)[] = [
+      "name","name_en","phone","email","birthday","gender","address",
+      "emergency_contact","emergency_phone",
+      "id_number","id_card_image",
+      "passport","passport_expiry","passport_image",
       "taibao_number","taibao_expiry","taibao_image",
     ];
     for (const group of toMerge) {
       const [a,b] = group.customers;
       const primary   = group.keepId===a.id ? a : b;
       const secondary = group.keepId===a.id ? b : a;
-      // Fill gaps in primary with secondary's data
       const patch: Partial<Omit<Customer,"id"|"created_at">> = {};
-      for (const f of MERGE_FIELDS) {
+
+      // Fill empty fields from secondary
+      for (const f of FILL_FIELDS) {
         const pv = primary[f] as string|null|undefined;
         const sv = secondary[f] as string|null|undefined;
-        if ((!pv||pv==="other") && sv && sv!=="other") patch[f] = sv as never;
+        if ((!pv || pv==="other") && sv && sv!=="other") {
+          patch[f] = sv as never;
+        }
       }
-      if (Object.keys(patch).length>0)
-        await supabase.from("customers").update(patch).eq("id",primary.id);
-      // Migrate tours
-      await supabase.from("customer_tours").update({customer_id:primary.id}).eq("customer_id",secondary.id);
-      // Delete secondary
-      await supabase.from("customers").delete().eq("id",secondary.id);
+
+      // Special: merge notes (concatenate if both have content)
+      const pNotes = (primary.notes ?? "").trim();
+      const sNotes = (secondary.notes ?? "").trim();
+      if (pNotes && sNotes && pNotes !== sNotes) {
+        patch.notes = `${pNotes}\n---（合併自：${secondary.name}）---\n${sNotes}`;
+      } else if (!pNotes && sNotes) {
+        patch.notes = sNotes;
+      }
+
+      if (Object.keys(patch).length > 0)
+        await supabase.from("customers").update(patch).eq("id", primary.id);
+
+      // Migrate all tour registrations to primary
+      await supabase.from("customer_tours").update({customer_id: primary.id}).eq("customer_id", secondary.id);
+      // Migrate customer_labels (ignore conflict — primary may already have same label)
+      await supabase.from("customer_labels").update({customer_id: primary.id}).eq("customer_id", secondary.id);
+      // Delete secondary record
+      await supabase.from("customers").delete().eq("id", secondary.id);
       merged++;
     }
     setMerging(false);
     setMergeResult({merged});
-    load(); loadLabels();
+    load(); loadLabels(); loadCustTours();
   };
 
   // ─── render ───────────────────────────────────────────────────────────────
@@ -831,6 +916,21 @@ export default function CRMPage() {
                             className="opacity-0 group-hover/cell:opacity-100 transition-opacity p-0.5 text-slate-400 hover:text-violet-500 flex-shrink-0" title="編輯標籤">
                             <Tag className="w-3 h-3" />
                           </button>
+                        </div>
+                      ) : col.key==="tours" ? (
+                        <div className="flex flex-wrap gap-1">
+                          {(custTours[c.id]||[]).length===0 ? (
+                            <span className="text-slate-300 dark:text-slate-600 text-xs">—</span>
+                          ) : (custTours[c.id]).map(t => {
+                            const clr = tourTagColor(t.id);
+                            return (
+                              <span key={t.id}
+                                className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap"
+                                style={{backgroundColor: clr.bg, color: clr.text}}>
+                                {t.name}
+                              </span>
+                            );
+                          })}
                         </div>
                       ) : col.key==="passport"||col.key==="id_number"||col.key==="taibao_number" ? (
                         <span className="text-slate-600 dark:text-slate-300 font-mono text-xs">{getCellValue(c,col.key)}</span>
