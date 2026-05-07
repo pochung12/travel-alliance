@@ -137,26 +137,55 @@ export default function CustomerDetailPage() {
     e.target.value = "";
   };
 
-  const applyOcr = useCallback((result: OcrResult, docType: "passport" | "taibao" | "idCard") => {
+  // 比較效期：new 是否比 existing 更新（existing 為空時視為「新的一定更新」）
+  const isNewerExpiry = (newDate: string | null | undefined, existingDate: string | null | undefined): boolean => {
+    if (!newDate) return false;
+    if (!existingDate) return true;
+    return new Date(newDate) > new Date(existingDate);
+  };
+
+  const applyOcr = (result: OcrResult, docType: "passport" | "taibao" | "idCard") => {
     const updates: Partial<Customer> = {};
     const detected: string[] = [];
+    const skipped: string[] = [];
+
     if (result.name)     { updates.name     = result.name;     detected.push("name");     }
     if (result.nameEn)   { updates.name_en  = result.nameEn;  detected.push("name_en");  }
     if (result.birthday) { updates.birthday = result.birthday; detected.push("birthday"); }
     if (result.gender)   { updates.gender   = result.gender;  detected.push("gender");   }
+
     if (docType === "passport") {
-      if (result.passport)       { updates.passport        = result.passport;       detected.push("passport");        }
-      if (result.passportExpiry) { updates.passport_expiry = result.passportExpiry; detected.push("passport_expiry"); }
+      // 護照每次號碼不同：以最新效期優先，連同號碼一起更新
+      const isNewer = isNewerExpiry(result.passportExpiry, form.passport_expiry);
+      if (isNewer) {
+        if (result.passport)       { updates.passport        = result.passport;       detected.push("passport");        }
+        if (result.passportExpiry) { updates.passport_expiry = result.passportExpiry; detected.push("passport_expiry"); }
+      } else if (result.passportExpiry && form.passport_expiry) {
+        // 掃到的效期較舊或相同，保留現有護照資料
+        skipped.push("護照（現有效期較新，已保留）");
+      } else {
+        // 沒有效期資訊時直接更新
+        if (result.passport)       { updates.passport        = result.passport;       detected.push("passport");        }
+        if (result.passportExpiry) { updates.passport_expiry = result.passportExpiry; detected.push("passport_expiry"); }
+      }
     } else if (docType === "taibao") {
+      // 台胞證號碼不變：無條件保存號碼；效期以最新為準
       if (result.taibaoNumber) { updates.taibao_number = result.taibaoNumber; detected.push("taibao_number"); }
-      if (result.taibaoExpiry) { updates.taibao_expiry = result.taibaoExpiry; detected.push("taibao_expiry"); }
+      if (isNewerExpiry(result.taibaoExpiry, form.taibao_expiry)) {
+        if (result.taibaoExpiry) { updates.taibao_expiry = result.taibaoExpiry; detected.push("taibao_expiry"); }
+      } else if (result.taibaoExpiry && form.taibao_expiry) {
+        skipped.push("台胞證效期（現有效期較新，已保留）");
+      } else {
+        if (result.taibaoExpiry) { updates.taibao_expiry = result.taibaoExpiry; detected.push("taibao_expiry"); }
+      }
     } else {
       if (result.idNumber) { updates.id_number = result.idNumber; detected.push("id_number"); }
     }
+
     setForm(prev => ({ ...prev, ...updates }));
     flashHighlight(detected);
-    return detected;
-  }, [flashHighlight]);
+    return { detected, skipped };
+  };
 
   const scanDocument = async (docType: "passport" | "taibao" | "idCard") => {
     const base64 = docType === "passport" ? form.passport_image : docType === "taibao" ? form.taibao_image : form.id_card_image;
@@ -170,7 +199,7 @@ export default function CustomerDetailPage() {
       });
       const result: OcrResult = await res.json();
       if (result.error) throw new Error(result.error);
-      const detected = applyOcr(result, docType);
+      const { detected, skipped } = applyOcr(result, docType);
       if (result.name) {
         const { data: dups } = await supabase.from("customers").select("id,name,birthday")
           .ilike("name", result.name.trim()).neq("id", id);
@@ -182,7 +211,13 @@ export default function CustomerDetailPage() {
         taibao_number:"台胞證號碼", taibao_expiry:"台胞證效期", id_number:"身分證字號",
       };
       const detectedLabels = detected.map(k => labels[k] || k).join("、");
-      setStatus({ type: "success", msg: detected.length > 0 ? `已辨識：${detectedLabels}` : "未辨識到資料，請確認圖片清晰度" });
+      const skippedNote = skipped.length > 0 ? `（${skipped.join("、")}）` : "";
+      const msg = detected.length > 0
+        ? `已辨識：${detectedLabels}${skippedNote}`
+        : skipped.length > 0
+          ? skipped.join("、")
+          : "未辨識到資料，請確認圖片清晰度";
+      setStatus({ type: "success", msg });
     } catch {
       setStatus({ type: "error", msg: "辨識失敗，請確認圖片清晰度或 API 設定" });
     }
