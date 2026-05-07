@@ -252,14 +252,15 @@ export default function PaymentsTab({ tourId, pax, sellingPrice }: Props) {
         </div>
       ) : (
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[480px]">
             <thead className="bg-slate-50 dark:bg-slate-700/50 text-xs text-slate-500 dark:text-slate-400 uppercase">
               <tr>
-                <th className="text-left px-4 py-3">日期</th>
-                <th className="text-left px-4 py-3">類型</th>
+                <th className="text-left px-4 py-3 whitespace-nowrap">日期</th>
+                <th className="text-left px-4 py-3 whitespace-nowrap">類型</th>
                 <th className="text-left px-4 py-3">類別 / 說明</th>
-                <th className="text-right px-4 py-3">金額</th>
-                <th className="text-center px-4 py-3">佐證</th>
+                <th className="text-right px-4 py-3 whitespace-nowrap">金額</th>
+                <th className="text-center px-4 py-3 whitespace-nowrap">佐證</th>
                 <th className="w-8 px-2 py-3"></th>
               </tr>
             </thead>
@@ -379,6 +380,7 @@ export default function PaymentsTab({ tourId, pax, sellingPrice }: Props) {
               )}
             </tfoot>
           </table>
+          </div>{/* end overflow-x-auto */}
         </div>
       )}
 

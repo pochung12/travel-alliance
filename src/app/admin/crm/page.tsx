@@ -1086,45 +1086,57 @@ export default function CRMPage() {
 
   // ─── render ───────────────────────────────────────────────────────────────
   return (
-    <div className="p-6 space-y-5">
+    <div className="p-4 md:p-6 space-y-4 md:space-y-5">
 
       {/* ── header ── */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="text-2xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-          <Users className="w-6 h-6 text-violet-600" /> 旅客 CRM
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <h1 className="text-xl md:text-2xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+          <Users className="w-5 h-5 md:w-6 md:h-6 text-violet-600" /> 旅客 CRM
         </h1>
-        <div className="flex gap-2 flex-wrap">
+        <div className="flex gap-1.5 md:gap-2 flex-wrap">
           <button onClick={openMerge}
-            className="flex items-center gap-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 text-sm px-4 py-2 rounded-lg transition-colors">
-            <GitMerge className="w-4 h-4" /> 合併重複旅客
+            className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 text-xs md:text-sm px-2.5 md:px-4 py-1.5 md:py-2 rounded-lg transition-colors">
+            <GitMerge className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" />
+            <span className="hidden sm:inline">合併重複旅客</span>
+            <span className="sm:hidden">合併</span>
           </button>
           <button onClick={()=>setShowLabelMgr(true)}
-            className="flex items-center gap-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 text-sm px-4 py-2 rounded-lg transition-colors">
-            <Tag className="w-4 h-4" /> 標籤管理
+            className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 text-xs md:text-sm px-2.5 md:px-4 py-1.5 md:py-2 rounded-lg transition-colors">
+            <Tag className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" />
+            <span className="hidden sm:inline">標籤管理</span>
+            <span className="sm:hidden">標籤</span>
           </button>
           <button onClick={()=>setShowImport(true)}
-            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white text-sm px-4 py-2 rounded-lg transition-colors">
-            <FileSpreadsheet className="w-4 h-4" /> 匯入名單
+            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs md:text-sm px-2.5 md:px-4 py-1.5 md:py-2 rounded-lg transition-colors">
+            <FileSpreadsheet className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" />
+            <span className="hidden sm:inline">匯入名單</span>
+            <span className="sm:hidden">匯入</span>
           </button>
           <button onClick={()=>setShowBulkScan(true)}
-            className="flex items-center gap-2 bg-amber-500 hover:bg-amber-600 text-white text-sm px-4 py-2 rounded-lg transition-colors">
-            <Layers className="w-4 h-4" /> 批量掃描建檔
+            className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs md:text-sm px-2.5 md:px-4 py-1.5 md:py-2 rounded-lg transition-colors">
+            <Layers className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" />
+            <span className="hidden sm:inline">批量掃描建檔</span>
+            <span className="sm:hidden">批量掃描</span>
           </button>
           <button onClick={()=>setShowScan(true)}
-            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm px-4 py-2 rounded-lg transition-colors">
-            <ScanLine className="w-4 h-4" /> 掃描證件建檔
+            className="flex items-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs md:text-sm px-2.5 md:px-4 py-1.5 md:py-2 rounded-lg transition-colors">
+            <ScanLine className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" />
+            <span className="hidden sm:inline">掃描證件建檔</span>
+            <span className="sm:hidden">掃描</span>
           </button>
           <button onClick={()=>setShowModal(true)}
-            className="flex items-center gap-2 bg-violet-600 hover:bg-violet-700 text-white text-sm px-4 py-2 rounded-lg transition-colors">
-            <Plus className="w-4 h-4" /> 新增旅客
+            className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 text-white text-xs md:text-sm px-2.5 md:px-4 py-1.5 md:py-2 rounded-lg transition-colors">
+            <Plus className="w-3.5 h-3.5 md:w-4 md:h-4 shrink-0" />
+            <span className="hidden sm:inline">新增旅客</span>
+            <span className="sm:hidden">新增</span>
           </button>
         </div>
       </div>
 
       {/* ── search + label filter + col settings ── */}
       <div className="space-y-2">
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="relative w-64">
+        <div className="flex items-center gap-2 md:gap-3 flex-wrap">
+          <div className="relative flex-1 sm:flex-none sm:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               className="pl-9 pr-4 py-2 border border-slate-200 dark:border-slate-600 rounded-lg text-sm w-full bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-violet-400 placeholder:text-slate-400"
@@ -1212,8 +1224,73 @@ export default function CRMPage() {
         )}
       </div>
 
-      {/* ── table ── */}
-      <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-x-auto">
+      {/* ── Mobile card list (sm:hidden) ── */}
+      {!loading && (
+        <div className="sm:hidden">
+          {filtered.length === 0 ? (
+            <div className="text-center py-12 text-slate-400 text-sm bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700">
+              {search||filterLabelId ? "沒有符合的旅客" : "尚無旅客，點右上角新增或掃描證件"}
+            </div>
+          ) : (
+            <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm divide-y divide-slate-100 dark:divide-slate-700/60">
+              {filtered.map(c => {
+                const labelIds = custLabels[c.id] || [];
+                const labels = labelIds.map(lid => allLabels.find(l => l.id === lid)).filter(Boolean) as { id:string; name:string; color:string }[];
+                const tours  = custTours[c.id] || [];
+                const todayStr = new Date().toISOString().slice(0, 10);
+                const passExpired = c.passport_expiry && c.passport_expiry < todayStr;
+                const taibaoExpired = c.taibao_expiry && c.taibao_expiry < todayStr;
+                return (
+                  <Link key={c.id} href={`/admin/crm/${c.id}`}
+                    className="block px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700/30 active:bg-slate-100 dark:active:bg-slate-700/50 transition-colors">
+                    {/* Row 1: name + labels */}
+                    <div className="flex items-start justify-between gap-2 mb-0.5">
+                      <span className="font-semibold text-blue-600 dark:text-blue-400 text-sm">{c.name}</span>
+                      {labels.length > 0 && (
+                        <div className="flex gap-1 flex-wrap justify-end shrink-0 max-w-[55%]">
+                          {labels.slice(0, 3).map(l => (
+                            <span key={l.id} className="text-[10px] px-1.5 py-0.5 rounded font-medium text-white leading-tight" style={{backgroundColor:l.color}}>{l.name}</span>
+                          ))}
+                          {labels.length > 3 && <span className="text-[10px] text-slate-400">+{labels.length-3}</span>}
+                        </div>
+                      )}
+                    </div>
+                    {/* Row 2: english name */}
+                    {c.name_en && <div className="text-xs text-slate-400 dark:text-slate-500 mb-1">{c.name_en}</div>}
+                    {/* Row 3: info chips */}
+                    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                      {c.birthday && <span>🎂 {c.birthday}</span>}
+                      {c.passport && (
+                        <span className={passExpired ? "text-red-500 font-medium" : ""}>
+                          🛂 {c.passport}{passExpired ? " ⚠" : ""}
+                        </span>
+                      )}
+                      {c.taibao_number && (
+                        <span className={taibaoExpired ? "text-red-500 font-medium" : ""}>
+                          📋 {c.taibao_number}{taibaoExpired ? " ⚠" : ""}
+                        </span>
+                      )}
+                      {c.phone && <span>📱 {c.phone}</span>}
+                    </div>
+                    {/* Row 4: tours */}
+                    {tours.length > 0 && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {tours.slice(0, 3).map(t => (
+                          <span key={t.id} className="text-[10px] bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 px-1.5 py-0.5 rounded">{t.name}</span>
+                        ))}
+                        {tours.length > 3 && <span className="text-[10px] text-slate-400">+{tours.length-3}個團</span>}
+                      </div>
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Desktop table (hidden sm:block) ── */}
+      <div className="hidden sm:block bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-slate-100 dark:border-slate-700 overflow-x-auto">
         {loading ? (
           <div className="flex justify-center py-12">
             <div className="w-6 h-6 border-4 border-violet-500 border-t-transparent rounded-full animate-spin" />
@@ -1336,7 +1413,7 @@ export default function CRMPage() {
             </tbody>
           </table>
         )}
-      </div>
+      </div>{/* end desktop table */}
 
       {/* ══════════════════════════════════════════════════════════════════════
           MERGE DUPLICATES MODAL
