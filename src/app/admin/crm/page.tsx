@@ -30,6 +30,7 @@ interface DupGroup {
   selected: boolean;
   keepId: string;
   fieldChoices: Record<string, 'a' | 'b' | 'clear'>;
+  smartInfo: Record<string, string>;  // field key → reason for auto-selection
 }
 
 interface BulkItem {
@@ -112,15 +113,72 @@ const MERGE_FIELD_DEFS: {
   { key:'emergency_contact', label:'緊急聯絡人' },
   { key:'emergency_phone',   label:'緊急電話' },
   { key:'notes',             label:'備註' },
+  { key:'meal_preference',   label:'餐食偏好' },
 ];
-function buildDefaultChoices(side: 'a'|'b'): Record<string,'a'|'b'|'clear'> {
-  const c: Record<string,'a'|'b'|'clear'> = {};
-  for (const fd of MERGE_FIELD_DEFS) {
-    c[fd.key] = side;
-    if (fd.linked) c[fd.linked] = side;
+
+// ── 智慧合併：自動判斷最佳欄位選擇 ──────────────────────────────────────────
+function buildSmartChoices(a: Customer, b: Customer): {
+  choices: Record<string, 'a'|'b'|'clear'>;
+  smartInfo: Record<string, string>;
+} {
+  const choices: Record<string, 'a'|'b'|'clear'> = {};
+  const smartInfo: Record<string, string> = {};
+
+  // 比較效期：回傳較新的一側
+  const newerSide = (da: string|null|undefined, db: string|null|undefined): 'a'|'b'|null => {
+    if (!da && !db) return null;
+    if (!da)  return 'b';
+    if (!db)  return 'a';
+    return new Date(da) >= new Date(db) ? 'a' : 'b';
+  };
+
+  // ── 護照：效期較新的一側，連同號碼+圖片一起 ──
+  const passSide = newerSide(a.passport_expiry, b.passport_expiry) ?? 'a';
+  choices['passport'] = passSide;
+  choices['passport_expiry'] = passSide;
+  choices['passport_image'] = passSide;
+  if (a.passport_expiry && b.passport_expiry) {
+    const newer = passSide === 'a' ? a.passport_expiry : b.passport_expiry;
+    smartInfo['passport'] = `效期較新（${newer}）`;
+    smartInfo['passport_expiry'] = `效期較新（${newer}）`;
+  } else if (a.passport_expiry || b.passport_expiry) {
+    smartInfo['passport'] = '有效期存在優先';
+    smartInfo['passport_expiry'] = '有效期存在優先';
   }
-  c['gender'] = side;
-  return c;
+
+  // ── 台胞證：效期較新的一側（號碼相同，但連同效期+圖片） ──
+  const taibaoSide = newerSide(a.taibao_expiry, b.taibao_expiry) ?? 'a';
+  choices['taibao_number'] = taibaoSide;
+  choices['taibao_expiry'] = taibaoSide;
+  choices['taibao_image'] = taibaoSide;
+  if (a.taibao_expiry && b.taibao_expiry) {
+    const newer = taibaoSide === 'a' ? a.taibao_expiry : b.taibao_expiry;
+    smartInfo['taibao_number'] = `效期較新（${newer}）`;
+    smartInfo['taibao_expiry'] = `效期較新（${newer}）`;
+  } else if (a.taibao_expiry || b.taibao_expiry) {
+    smartInfo['taibao_number'] = '有效期存在優先';
+    smartInfo['taibao_expiry'] = '有效期存在優先';
+  }
+
+  // ── 其他欄位：非空優先；都有值時以甲方為預設 ──
+  const others = [
+    'name','name_en','phone','email','birthday','gender',
+    'id_number','id_card_image',
+    'address','emergency_contact','emergency_phone','notes','meal_preference',
+  ] as (keyof Customer)[];
+  for (const key of others) {
+    const va = (a[key] as string) || '';
+    const vb = (b[key] as string) || '';
+    if (!va && vb) {
+      choices[key] = 'b';
+      smartInfo[key] = '僅乙方有資料';
+    } else {
+      choices[key] = 'a';
+      if (va && !vb) smartInfo[key] = '僅甲方有資料';
+    }
+  }
+
+  return { choices, smartInfo };
 }
 
 // Generate a stable pastel color from a tour ID string
@@ -850,7 +908,8 @@ export default function CRMPage() {
     });
     const groups: DupGroup[] = [];
     pairs.forEach(({customers,reasons},key) => {
-      groups.push({id:key, reasons, customers, selected:false, keepId:customers[0].id, fieldChoices:buildDefaultChoices('a')});
+      const { choices, smartInfo } = buildSmartChoices(customers[0], customers[1]);
+      groups.push({id:key, reasons, customers, selected:false, keepId:customers[0].id, fieldChoices:choices, smartInfo});
     });
     setDupGroups(groups);
     setMergeResult(null);
@@ -875,13 +934,16 @@ export default function CRMPage() {
     let merged = 0;
     const ALL_KEYS: (keyof Omit<Customer,'id'|'created_at'>)[] = [
       'name','name_en','phone','email','birthday','gender','address',
-      'emergency_contact','emergency_phone','notes',
+      'emergency_contact','emergency_phone','notes','meal_preference',
       'id_number','id_card_image','passport','passport_expiry','passport_image',
       'taibao_number','taibao_expiry','taibao_image',
     ];
     for (const group of toMerge) {
       const [a, b] = group.customers;
+      const primary   = group.keepId === a.id ? a : b;
       const secondary = group.keepId === a.id ? b : a;
+
+      // 1. 合併欄位
       const patch: Partial<Omit<Customer,'id'|'created_at'>> = {};
       for (const key of ALL_KEYS) {
         const defaultSide = group.keepId === a.id ? 'a' : 'b';
@@ -889,9 +951,37 @@ export default function CRMPage() {
         const val = choice === 'a' ? (a[key] ?? '') : choice === 'b' ? (b[key] ?? '') : (key === 'gender' ? 'other' : '');
         (patch as Record<string, unknown>)[key] = val;
       }
-      await supabase.from("customers").update(patch).eq("id", group.keepId);
-      await supabase.from("customer_tours").update({customer_id: group.keepId}).eq("customer_id", secondary.id);
-      await supabase.from("customer_labels").update({customer_id: group.keepId}).eq("customer_id", secondary.id);
+      await supabase.from("customers").update(patch).eq("id", primary.id);
+
+      // 2. 出團記錄轉移（避免重複：同一個 tour_id 只保留一筆）
+      const { data: existingTours } = await supabase
+        .from("customer_tours").select("tour_id").eq("customer_id", primary.id);
+      const existingTourIds = new Set((existingTours || []).map((r: {tour_id: string}) => r.tour_id));
+      const { data: secTours } = await supabase
+        .from("customer_tours").select("id,tour_id").eq("customer_id", secondary.id);
+      for (const t of (secTours || []) as {id:string;tour_id:string}[]) {
+        if (existingTourIds.has(t.tour_id)) {
+          await supabase.from("customer_tours").delete().eq("id", t.id);
+        } else {
+          await supabase.from("customer_tours").update({customer_id: primary.id}).eq("id", t.id);
+        }
+      }
+
+      // 3. 標籤轉移（避免重複標籤）
+      const { data: existingLabels } = await supabase
+        .from("customer_labels").select("label_id").eq("customer_id", primary.id);
+      const existingLabelIds = new Set((existingLabels || []).map((r: {label_id: string}) => r.label_id));
+      const { data: secLabels } = await supabase
+        .from("customer_labels").select("id,label_id").eq("customer_id", secondary.id);
+      for (const l of (secLabels || []) as {id:string;label_id:string}[]) {
+        if (existingLabelIds.has(l.label_id)) {
+          await supabase.from("customer_labels").delete().eq("id", l.id);
+        } else {
+          await supabase.from("customer_labels").update({customer_id: primary.id}).eq("id", l.id);
+        }
+      }
+
+      // 4. 刪除次要帳號
       await supabase.from("customers").delete().eq("id", secondary.id);
       merged++;
     }
@@ -1252,9 +1342,8 @@ export default function CRMPage() {
                               <label className="flex items-center gap-2 cursor-pointer">
                                 <input type="radio" name={`keep-${group.id}`} checked={group.keepId===c.id}
                                   onChange={()=>{
-                                    const newSide = ci===0 ? 'a' : 'b';
                                     setDupGroups(prev=>prev.map((g,i)=>i===gi
-                                      ? {...g, keepId:c.id, fieldChoices:buildDefaultChoices(newSide)}
+                                      ? {...g, keepId:c.id}
                                       : g));
                                   }}
                                   className="accent-emerald-600" />
@@ -1287,23 +1376,30 @@ export default function CRMPage() {
                             return (
                               <Fragment key={fd.key}>
                                 {/* label col */}
-                                <div className="px-3 py-2.5 text-[11px] font-medium text-slate-400 dark:text-slate-500 border-t border-slate-50 dark:border-slate-700/50 flex items-center gap-1">
-                                  <span className="truncate leading-tight">{fd.label}</span>
-                                  {/* trash: toggle clear */}
-                                  <button
-                                    title={choice==='clear' ? '恢復' : '清空此欄'}
-                                    onClick={()=>setFieldChoice(gi, fd.key,
-                                      choice==='clear'
-                                        ? (group.keepId===a.id?'a':'b')
-                                        : 'clear'
-                                    )}
-                                    className={`ml-auto flex-shrink-0 p-0.5 rounded transition-colors ${
-                                      choice==='clear'
-                                        ? 'text-red-500 dark:text-red-400'
-                                        : 'text-slate-200 dark:text-slate-600 hover:text-red-400'
-                                    }`}>
-                                    <Trash2 className="w-3 h-3" />
-                                  </button>
+                                <div className="px-3 py-2.5 text-[11px] font-medium text-slate-400 dark:text-slate-500 border-t border-slate-50 dark:border-slate-700/50 flex flex-col gap-0.5 justify-center">
+                                  <div className="flex items-center gap-1">
+                                    <span className="truncate leading-tight">{fd.label}</span>
+                                    {/* trash: toggle clear */}
+                                    <button
+                                      title={choice==='clear' ? '恢復' : '清空此欄'}
+                                      onClick={()=>setFieldChoice(gi, fd.key,
+                                        choice==='clear'
+                                          ? (group.keepId===a.id?'a':'b')
+                                          : 'clear'
+                                      )}
+                                      className={`ml-auto flex-shrink-0 p-0.5 rounded transition-colors ${
+                                        choice==='clear'
+                                          ? 'text-red-500 dark:text-red-400'
+                                          : 'text-slate-200 dark:text-slate-600 hover:text-red-400'
+                                      }`}>
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                  {group.smartInfo[fd.key] && (
+                                    <span className="text-[9px] px-1 py-px rounded bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 leading-tight w-fit">
+                                      🤖 {group.smartInfo[fd.key]}
+                                    </span>
+                                  )}
                                 </div>
                                 {/* value cells */}
                                 {cells.map(({v, side, hasImg}) => {
