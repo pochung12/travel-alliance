@@ -52,7 +52,10 @@ export default function GroupDetailPage() {
   const [roomInput,     setRoomInput]     = useState("");
   const [mealPickerId,  setMealPickerId]  = useState<string|null>(null);
   // CRM 標籤（用於加入旅客 Modal）
-  const [custLabels, setCustLabels] = useState<Record<string, { id: string; name: string; color: string }[]>>({});
+  const [custLabels,       setCustLabels]       = useState<Record<string, { id: string; name: string; color: string }[]>>({});
+  const [allCrmLabels,     setAllCrmLabels]     = useState<{ id: string; name: string; color: string }[]>([]);
+  const [modalFilterLabel, setModalFilterLabel] = useState<string|null>(null);
+  const [modalSort,        setModalSort]        = useState<"name"|"labels">("name");
   // 收付款總計（從 tour_payments 載入，用於顯示聯動）
   const [payTotals, setPayTotals] = useState<{ deposit: number; balance: number }>({ deposit: 0, balance: 0 });
   // 訂金/尾款 inline edit
@@ -100,9 +103,11 @@ export default function GroupDetailPage() {
       supabase.from("customer_labels").select("customer_id,label_id"),
     ]).then(([{ data: custs }, { data: labels }, { data: cl }]) => {
       setAllCustomers((custs || []) as Customer[]);
+      const labelList = (labels || []) as { id: string; name: string; color: string }[];
+      setAllCrmLabels(labelList);
       const map: Record<string, { id: string; name: string; color: string }[]> = {};
       (cl || []).forEach((row: { customer_id: string; label_id: string }) => {
-        const label = (labels || []).find((l: { id: string }) => l.id === row.label_id) as { id: string; name: string; color: string } | undefined;
+        const label = labelList.find(l => l.id === row.label_id);
         if (label) {
           if (!map[row.customer_id]) map[row.customer_id] = [];
           map[row.customer_id].push(label);
@@ -141,6 +146,8 @@ export default function GroupDetailPage() {
     setShowAddModal(false);
     setSelectedCids(new Set());
     setAddSearch("");
+    setModalFilterLabel(null);
+    setModalSort("name");
   };
 
   const addParticipants = async () => {
@@ -150,10 +157,20 @@ export default function GroupDetailPage() {
       return {
         customer_id: cid,
         tour_id: id,
+        status: "registered",
+        paid_amount: 0,
+        deposit_amount: 0,
+        balance_amount: 0,
+        notes: "",
+        room_number: "",
         meal_preference: cust?.meal_preference || "",
       };
     });
-    await supabase.from("customer_tours").insert(rows);
+    const { error } = await supabase.from("customer_tours").insert(rows);
+    if (error) {
+      alert("加入失敗：" + error.message);
+      return;
+    }
     closeAddModal();
     loadParticipants();
   };
@@ -606,19 +623,32 @@ export default function GroupDetailPage() {
 
       {/* Add participant modal */}
       {showAddModal && (() => {
-        const filtered = unjoined.filter(c =>
-          !addSearch || c.name.includes(addSearch) || (c.phone || "").includes(addSearch));
+        // 篩選：搜尋 + 標籤
+        const afterSearch = unjoined.filter(c =>
+          (!addSearch || c.name.includes(addSearch) || (c.phone || "").includes(addSearch)) &&
+          (!modalFilterLabel || (custLabels[c.id] || []).some(lb => lb.id === modalFilterLabel))
+        );
+        // 排序
+        const modalFiltered = [...afterSearch].sort((a, b) => {
+          if (modalSort === "labels") {
+            const la = (custLabels[a.id] || []).length;
+            const lb = (custLabels[b.id] || []).length;
+            return lb - la || a.name.localeCompare(b.name, "zh-TW");
+          }
+          return a.name.localeCompare(b.name, "zh-TW");
+        });
         return (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-md">
-              <div className="px-5 py-4 border-b dark:border-slate-700 flex items-center justify-between">
+            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-md flex flex-col max-h-[90vh]">
+              {/* Header */}
+              <div className="px-5 py-4 border-b dark:border-slate-700 flex items-center justify-between flex-shrink-0">
                 <h2 className="font-bold text-slate-800 dark:text-slate-100">加入旅客</h2>
                 <button onClick={closeAddModal} className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200">
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <div className="px-5 py-4 space-y-3">
+              <div className="px-5 py-4 space-y-3 overflow-y-auto flex-1">
                 {unjoined.length === 0 ? (
                   <p className="text-sm text-slate-500 py-4 text-center">所有旅客都已加入此團</p>
                 ) : (
@@ -635,34 +665,67 @@ export default function GroupDetailPage() {
                       />
                     </div>
 
-                    {/* 全選列 */}
+                    {/* 標籤篩選 */}
+                    {allCrmLabels.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        <button
+                          onClick={() => setModalFilterLabel(null)}
+                          className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                            !modalFilterLabel
+                              ? "bg-slate-700 dark:bg-slate-200 text-white dark:text-slate-800"
+                              : "bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-600"
+                          }`}>全部</button>
+                        {allCrmLabels.map(lb => (
+                          <button key={lb.id}
+                            onClick={() => setModalFilterLabel(modalFilterLabel === lb.id ? null : lb.id)}
+                            className={`px-2.5 py-1 rounded-full text-xs font-medium text-white transition-all ${
+                              modalFilterLabel === lb.id ? "ring-2 ring-offset-1 ring-white/60" : "opacity-70 hover:opacity-100"
+                            }`}
+                            style={{ backgroundColor: lb.color }}>
+                            {lb.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* 排序 + 計數列 */}
                     <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400">
-                      <button
-                        onClick={() => setSelectedCids(new Set(filtered.map(c => c.id as string)))}
-                        className="hover:text-blue-600 hover:underline">全選</button>
-                      {selectedCids.size > 0
-                        ? <span className="font-medium text-blue-600">已選 {selectedCids.size} 位</span>
-                        : <span>共 {filtered.length} 位旅客</span>}
-                      <button
-                        onClick={() => setSelectedCids(new Set())}
-                        className="hover:text-slate-700 hover:underline">取消全選</button>
+                      <div className="flex items-center gap-1">
+                        <span>排序：</span>
+                        <button
+                          onClick={() => setModalSort("name")}
+                          className={`px-2 py-0.5 rounded transition-colors ${modalSort === "name" ? "bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 font-medium" : "hover:text-slate-700"}`}>
+                          姓名
+                        </button>
+                        <button
+                          onClick={() => setModalSort("labels")}
+                          className={`px-2 py-0.5 rounded transition-colors ${modalSort === "labels" ? "bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 font-medium" : "hover:text-slate-700"}`}>
+                          標籤多→少
+                        </button>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {selectedCids.size > 0
+                          ? <span className="font-medium text-blue-600">已選 {selectedCids.size} 位</span>
+                          : <span>共 {modalFiltered.length} 位</span>}
+                        <button onClick={() => setSelectedCids(new Set(modalFiltered.map(c => c.id as string)))}
+                          className="hover:text-blue-600 hover:underline">全選</button>
+                        <button onClick={() => setSelectedCids(new Set())}
+                          className="hover:text-slate-700 hover:underline">清除</button>
+                      </div>
                     </div>
 
                     {/* 旅客清單 */}
-                    {filtered.length === 0 ? (
+                    {modalFiltered.length === 0 ? (
                       <p className="text-sm text-slate-400 text-center py-4">找不到符合的旅客</p>
                     ) : (
-                      <div className="max-h-60 overflow-y-auto -mx-1 space-y-0.5">
-                        {filtered.map(c => (
-                          <label
-                            key={c.id}
-                            className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/30 cursor-pointer transition-colors"
-                          >
-                            <input
-                              type="checkbox"
+                      <div className="max-h-72 overflow-y-auto -mx-1 space-y-0.5">
+                        {modalFiltered.map(c => (
+                          <label key={c.id}
+                            className="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/30 cursor-pointer transition-colors">
+                            <input type="checkbox"
                               checked={selectedCids.has(c.id)}
                               onChange={() => toggleCid(c.id)}
-                              className="w-4 h-4 accent-blue-600"
+                              className="w-4 h-4 accent-blue-600 flex-shrink-0"
                             />
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-1.5 flex-wrap">
@@ -685,12 +748,11 @@ export default function GroupDetailPage() {
                 )}
               </div>
 
-              <div className="px-5 py-4 border-t dark:border-slate-700 flex justify-end gap-3">
+              {/* Footer */}
+              <div className="px-5 py-4 border-t dark:border-slate-700 flex justify-end gap-3 flex-shrink-0">
                 <button onClick={closeAddModal}
                   className="text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 px-4 py-2 rounded-lg">取消</button>
-                <button
-                  onClick={addParticipants}
-                  disabled={selectedCids.size === 0}
+                <button onClick={addParticipants} disabled={selectedCids.size === 0}
                   className="text-sm bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-40 transition-colors">
                   {selectedCids.size > 0 ? `加入 ${selectedCids.size} 位旅客` : "加入旅客"}
                 </button>
