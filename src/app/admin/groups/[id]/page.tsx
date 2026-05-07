@@ -5,7 +5,17 @@ import { supabase, Tour, TourStatus, Customer, CustomerTour } from "@/lib/supaba
 import CostSpreadsheet from "@/components/CostSpreadsheet";
 import PaymentsTab from "@/components/PaymentsTab";
 import ItineraryTab from "@/components/ItineraryTab";
-import { ArrowLeft, Save, Trash2, UserPlus, X, Search, BedDouble, Pencil } from "lucide-react";
+import FlightsTab from "@/components/FlightsTab";
+import { ArrowLeft, Save, Trash2, UserPlus, X, Search, BedDouble, Pencil, UtensilsCrossed } from "lucide-react";
+
+// ─── Meal options ──────────────────────────────────────────────────────────────
+const MEAL_OPTIONS = [
+  { key: "蛋奶素", color: "bg-lime-100 text-lime-700 dark:bg-lime-900/40 dark:text-lime-300 border-lime-200 dark:border-lime-700" },
+  { key: "全素",   color: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300 border-green-200 dark:border-green-700" },
+  { key: "不吃羊", color: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300 border-orange-200 dark:border-orange-700" },
+  { key: "不吃牛", color: "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300 border-rose-200 dark:border-rose-700" },
+  { key: "不吃豬", color: "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300 border-sky-200 dark:border-sky-700" },
+];
 import Link from "next/link";
 
 const STATUS_OPTIONS: { value: TourStatus; label: string }[] = [
@@ -37,9 +47,10 @@ export default function GroupDetailPage() {
   const [selectedCids, setSelectedCids] = useState<Set<string>>(new Set());
   const [addSearch, setAddSearch]       = useState("");
   const [saving, setSaving]            = useState(false);
-  const [activeTab, setActiveTab]      = useState<"info"|"costs"|"payments"|"participants"|"itin_c"|"itin_t">("info");
+  const [activeTab, setActiveTab]      = useState<"info"|"costs"|"payments"|"participants"|"flights"|"itin_c"|"itin_t">("info");
   const [editingRoomId, setEditingRoomId] = useState<string|null>(null);
   const [roomInput,     setRoomInput]     = useState("");
+  const [mealPickerId,  setMealPickerId]  = useState<string|null>(null);
 
   const loadTour = async () => {
     const { data } = await supabase.from("tours").select("*").eq("id", id).single();
@@ -114,6 +125,18 @@ export default function GroupDetailPage() {
     setParticipants(prev => prev.map(p => p.id===ctId ? {...p, room_number: room.trim()} : p));
   };
 
+  const toggleMeal = async (ctId: string, option: string) => {
+    const p = participants.find(x => x.id === ctId);
+    if (!p) return;
+    const current = (p.meal_preference || "").split(",").map(s => s.trim()).filter(Boolean);
+    const next = current.includes(option)
+      ? current.filter(m => m !== option)
+      : [...current, option];
+    const val = next.join(",");
+    await supabase.from("customer_tours").update({ meal_preference: val }).eq("id", ctId);
+    setParticipants(prev => prev.map(x => x.id===ctId ? {...x, meal_preference: val} : x));
+  };
+
   if (!tour) return (
     <div className="flex justify-center items-center h-64">
       <div className="w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
@@ -147,7 +170,7 @@ export default function GroupDetailPage() {
 
       {/* Tabs */}
       <div className="flex border-b border-slate-200 dark:border-slate-700 gap-1">
-        {([["info","基本資料"],["costs","費用試算"],["payments","收付款"],["participants","報名旅客"],["itin_c","旅客版行程"],["itin_t","同業版行程"]] as const).map(([tab, label]) => (
+        {([["info","基本資料"],["costs","費用試算"],["payments","收付款"],["participants","報名旅客"],["flights","✈️ 機票紀錄"],["itin_c","旅客版行程"],["itin_t","同業版行程"]] as const).map(([tab, label]) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -341,8 +364,62 @@ export default function GroupDetailPage() {
                                 {p.customer.email||"—"}
                               </div>
                               {/* paid */}
-                              <div className="w-28 text-sm text-right text-slate-500 dark:text-slate-400 flex-shrink-0">
+                              <div className="w-24 text-sm text-right text-slate-500 dark:text-slate-400 flex-shrink-0 hidden md:block">
                                 {p.paid_amount ? `NT$${p.paid_amount.toLocaleString()}` : "—"}
+                              </div>
+                              {/* meal tag */}
+                              <div className="w-28 flex-shrink-0 flex items-center">
+                                {(() => {
+                                  const meals = (p.meal_preference || "").split(",").map(s=>s.trim()).filter(Boolean);
+                                  const isOpen = mealPickerId === p.id;
+                                  return (
+                                    <div className="relative">
+                                      <button
+                                        onClick={() => setMealPickerId(isOpen ? null : p.id)}
+                                        className={`flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg border transition-all ${
+                                          meals.length > 0
+                                            ? "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700 text-amber-700 dark:text-amber-300 font-medium"
+                                            : "text-slate-400 dark:text-slate-500 border-dashed border-slate-200 dark:border-slate-600 hover:border-amber-400 hover:text-amber-500"
+                                        }`}>
+                                        <UtensilsCrossed className="w-3 h-3 flex-shrink-0" />
+                                        <span className="truncate max-w-[70px]">
+                                          {meals.length > 0 ? meals.join("·") : "正常餐"}
+                                        </span>
+                                      </button>
+                                      {isOpen && (
+                                        <>
+                                        <div className="fixed inset-0 z-10" onClick={() => setMealPickerId(null)} />
+                                        <div className="absolute left-0 top-full mt-1 z-20 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-100 dark:border-slate-700 p-2 min-w-[120px]">
+                                          <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 px-2 py-1 uppercase tracking-wide">餐食偏好</p>
+                                          {MEAL_OPTIONS.map(opt => {
+                                            const active = meals.includes(opt.key);
+                                            return (
+                                              <button key={opt.key}
+                                                onClick={() => toggleMeal(p.id, opt.key)}
+                                                className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs transition-colors ${
+                                                  active ? opt.color + " border" : "hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-600 dark:text-slate-300"
+                                                }`}>
+                                                {active ? "✓" : "○"} {opt.key}
+                                              </button>
+                                            );
+                                          })}
+                                          <div className="border-t border-slate-100 dark:border-slate-700 mt-1 pt-1">
+                                            <button
+                                              onClick={async () => {
+                                                await supabase.from("customer_tours").update({ meal_preference: "" }).eq("id", p.id);
+                                                setParticipants(prev => prev.map(x => x.id===p.id ? {...x, meal_preference:""} : x));
+                                                setMealPickerId(null);
+                                              }}
+                                              className="w-full text-xs text-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 py-1">
+                                              重設為正常餐
+                                            </button>
+                                          </div>
+                                        </div>
+                                        </>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
                               </div>
                               {/* room badge / editor */}
                               <div className="w-28 flex-shrink-0 flex justify-end pr-1">
@@ -393,6 +470,9 @@ export default function GroupDetailPage() {
           </div>
         );
       })()}
+
+      {/* ── Tab: Flights ── */}
+      {activeTab === "flights" && <FlightsTab tourId={id} />}
 
       {/* ── Tab: Customer Itinerary ── */}
       {activeTab === "itin_c" && (

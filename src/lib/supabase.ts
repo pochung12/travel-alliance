@@ -91,8 +91,29 @@ export interface CustomerTour {
   paid_amount: number;
   notes: string;
   room_number: string;
+  meal_preference: string;  // comma-separated: "蛋奶素,不吃牛"
   tour?: Tour;
   customer?: Customer;
+}
+
+// ─── Tour Flights ─────────────────────────────────────────────────────────────
+export interface TourFlight {
+  id: string;
+  tour_id: string;
+  passenger_name: string;
+  pnr: string;
+  ticket_number: string;
+  flight_number: string;
+  flight_date: string;        // YYYY-MM-DD
+  departure_time: string;     // HH:MM
+  arrival_time: string;       // HH:MM
+  departure_airport: string;
+  departure_terminal: string;
+  arrival_airport: string;
+  arrival_terminal: string;
+  special_meal: string;
+  notes: string;
+  created_at: string;
 }
 
 export type PaymentType = 'income' | 'expense';
