@@ -6,7 +6,7 @@ import CostSpreadsheet from "@/components/CostSpreadsheet";
 import PaymentsTab from "@/components/PaymentsTab";
 import ItineraryTab from "@/components/ItineraryTab";
 import FlightsTab from "@/components/FlightsTab";
-import { ArrowLeft, Save, Trash2, UserPlus, X, Search, BedDouble, Pencil, UtensilsCrossed } from "lucide-react";
+import { ArrowLeft, Save, Trash2, UserPlus, X, Search, BedDouble, Pencil, UtensilsCrossed, SlidersHorizontal, GripVertical } from "lucide-react";
 
 // ─── Meal options ──────────────────────────────────────────────────────────────
 const MEAL_OPTIONS = [
@@ -17,6 +17,17 @@ const MEAL_OPTIONS = [
   { key: "不吃豬", color: "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300 border-sky-200 dark:border-sky-700" },
 ];
 import Link from "next/link";
+
+// ─── Participant column config ─────────────────────────────────────────────────
+type PartCol = { key: string; label: string; visible: boolean };
+const PART_COLS_DEFAULT: PartCol[] = [
+  { key: "phone",           label: "電話",    visible: true  },
+  { key: "email",           label: "Email",   visible: false },
+  { key: "deposit_amount",  label: "訂金",    visible: true  },
+  { key: "balance_amount",  label: "尾款",    visible: true  },
+  { key: "meal_preference", label: "餐食偏好", visible: true  },
+  { key: "room_number",     label: "房號",    visible: true  },
+];
 
 const STATUS_OPTIONS: { value: TourStatus; label: string }[] = [
   { value: "planning",  label: "規劃中" },
@@ -62,6 +73,12 @@ export default function GroupDetailPage() {
   const [editingAmtId,   setEditingAmtId]   = useState<string|null>(null);
   const [editingAmtField, setEditingAmtField] = useState<"deposit_amount"|"balance_amount"|null>(null);
   const [amtInput,       setAmtInput]       = useState("");
+  // 餐食 picker 固定定位
+  const [mealPickerRect, setMealPickerRect] = useState<DOMRect | null>(null);
+  // 欄位設定
+  const [partCols,      setPartCols]      = useState<PartCol[]>(PART_COLS_DEFAULT);
+  const [showColSettings, setShowColSettings] = useState(false);
+  const [dragColIdx,    setDragColIdx]    = useState<number | null>(null);
 
   const loadTour = async () => {
     const { data } = await supabase.from("tours").select("*").eq("id", id).single();
@@ -91,6 +108,25 @@ export default function GroupDetailPage() {
     });
     setPayTotals({ deposit, balance });
   };
+
+  // 從 localStorage 載入欄位設定
+  useEffect(() => {
+    const saved = localStorage.getItem("ta_part_cols");
+    if (saved) {
+      try {
+        const parsed: PartCol[] = JSON.parse(saved);
+        const merged = PART_COLS_DEFAULT.map(def => {
+          const found = parsed.find(p => p.key === def.key);
+          return found !== undefined ? { ...def, visible: found.visible } : def;
+        });
+        const ordered: PartCol[] = [
+          ...parsed.filter(p => merged.find(m => m.key === p.key)).map(p => merged.find(m => m.key === p.key)!),
+          ...merged.filter(m => !parsed.find(p => p.key === m.key)),
+        ];
+        setPartCols(ordered);
+      } catch { /* ignore */ }
+    }
+  }, []);
 
   useEffect(() => {
     loadTour();
@@ -201,6 +237,11 @@ export default function GroupDetailPage() {
     const val = next.join(",");
     await supabase.from("customer_tours").update({ meal_preference: val }).eq("id", ctId);
     setParticipants(prev => prev.map(x => x.id===ctId ? {...x, meal_preference: val} : x));
+  };
+
+  const savePartCols = (cols: PartCol[]) => {
+    setPartCols(cols);
+    localStorage.setItem("ta_part_cols", JSON.stringify(cols));
   };
 
   if (!tour) return (
@@ -370,10 +411,60 @@ export default function GroupDetailPage() {
                   </span>
                 )}
               </div>
-              <button onClick={()=>setShowAddModal(true)}
-                className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                <UserPlus className="w-3.5 h-3.5" /> 加入旅客
-              </button>
+              <div className="flex items-center gap-2">
+                {/* 欄位設定 */}
+                <div className="relative">
+                  <button
+                    onClick={() => setShowColSettings(s => !s)}
+                    className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg transition-colors ${
+                      showColSettings
+                        ? "bg-slate-200 dark:bg-slate-600 text-slate-700 dark:text-slate-200"
+                        : "bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600"
+                    }`}>
+                    <SlidersHorizontal className="w-3.5 h-3.5" /> 欄位
+                  </button>
+                  {showColSettings && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setShowColSettings(false)} />
+                      <div className="absolute right-0 top-full mt-2 z-20 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-100 dark:border-slate-700 p-3 min-w-[180px]">
+                        <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide px-2 pb-2">顯示欄位 · 拖曳排序</p>
+                        {partCols.map((col, idx) => (
+                          <div key={col.key}
+                            draggable
+                            onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; setDragColIdx(idx); }}
+                            onDragOver={(e) => e.preventDefault()}
+                            onDrop={() => {
+                              if (dragColIdx === null || dragColIdx === idx) return;
+                              const next = [...partCols];
+                              const [removed] = next.splice(dragColIdx, 1);
+                              next.splice(idx, 0, removed);
+                              savePartCols(next);
+                              setDragColIdx(null);
+                            }}
+                            className={`flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors ${
+                              dragColIdx === idx
+                                ? "bg-blue-50 dark:bg-blue-900/30"
+                                : "hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                            }`}>
+                            <GripVertical className="w-3.5 h-3.5 text-slate-300 dark:text-slate-600 cursor-grab flex-shrink-0" />
+                            <input type="checkbox" checked={col.visible}
+                              onChange={() => {
+                                const next = partCols.map((c, i) => i === idx ? { ...c, visible: !c.visible } : c);
+                                savePartCols(next);
+                              }}
+                              className="w-3.5 h-3.5 accent-blue-600 flex-shrink-0" />
+                            <span className="text-xs text-slate-700 dark:text-slate-300">{col.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+                <button onClick={() => setShowAddModal(true)}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                  <UserPlus className="w-3.5 h-3.5" /> 加入旅客
+                </button>
+              </div>
             </div>
 
             {/* ── Payment totals summary bar ── */}
@@ -450,146 +541,115 @@ export default function GroupDetailPage() {
                             <div className={`w-1 self-stretch flex-shrink-0 ${room ? palette!.bar : "bg-transparent"} ${mIdx===0?"rounded-none":""}`} />
 
                             <div className="flex-1 flex items-center gap-0 min-w-0 px-4 py-3">
-                              {/* name */}
+                              {/* name — always visible */}
                               <div className="w-32 flex-shrink-0">
                                 <Link href={`/admin/crm/${p.customer_id}`} className="font-medium text-blue-600 dark:text-blue-400 hover:underline text-sm">
                                   {p.customer.name}
                                 </Link>
                               </div>
-                              {/* phone */}
-                              <div className="flex-1 text-sm text-slate-500 dark:text-slate-400 truncate min-w-0">
-                                {p.customer.phone||"—"}
-                              </div>
-                              {/* email */}
-                              <div className="flex-1 text-sm text-slate-500 dark:text-slate-400 truncate min-w-0 hidden sm:block">
-                                {p.customer.email||"—"}
-                              </div>
-                              {/* 訂金 / 尾款 */}
-                              {(["deposit_amount","balance_amount"] as const).map(field => {
-                                const label = field === "deposit_amount" ? "訂金" : "尾款";
-                                const val   = p[field] || 0;
-                                const isEdit = editingAmtId === p.id && editingAmtField === field;
-                                return (
-                                  <div key={field} className="w-24 flex-shrink-0 hidden sm:flex items-center justify-end">
-                                    {isEdit ? (
-                                      <input
-                                        autoFocus
-                                        type="text"
-                                        inputMode="numeric"
-                                        className="w-20 text-xs border border-blue-400 rounded-lg px-2 py-1 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-right focus:outline-none focus:ring-2 focus:ring-blue-400"
-                                        value={amtInput}
-                                        onChange={e => setAmtInput(e.target.value)}
-                                        onBlur={() => saveAmount(p.id, field, amtInput)}
-                                        onKeyDown={e => {
-                                          if (e.key === "Enter") saveAmount(p.id, field, amtInput);
-                                          if (e.key === "Escape") { setEditingAmtId(null); setEditingAmtField(null); }
-                                        }}
-                                        placeholder="0"
-                                      />
-                                    ) : (
-                                      <button
-                                        onClick={() => { setEditingAmtId(p.id); setEditingAmtField(field); setAmtInput(val ? String(val) : ""); }}
-                                        className={`group/amt text-xs px-2 py-1 rounded-lg transition-all text-right ${
-                                          val > 0
-                                            ? "text-emerald-700 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/30"
-                                            : "text-slate-300 dark:text-slate-600 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20"
-                                        }`}
-                                        title={`點擊編輯${label}`}>
-                                        {val > 0 ? `NT$${val.toLocaleString()}` : <span className="group-hover/amt:text-blue-400">{label}</span>}
-                                      </button>
-                                    )}
+                              {/* dynamic columns */}
+                              {partCols.filter(c => c.visible).map(col => {
+                                if (col.key === "phone") return (
+                                  <div key="phone" className="flex-1 text-sm text-slate-500 dark:text-slate-400 truncate min-w-0 max-w-[120px]">
+                                    {p.customer.phone || "—"}
                                   </div>
                                 );
-                              })}
-                              {/* meal tag */}
-                              <div className="w-28 flex-shrink-0 flex items-center">
-                                {(() => {
-                                  const meals = (p.meal_preference || "").split(",").map(s=>s.trim()).filter(Boolean);
+                                if (col.key === "email") return (
+                                  <div key="email" className="flex-1 text-sm text-slate-500 dark:text-slate-400 truncate min-w-0 max-w-[160px]">
+                                    {p.customer.email || "—"}
+                                  </div>
+                                );
+                                if (col.key === "deposit_amount" || col.key === "balance_amount") {
+                                  const field = col.key as "deposit_amount" | "balance_amount";
+                                  const label = field === "deposit_amount" ? "訂金" : "尾款";
+                                  const val   = p[field] || 0;
+                                  const isEdit = editingAmtId === p.id && editingAmtField === field;
+                                  return (
+                                    <div key={col.key} className="w-24 flex-shrink-0 flex items-center justify-end">
+                                      {isEdit ? (
+                                        <input autoFocus type="text" inputMode="numeric"
+                                          className="w-20 text-xs border border-blue-400 rounded-lg px-2 py-1 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-right focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                          value={amtInput}
+                                          onChange={e => setAmtInput(e.target.value)}
+                                          onBlur={() => saveAmount(p.id, field, amtInput)}
+                                          onKeyDown={e => {
+                                            if (e.key === "Enter") saveAmount(p.id, field, amtInput);
+                                            if (e.key === "Escape") { setEditingAmtId(null); setEditingAmtField(null); }
+                                          }}
+                                          placeholder="0" />
+                                      ) : (
+                                        <button
+                                          onClick={() => { setEditingAmtId(p.id); setEditingAmtField(field); setAmtInput(val ? String(val) : ""); }}
+                                          className={`group/amt text-xs px-2 py-1 rounded-lg transition-all text-right ${
+                                            val > 0
+                                              ? "text-emerald-700 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/30"
+                                              : "text-slate-300 dark:text-slate-600 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20"
+                                          }`}
+                                          title={`點擊編輯${label}`}>
+                                          {val > 0 ? `NT$${val.toLocaleString()}` : <span className="group-hover/amt:text-blue-400">{label}</span>}
+                                        </button>
+                                      )}
+                                    </div>
+                                  );
+                                }
+                                if (col.key === "meal_preference") {
+                                  const meals = (p.meal_preference || "").split(",").map(s => s.trim()).filter(Boolean);
                                   const isOpen = mealPickerId === p.id;
                                   return (
-                                    <div className="relative">
+                                    <div key="meal" className="w-28 flex-shrink-0 flex items-center">
                                       <button
-                                        onClick={() => setMealPickerId(isOpen ? null : p.id)}
+                                        onClick={(e) => {
+                                          if (isOpen) { setMealPickerId(null); setMealPickerRect(null); }
+                                          else { setMealPickerId(p.id); setMealPickerRect(e.currentTarget.getBoundingClientRect()); }
+                                        }}
                                         className={`flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg border transition-all ${
                                           meals.length > 0
                                             ? "bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-700 text-amber-700 dark:text-amber-300 font-medium"
                                             : "text-slate-400 dark:text-slate-500 border-dashed border-slate-200 dark:border-slate-600 hover:border-amber-400 hover:text-amber-500"
                                         }`}>
                                         <UtensilsCrossed className="w-3 h-3 flex-shrink-0" />
-                                        <span className="truncate max-w-[70px]">
-                                          {meals.length > 0 ? meals.join("·") : "正常餐"}
-                                        </span>
+                                        <span className="truncate max-w-[70px]">{meals.length > 0 ? meals.join("·") : "正常餐"}</span>
                                       </button>
-                                      {isOpen && (
-                                        <>
-                                        <div className="fixed inset-0 z-10" onClick={() => setMealPickerId(null)} />
-                                        <div className="absolute left-0 top-full mt-1 z-20 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-100 dark:border-slate-700 p-2 min-w-[120px]">
-                                          <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 px-2 py-1 uppercase tracking-wide">餐食偏好</p>
-                                          {MEAL_OPTIONS.map(opt => {
-                                            const active = meals.includes(opt.key);
-                                            return (
-                                              <button key={opt.key}
-                                                onClick={() => toggleMeal(p.id, opt.key)}
-                                                className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs transition-colors ${
-                                                  active ? opt.color + " border" : "hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-600 dark:text-slate-300"
-                                                }`}>
-                                                {active ? "✓" : "○"} {opt.key}
-                                              </button>
-                                            );
-                                          })}
-                                          <div className="border-t border-slate-100 dark:border-slate-700 mt-1 pt-1">
-                                            <button
-                                              onClick={async () => {
-                                                await supabase.from("customer_tours").update({ meal_preference: "" }).eq("id", p.id);
-                                                setParticipants(prev => prev.map(x => x.id===p.id ? {...x, meal_preference:""} : x));
-                                                setMealPickerId(null);
-                                              }}
-                                              className="w-full text-xs text-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 py-1">
-                                              重設為正常餐
-                                            </button>
-                                          </div>
-                                        </div>
-                                        </>
+                                    </div>
+                                  );
+                                }
+                                if (col.key === "room_number") {
+                                  return (
+                                    <div key="room" className="w-28 flex-shrink-0 flex justify-end pr-1">
+                                      {editingRoomId === p.id ? (
+                                        <input autoFocus
+                                          className="w-20 text-xs border border-blue-400 rounded-lg px-2 py-1 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                          value={roomInput}
+                                          onChange={e => setRoomInput(e.target.value)}
+                                          onBlur={() => saveRoomNumber(p.id, roomInput)}
+                                          onKeyDown={e => {
+                                            if (e.key === "Enter") saveRoomNumber(p.id, roomInput);
+                                            if (e.key === "Escape") setEditingRoomId(null);
+                                          }}
+                                          placeholder="房號…" />
+                                      ) : (
+                                        <button
+                                          onClick={() => { setEditingRoomId(p.id); setRoomInput(p.room_number || ""); }}
+                                          className={`group/room flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-all ${
+                                            p.room_number
+                                              ? `${palette!.badge} font-medium shadow-sm hover:opacity-80`
+                                              : "text-slate-400 dark:text-slate-500 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 border border-dashed border-slate-200 dark:border-slate-600 hover:border-blue-400"
+                                          }`}>
+                                          {p.room_number ? (
+                                            <>{p.room_number} <Pencil className="w-2.5 h-2.5 opacity-70" /></>
+                                          ) : (
+                                            <><BedDouble className="w-3 h-3" /> 分配房號</>
+                                          )}
+                                        </button>
                                       )}
                                     </div>
                                   );
-                                })()}
-                              </div>
-                              {/* room badge / editor */}
-                              <div className="w-28 flex-shrink-0 flex justify-end pr-1">
-                                {editingRoomId===p.id ? (
-                                  <input
-                                    autoFocus
-                                    className="w-20 text-xs border border-blue-400 rounded-lg px-2 py-1 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                                    value={roomInput}
-                                    onChange={e=>setRoomInput(e.target.value)}
-                                    onBlur={()=>saveRoomNumber(p.id, roomInput)}
-                                    onKeyDown={e=>{
-                                      if (e.key==="Enter") saveRoomNumber(p.id, roomInput);
-                                      if (e.key==="Escape") setEditingRoomId(null);
-                                    }}
-                                    placeholder="房號…"
-                                  />
-                                ) : (
-                                  <button
-                                    onClick={()=>{setEditingRoomId(p.id);setRoomInput(p.room_number||"");}}
-                                    className={`group/room flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-all ${
-                                      p.room_number
-                                        ? `${palette!.badge} font-medium shadow-sm hover:opacity-80`
-                                        : "text-slate-400 dark:text-slate-500 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 border border-dashed border-slate-200 dark:border-slate-600 hover:border-blue-400"
-                                    }`}
-                                  >
-                                    {p.room_number ? (
-                                      <>{p.room_number} <Pencil className="w-2.5 h-2.5 opacity-70" /></>
-                                    ) : (
-                                      <><BedDouble className="w-3 h-3" /> 分配房號</>
-                                    )}
-                                  </button>
-                                )}
-                              </div>
+                                }
+                                return null;
+                              })}
                               {/* remove */}
-                              <button onClick={()=>removeParticipant(p.id)}
-                                className="ml-1 p-1 text-slate-200 dark:text-slate-600 hover:text-red-500 transition-colors rounded flex-shrink-0">
+                              <button onClick={() => removeParticipant(p.id)}
+                                className="ml-auto p-1 text-slate-200 dark:text-slate-600 hover:text-red-500 transition-colors rounded flex-shrink-0">
                                 <X className="w-4 h-4" />
                               </button>
                             </div>
@@ -617,6 +677,57 @@ export default function GroupDetailPage() {
       {activeTab === "itin_t" && (
         <ItineraryTab tourId={id} variant="trade" />
       )}
+
+      {/* ── Meal picker (fixed, avoids overflow-hidden clipping) ── */}
+      {mealPickerId && mealPickerRect && (() => {
+        const mp = participants.find(x => x.id === mealPickerId);
+        if (!mp) return null;
+        const meals = (mp.meal_preference || "").split(",").map(s => s.trim()).filter(Boolean);
+        const spaceBelow = window.innerHeight - mealPickerRect.bottom;
+        const openUp = spaceBelow < 210;
+        const dropStyle: React.CSSProperties = {
+          position: "fixed",
+          left: mealPickerRect.left,
+          zIndex: 9999,
+          ...(openUp
+            ? { bottom: window.innerHeight - mealPickerRect.top + 4 }
+            : { top: mealPickerRect.bottom + 4 }),
+        };
+        return (
+          <>
+            <div className="fixed inset-0" style={{ zIndex: 9998 }}
+              onClick={() => { setMealPickerId(null); setMealPickerRect(null); }} />
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-100 dark:border-slate-700 p-2 min-w-[130px]"
+              style={dropStyle}>
+              <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 px-2 py-1 uppercase tracking-wide">餐食偏好</p>
+              {MEAL_OPTIONS.map(opt => {
+                const active = meals.includes(opt.key);
+                return (
+                  <button key={opt.key}
+                    onClick={() => toggleMeal(mealPickerId!, opt.key)}
+                    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs transition-colors ${
+                      active ? opt.color + " border" : "hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-600 dark:text-slate-300"
+                    }`}>
+                    {active ? "✓" : "○"} {opt.key}
+                  </button>
+                );
+              })}
+              <div className="border-t border-slate-100 dark:border-slate-700 mt-1 pt-1">
+                <button
+                  onClick={async () => {
+                    await supabase.from("customer_tours").update({ meal_preference: "" }).eq("id", mealPickerId!);
+                    setParticipants(prev => prev.map(x => x.id === mealPickerId ? { ...x, meal_preference: "" } : x));
+                    setMealPickerId(null);
+                    setMealPickerRect(null);
+                  }}
+                  className="w-full text-xs text-center text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 py-1">
+                  重設為正常餐
+                </button>
+              </div>
+            </div>
+          </>
+        );
+      })()}
 
       {/* Add participant modal */}
       {showAddModal && (() => {
