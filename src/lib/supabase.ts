@@ -27,7 +27,11 @@ export interface Tour {
   destination: string;
   start_date: string;
   end_date: string;
-  pax: number;
+  pax: number;              // 總人數（= 各類加總，自動計算）
+  pax_adult: number;        // 成人人數
+  pax_tour_only: number;    // 只參團人數
+  pax_child: number;        // 兒童人數
+  pax_infant: number;       // 嬰兒人數
   selling_price: number;    // 成人售價 (NT$)
   price_tour_only: number;  // 只參團售價 (NT$)
   price_child: number;      // 兒童售價 (NT$)

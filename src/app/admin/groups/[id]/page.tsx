@@ -41,6 +41,18 @@ const PARTICIPANT_TYPES = [
     badge: "bg-pink-100 text-pink-700 dark:bg-pink-900/40 dark:text-pink-300 border border-pink-200 dark:border-pink-700" },
 ] as const;
 
+// ─── Price tier table ─────────────────────────────────────────────────────────
+const PRICE_TIERS: {
+  key: string; label: string; icon: string;
+  paxKey:   keyof Tour;
+  priceKey: keyof Tour;
+}[] = [
+  { key:"adult",     label:"成人",   icon:"👤", paxKey:"pax_adult",     priceKey:"selling_price"   },
+  { key:"tour_only", label:"只參團", icon:"🧳", paxKey:"pax_tour_only", priceKey:"price_tour_only" },
+  { key:"child",     label:"兒童",   icon:"🧒", paxKey:"pax_child",     priceKey:"price_child"     },
+  { key:"infant",    label:"嬰兒",   icon:"👶", paxKey:"pax_infant",    priceKey:"price_infant"    },
+];
+
 const STATUS_OPTIONS: { value: TourStatus; label: string }[] = [
   { value: "planning",  label: "規劃中" },
   { value: "confirmed", label: "已確認" },
@@ -170,10 +182,19 @@ export default function GroupDetailPage() {
 
   const saveTour = async () => {
     setSaving(true);
+    const paxAdult    = form.pax_adult     || 0;
+    const paxTourOnly = form.pax_tour_only || 0;
+    const paxChild    = form.pax_child     || 0;
+    const paxInfant   = form.pax_infant    || 0;
+    const totalPax    = paxAdult + paxTourOnly + paxChild + paxInfant;
     const { error } = await supabase.from("tours").update({
       name: form.name, destination: form.destination,
       start_date: form.start_date, end_date: form.end_date,
-      pax: form.pax,
+      pax:             totalPax > 0 ? totalPax : (form.pax || 0),
+      pax_adult:       paxAdult,
+      pax_tour_only:   paxTourOnly,
+      pax_child:       paxChild,
+      pax_infant:      paxInfant,
       selling_price:   form.selling_price   || 0,
       price_tour_only: form.price_tour_only || 0,
       price_child:     form.price_child     || 0,
@@ -350,26 +371,64 @@ export default function GroupDetailPage() {
               <label className={lbl}>回程日</label>
               <input type="date" className={input} value={form.end_date || ""} onChange={e => setForm({...form, end_date: e.target.value})} />
             </div>
-            <div>
-              <label className={lbl}>人數</label>
-              <input type="number" className={input} value={form.pax || 0} min="0"
-                onChange={e => setForm({...form, pax: +e.target.value})} />
-            </div>
             <div className="col-span-2">
-              <label className={lbl}>各類別售價 (NT$)</label>
-              <div className="grid grid-cols-4 gap-2 mt-1">
-                {([
-                  { key: "selling_price",   label: "👤 成人"   },
-                  { key: "price_tour_only", label: "🧳 只參團" },
-                  { key: "price_child",     label: "🧒 兒童"   },
-                  { key: "price_infant",    label: "👶 嬰兒"   },
-                ] as { key: keyof typeof form; label: string }[]).map(({ key, label }) => (
-                  <div key={key}>
-                    <label className="text-[11px] text-slate-400 dark:text-slate-500 mb-1 block">{label}</label>
-                    <input type="number" className={input} value={(form[key] as number) || 0} min="0"
-                      onChange={e => setForm({ ...form, [key]: +e.target.value })} />
-                  </div>
-                ))}
+              <label className={lbl}>各類別人數與售價</label>
+              <div className="mt-1 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+                {/* header */}
+                <div className="grid items-center bg-slate-50 dark:bg-slate-700/40 px-3 py-1.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wide gap-x-2"
+                  style={{ gridTemplateColumns: "5.5rem 1fr 0.75rem 1fr 5.5rem" }}>
+                  <span>類別</span>
+                  <span className="text-center">人數</span>
+                  <span />
+                  <span className="text-center">售價 (NT$)</span>
+                  <span className="text-right">小計</span>
+                </div>
+                {/* tier rows */}
+                {PRICE_TIERS.map(t => {
+                  const paxVal   = (form[t.paxKey]   as number) || 0;
+                  const priceVal = (form[t.priceKey] as number) || 0;
+                  const sub      = paxVal * priceVal;
+                  return (
+                    <div key={t.key}
+                      className="grid items-center px-3 py-2 border-t border-slate-100 dark:border-slate-700/50 gap-x-2"
+                      style={{ gridTemplateColumns: "5.5rem 1fr 0.75rem 1fr 5.5rem" }}>
+                      <span className="text-xs font-medium text-slate-600 dark:text-slate-300">{t.icon} {t.label}</span>
+                      <input type="number" min="0"
+                        className="w-full text-center border border-slate-200 dark:border-slate-600 rounded-lg px-2 py-1.5 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        value={paxVal}
+                        onChange={e => setForm({ ...form, [t.paxKey]: +e.target.value })} />
+                      <span className="text-center text-slate-300 dark:text-slate-600 text-xs select-none">×</span>
+                      <input type="number" min="0"
+                        className="w-full text-right border border-slate-200 dark:border-slate-600 rounded-lg px-2 py-1.5 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        value={priceVal}
+                        onChange={e => setForm({ ...form, [t.priceKey]: +e.target.value })} />
+                      <span className={`text-right text-xs font-medium tabular-nums ${
+                        sub > 0 ? "text-emerald-700 dark:text-emerald-400" : "text-slate-300 dark:text-slate-600"
+                      }`}>
+                        {sub > 0 ? `NT$${sub.toLocaleString()}` : "—"}
+                      </span>
+                    </div>
+                  );
+                })}
+                {/* total row */}
+                {(() => {
+                  const totalPax = PRICE_TIERS.reduce((s, t) => s + ((form[t.paxKey] as number) || 0), 0);
+                  const totalRev = PRICE_TIERS.reduce((s, t) =>
+                    s + ((form[t.paxKey] as number) || 0) * ((form[t.priceKey] as number) || 0), 0);
+                  return (
+                    <div className="grid items-center px-3 py-2.5 bg-slate-50 dark:bg-slate-700/30 border-t border-slate-200 dark:border-slate-700 gap-x-2"
+                      style={{ gridTemplateColumns: "5.5rem 1fr 0.75rem 1fr 5.5rem" }}>
+                      <span className="text-xs font-bold text-slate-600 dark:text-slate-300">合計</span>
+                      <span className="text-center text-xs font-bold text-slate-700 dark:text-slate-200 tabular-nums">{totalPax} 人</span>
+                      <span /><span />
+                      <span className={`text-right text-sm font-bold tabular-nums ${
+                        totalRev > 0 ? "text-blue-600 dark:text-blue-400" : "text-slate-300 dark:text-slate-600"
+                      }`}>
+                        {totalRev > 0 ? `NT$${totalRev.toLocaleString()}` : "—"}
+                      </span>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
             <div className="col-span-2">
