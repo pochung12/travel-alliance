@@ -28,7 +28,10 @@ export interface Tour {
   start_date: string;
   end_date: string;
   pax: number;
-  selling_price: number;   // 每人售價 (NT$)
+  selling_price: number;    // 成人售價 (NT$)
+  price_tour_only: number;  // 只參團售價 (NT$)
+  price_child: number;      // 兒童售價 (NT$)
+  price_infant: number;     // 嬰兒售價 (NT$)
   status: TourStatus;
   notes: string;
   created_at: string;
@@ -84,17 +87,20 @@ export interface Customer {
   created_at: string;
 }
 
+export type ParticipantType = 'adult' | 'tour_only' | 'child' | 'infant';
+
 export interface CustomerTour {
   id: string;
   customer_id: string;
   tour_id: string;
   status: 'registered' | 'confirmed' | 'cancelled';
   paid_amount: number;
-  deposit_amount: number;   // 旅客訂金（手動分配）
-  balance_amount: number;   // 旅客尾款（手動分配）
+  deposit_amount: number;    // 旅客訂金（手動分配）
+  balance_amount: number;    // 旅客尾款（手動分配）
+  participant_type: ParticipantType;  // 身份類型
   notes: string;
   room_number: string;
-  meal_preference: string;  // comma-separated: "蛋奶素,不吃牛"
+  meal_preference: string;   // comma-separated: "蛋奶素,不吃牛"
   tour?: Tour;
   customer?: Customer;
 }

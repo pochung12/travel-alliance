@@ -28,7 +28,8 @@ const STATUS_LABEL: Record<string, string> = {
 
 const EMPTY: Omit<Tour, "id"|"created_at"> = {
   name: "", destination: "", start_date: "", end_date: "",
-  pax: 0, selling_price: 0, status: "planning", notes: "",
+  pax: 0, selling_price: 0, price_tour_only: 0, price_child: 0, price_infant: 0,
+  status: "planning", notes: "",
 };
 
 export default function GroupsPage() {

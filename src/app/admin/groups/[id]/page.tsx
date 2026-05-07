@@ -29,6 +29,18 @@ const PART_COLS_DEFAULT: PartCol[] = [
   { key: "room_number",     label: "房號",    visible: true  },
 ];
 
+// ─── Participant type config ───────────────────────────────────────────────────
+const PARTICIPANT_TYPES = [
+  { key: "adult",     label: "成人",   icon: "👤",
+    badge: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300 border border-blue-200 dark:border-blue-700" },
+  { key: "tour_only", label: "只參團", icon: "🧳",
+    badge: "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300 border border-teal-200 dark:border-teal-700" },
+  { key: "child",     label: "兒童",   icon: "🧒",
+    badge: "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300 border border-orange-200 dark:border-orange-700" },
+  { key: "infant",    label: "嬰兒",   icon: "👶",
+    badge: "bg-pink-100 text-pink-700 dark:bg-pink-900/40 dark:text-pink-300 border border-pink-200 dark:border-pink-700" },
+] as const;
+
 const STATUS_OPTIONS: { value: TourStatus; label: string }[] = [
   { value: "planning",  label: "規劃中" },
   { value: "confirmed", label: "已確認" },
@@ -75,6 +87,9 @@ export default function GroupDetailPage() {
   const [amtInput,       setAmtInput]       = useState("");
   // 餐食 picker 固定定位
   const [mealPickerRect, setMealPickerRect] = useState<DOMRect | null>(null);
+  // 身份類型 picker
+  const [typePickerId,   setTypePickerId]   = useState<string|null>(null);
+  const [typePickerRect, setTypePickerRect] = useState<DOMRect | null>(null);
   // 欄位設定
   const [partCols,      setPartCols]      = useState<PartCol[]>(PART_COLS_DEFAULT);
   const [showColSettings, setShowColSettings] = useState(false);
@@ -158,7 +173,11 @@ export default function GroupDetailPage() {
     const { error } = await supabase.from("tours").update({
       name: form.name, destination: form.destination,
       start_date: form.start_date, end_date: form.end_date,
-      pax: form.pax, selling_price: form.selling_price,
+      pax: form.pax,
+      selling_price:   form.selling_price   || 0,
+      price_tour_only: form.price_tour_only || 0,
+      price_child:     form.price_child     || 0,
+      price_infant:    form.price_infant    || 0,
       status: form.status, notes: form.notes,
     }).eq("id", id);
     setSaving(false);
@@ -196,6 +215,7 @@ export default function GroupDetailPage() {
         status: "registered",
         paid_amount: 0,
         notes: "",
+        participant_type: "adult",
         meal_preference: cust?.meal_preference || "",
       };
     });
@@ -237,6 +257,13 @@ export default function GroupDetailPage() {
     const val = next.join(",");
     await supabase.from("customer_tours").update({ meal_preference: val }).eq("id", ctId);
     setParticipants(prev => prev.map(x => x.id===ctId ? {...x, meal_preference: val} : x));
+  };
+
+  const changeParticipantType = async (ctId: string, type: string) => {
+    await supabase.from("customer_tours").update({ participant_type: type }).eq("id", ctId);
+    setParticipants(prev => prev.map(x => x.id === ctId ? { ...x, participant_type: type as "adult"|"tour_only"|"child"|"infant" } : x));
+    setTypePickerId(null);
+    setTypePickerRect(null);
   };
 
   const savePartCols = (cols: PartCol[]) => {
@@ -328,10 +355,22 @@ export default function GroupDetailPage() {
               <input type="number" className={input} value={form.pax || 0} min="0"
                 onChange={e => setForm({...form, pax: +e.target.value})} />
             </div>
-            <div>
-              <label className={lbl}>每人售價 (NT$)</label>
-              <input type="number" className={input} value={form.selling_price || 0} min="0"
-                onChange={e => setForm({...form, selling_price: +e.target.value})} />
+            <div className="col-span-2">
+              <label className={lbl}>各類別售價 (NT$)</label>
+              <div className="grid grid-cols-4 gap-2 mt-1">
+                {([
+                  { key: "selling_price",   label: "👤 成人"   },
+                  { key: "price_tour_only", label: "🧳 只參團" },
+                  { key: "price_child",     label: "🧒 兒童"   },
+                  { key: "price_infant",    label: "👶 嬰兒"   },
+                ] as { key: keyof typeof form; label: string }[]).map(({ key, label }) => (
+                  <div key={key}>
+                    <label className="text-[11px] text-slate-400 dark:text-slate-500 mb-1 block">{label}</label>
+                    <input type="number" className={input} value={(form[key] as number) || 0} min="0"
+                      onChange={e => setForm({ ...form, [key]: +e.target.value })} />
+                  </div>
+                ))}
+              </div>
             </div>
             <div className="col-span-2">
               <label className={lbl}>備註</label>
@@ -502,6 +541,52 @@ export default function GroupDetailPage() {
               );
             })()}
 
+            {/* ── Type statistics ── */}
+            {participants.length > 0 && (() => {
+              const priceMap: Record<string, number> = {
+                adult:     tour.selling_price   || 0,
+                tour_only: tour.price_tour_only || 0,
+                child:     tour.price_child     || 0,
+                infant:    tour.price_infant    || 0,
+              };
+              const rows = PARTICIPANT_TYPES.map(t => ({
+                ...t,
+                count: participants.filter(p => (p.participant_type || "adult") === t.key).length,
+                price: priceMap[t.key],
+              })).filter(t => t.count > 0);
+              if (rows.length === 0) return null;
+              const totalAmt = rows.reduce((s, t) => s + t.count * t.price, 0);
+              return (
+                <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 px-4 py-3">
+                  <div className="flex items-center justify-between mb-2.5">
+                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">身份統計</span>
+                    <span className="text-sm font-bold text-slate-800 dark:text-slate-100">
+                      合計 <span className="text-blue-600 dark:text-blue-400">NT${totalAmt.toLocaleString()}</span>
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {rows.map(t => (
+                      <div key={t.key}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium ${t.badge}`}>
+                        <span>{t.icon}</span>
+                        <span>{t.label}</span>
+                        <span className="opacity-70">·</span>
+                        <span>{t.count} 人</span>
+                        {t.price > 0 && (
+                          <>
+                            <span className="opacity-50">×</span>
+                            <span>NT${t.price.toLocaleString()}</span>
+                            <span className="opacity-50">=</span>
+                            <span className="font-bold">NT${(t.count * t.price).toLocaleString()}</span>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+
             {participants.length===0 ? (
               <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 py-12 text-center text-slate-400 text-sm">
                 還沒有旅客報名此團
@@ -542,11 +627,29 @@ export default function GroupDetailPage() {
 
                             <div className="flex-1 flex items-center gap-0 min-w-0 px-4 py-3">
                               {/* name — always visible */}
-                              <div className="w-32 flex-shrink-0">
+                              <div className="w-28 flex-shrink-0">
                                 <Link href={`/admin/crm/${p.customer_id}`} className="font-medium text-blue-600 dark:text-blue-400 hover:underline text-sm">
                                   {p.customer.name}
                                 </Link>
                               </div>
+                              {/* participant type badge — always visible */}
+                              {(() => {
+                                const pType = PARTICIPANT_TYPES.find(t => t.key === (p.participant_type || "adult")) || PARTICIPANT_TYPES[0];
+                                const isOpen = typePickerId === p.id;
+                                return (
+                                  <div className="w-20 flex-shrink-0 flex items-center">
+                                    <button
+                                      onClick={(e) => {
+                                        if (isOpen) { setTypePickerId(null); setTypePickerRect(null); }
+                                        else { setTypePickerId(p.id); setTypePickerRect(e.currentTarget.getBoundingClientRect()); }
+                                      }}
+                                      className={`flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg border transition-all font-medium ${pType.badge}`}>
+                                      <span>{pType.icon}</span>
+                                      <span>{pType.label}</span>
+                                    </button>
+                                  </div>
+                                );
+                              })()}
                               {/* dynamic columns */}
                               {partCols.filter(c => c.visible).map(col => {
                                 if (col.key === "phone") return (
@@ -677,6 +780,44 @@ export default function GroupDetailPage() {
       {activeTab === "itin_t" && (
         <ItineraryTab tourId={id} variant="trade" />
       )}
+
+      {/* ── Type picker (fixed) ── */}
+      {typePickerId && typePickerRect && (() => {
+        const spaceBelow = window.innerHeight - typePickerRect.bottom;
+        const openUp = spaceBelow < 200;
+        const dropStyle: React.CSSProperties = {
+          position: "fixed",
+          left: typePickerRect.left,
+          zIndex: 9999,
+          ...(openUp
+            ? { bottom: window.innerHeight - typePickerRect.top + 4 }
+            : { top: typePickerRect.bottom + 4 }),
+        };
+        const curType = participants.find(x => x.id === typePickerId)?.participant_type || "adult";
+        return (
+          <>
+            <div className="fixed inset-0" style={{ zIndex: 9998 }}
+              onClick={() => { setTypePickerId(null); setTypePickerRect(null); }} />
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-100 dark:border-slate-700 p-2 min-w-[120px]"
+              style={dropStyle}>
+              <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 px-2 py-1 uppercase tracking-wide">身份類型</p>
+              {PARTICIPANT_TYPES.map(t => {
+                const active = curType === t.key;
+                return (
+                  <button key={t.key}
+                    onClick={() => changeParticipantType(typePickerId!, t.key)}
+                    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs transition-colors ${
+                      active ? t.badge : "hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-600 dark:text-slate-300"
+                    }`}>
+                    <span>{t.icon}</span>
+                    {active ? "✓" : "○"} {t.label}
+                  </button>
+                );
+              })}
+            </div>
+          </>
+        );
+      })()}
 
       {/* ── Meal picker (fixed, avoids overflow-hidden clipping) ── */}
       {mealPickerId && mealPickerRect && (() => {
