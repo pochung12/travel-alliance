@@ -492,17 +492,15 @@ export default function CRMPage() {
       setCustTours(prev => ({ ...prev, [custId]: (prev[custId]||[]).filter(t=>t.id!==tour.id) }));
     } else {
       const cust = customers.find(c => c.id === custId);
-      const { error } = await supabase.from("customer_tours").insert([{
+      const row: Record<string, unknown> = {
         customer_id: custId,
         tour_id: tour.id,
         status: "registered",
         paid_amount: 0,
-        deposit_amount: 0,
-        balance_amount: 0,
         notes: "",
-        room_number: "",
         meal_preference: cust?.meal_preference || "",
-      }]);
+      };
+      const { error } = await supabase.from("customer_tours").insert([row]);
       if (error) { alert("加入失敗：" + error.message); return; }
       setCustTours(prev => ({ ...prev, [custId]: [...(prev[custId]||[]), { id: tour.id, name: tour.name }] }));
     }

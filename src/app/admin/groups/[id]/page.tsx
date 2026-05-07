@@ -159,10 +159,7 @@ export default function GroupDetailPage() {
         tour_id: id,
         status: "registered",
         paid_amount: 0,
-        deposit_amount: 0,
-        balance_amount: 0,
         notes: "",
-        room_number: "",
         meal_preference: cust?.meal_preference || "",
       };
     });
