@@ -855,6 +855,74 @@ export default function GroupDetailPage() {
               );
             })()}
 
+            {/* ── Meal statistics ── */}
+            {participants.length > 0 && (() => {
+              const normalCount = participants.filter(p => !(p.meal_preference || "").trim()).length;
+              const mealStats = MEAL_OPTIONS.map(opt => ({
+                key: opt.key,
+                color: opt.color,
+                count: participants.filter(p =>
+                  (p.meal_preference || "").split(",").map(s => s.trim()).filter(Boolean).includes(opt.key)
+                ).length,
+                // 名單（hover 用）
+                names: participants
+                  .filter(p => (p.meal_preference || "").split(",").map(s => s.trim()).filter(Boolean).includes(opt.key))
+                  .map(p => p.customer.name),
+              })).filter(m => m.count > 0);
+
+              const normalNames = participants
+                .filter(p => !(p.meal_preference || "").trim())
+                .map(p => p.customer.name);
+
+              return (
+                <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 px-4 py-3">
+                  <div className="flex items-center justify-between mb-2.5">
+                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                      🍽️ 餐食統計
+                    </span>
+                    <span className="text-xs text-slate-400">{participants.length} 人</span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {/* 正常餐 */}
+                    {normalCount > 0 && (
+                      <div title={normalNames.join("、")}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium cursor-default
+                          bg-slate-100 text-slate-600 border border-slate-200
+                          dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600
+                          hover:ring-2 hover:ring-slate-300 dark:hover:ring-slate-500 transition-all">
+                        🍽️ 正常餐
+                        <span className="font-bold">{normalCount} 人</span>
+                      </div>
+                    )}
+                    {/* Special meals */}
+                    {mealStats.map(m => (
+                      <div key={m.key} title={m.names.join("、")}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border cursor-default
+                          hover:ring-2 hover:ring-offset-1 transition-all ${m.color}`}>
+                        {m.key}
+                        <span className="font-bold">{m.count} 人</span>
+                      </div>
+                    ))}
+                    {/* 如果全部正常餐 */}
+                    {mealStats.length === 0 && normalCount === participants.length && (
+                      <span className="text-xs text-slate-400 py-1.5">全部正常餐 ✓</span>
+                    )}
+                  </div>
+                  {/* 名單細節（展開顯示每類旅客名字）*/}
+                  {mealStats.length > 0 && (
+                    <div className="mt-3 pt-3 border-t border-slate-50 dark:border-slate-700/60 space-y-1.5">
+                      {mealStats.map(m => (
+                        <div key={m.key} className="flex items-start gap-2 text-xs">
+                          <span className={`shrink-0 px-1.5 py-0.5 rounded font-semibold border ${m.color}`}>{m.key}</span>
+                          <span className="text-slate-500 dark:text-slate-400 leading-relaxed">{m.names.join("、")}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {participants.length===0 ? (
               <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 py-12 text-center text-slate-400 text-sm">
                 還沒有旅客報名此團
