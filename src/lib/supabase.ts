@@ -21,6 +21,14 @@ export interface Profile {
 
 export type TourStatus = 'planning' | 'confirmed' | 'ongoing' | 'completed' | 'cancelled';
 
+/** 自訂人數/售價類別（存在 tours.custom_price_tiers JSONB 欄位） */
+export interface CustomPriceTier {
+  id: string;    // client-side generated UUID
+  label: string; // 類別名稱，e.g. "單人加艙"
+  pax: number;   // 人數
+  price: number; // 售價 (NT$)
+}
+
 export interface Tour {
   id: string;
   name: string;
@@ -36,6 +44,7 @@ export interface Tour {
   price_tour_only: number;  // 只參團售價 (NT$)
   price_child: number;      // 兒童售價 (NT$)
   price_infant: number;     // 嬰兒售價 (NT$)
+  custom_price_tiers?: CustomPriceTier[]; // 自訂類別（JSONB）
   status: TourStatus;
   notes: string;
   created_at: string;

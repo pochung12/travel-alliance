@@ -1,12 +1,12 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { supabase, Tour, TourStatus, Customer, CustomerTour } from "@/lib/supabase";
+import { supabase, Tour, TourStatus, Customer, CustomerTour, CustomPriceTier } from "@/lib/supabase";
 import CostSpreadsheet from "@/components/CostSpreadsheet";
 import PaymentsTab from "@/components/PaymentsTab";
 import ItineraryTab from "@/components/ItineraryTab";
 import FlightsTab from "@/components/FlightsTab";
-import { ArrowLeft, Save, Trash2, UserPlus, X, Search, BedDouble, Pencil, UtensilsCrossed, SlidersHorizontal, GripVertical, Users, Printer } from "lucide-react";
+import { ArrowLeft, Save, Trash2, UserPlus, X, Search, BedDouble, Pencil, UtensilsCrossed, SlidersHorizontal, GripVertical, Users, Printer, Plus } from "lucide-react";
 
 // ─── Meal options ──────────────────────────────────────────────────────────────
 const MEAL_OPTIONS = [
@@ -228,7 +228,8 @@ export default function GroupDetailPage() {
     const paxTourOnly = form.pax_tour_only || 0;
     const paxChild    = form.pax_child     || 0;
     const paxInfant   = form.pax_infant    || 0;
-    const totalPax    = paxAdult + paxTourOnly + paxChild + paxInfant;
+    const customPax   = (form.custom_price_tiers || []).reduce((s, ct) => s + ct.pax, 0);
+    const totalPax    = paxAdult + paxTourOnly + paxChild + paxInfant + customPax;
 
     // 嘗試含新欄位的完整儲存
     const { error } = await supabase.from("tours").update({
@@ -243,6 +244,7 @@ export default function GroupDetailPage() {
       price_tour_only: form.price_tour_only || 0,
       price_child:     form.price_child     || 0,
       price_infant:    form.price_infant    || 0,
+      custom_price_tiers: form.custom_price_tiers || [],
       status: form.status, notes: form.notes,
     }).eq("id", id);
 
@@ -521,14 +523,15 @@ export default function GroupDetailPage() {
               <div className="mt-1 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
                 {/* header */}
                 <div className="grid items-center bg-slate-50 dark:bg-slate-700/40 px-3 py-1.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wide gap-x-2"
-                  style={{ gridTemplateColumns: "5.5rem 1fr 0.75rem 1fr 5.5rem" }}>
+                  style={{ gridTemplateColumns: "5.5rem 1fr 0.75rem 1fr 5.5rem 1.5rem" }}>
                   <span>類別</span>
                   <span className="text-center">人數</span>
                   <span />
                   <span className="text-center">售價 (NT$)</span>
                   <span className="text-right">小計</span>
+                  <span />
                 </div>
-                {/* tier rows */}
+                {/* fixed tier rows */}
                 {PRICE_TIERS.map(t => {
                   const paxVal   = (form[t.paxKey]   as number) || 0;
                   const priceVal = (form[t.priceKey] as number) || 0;
@@ -536,7 +539,7 @@ export default function GroupDetailPage() {
                   return (
                     <div key={t.key}
                       className="grid items-center px-3 py-2 border-t border-slate-100 dark:border-slate-700/50 gap-x-2"
-                      style={{ gridTemplateColumns: "5.5rem 1fr 0.75rem 1fr 5.5rem" }}>
+                      style={{ gridTemplateColumns: "5.5rem 1fr 0.75rem 1fr 5.5rem 1.5rem" }}>
                       <span className="text-xs font-medium text-slate-600 dark:text-slate-300">{t.icon} {t.label}</span>
                       <input type="number" min="0"
                         className="w-full text-center border border-slate-200 dark:border-slate-600 rounded-lg px-2 py-1.5 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
@@ -552,17 +555,87 @@ export default function GroupDetailPage() {
                       }`}>
                         {sub > 0 ? `NT$${sub.toLocaleString()}` : "—"}
                       </span>
+                      <span />
                     </div>
                   );
                 })}
+                {/* custom tier rows */}
+                {(form.custom_price_tiers || []).map((ct, idx) => {
+                  const sub = ct.pax * ct.price;
+                  const updateCustomTier = (patch: Partial<CustomPriceTier>) => {
+                    const tiers = [...(form.custom_price_tiers || [])];
+                    tiers[idx] = { ...tiers[idx], ...patch };
+                    setForm({ ...form, custom_price_tiers: tiers });
+                  };
+                  const removeCustomTier = () => {
+                    const tiers = (form.custom_price_tiers || []).filter((_, i) => i !== idx);
+                    setForm({ ...form, custom_price_tiers: tiers });
+                  };
+                  return (
+                    <div key={ct.id}
+                      className="grid items-center px-3 py-2 border-t border-slate-100 dark:border-slate-700/50 gap-x-2"
+                      style={{ gridTemplateColumns: "5.5rem 1fr 0.75rem 1fr 5.5rem 1.5rem" }}>
+                      <input
+                        type="text"
+                        placeholder="類別名稱"
+                        className="w-full border border-slate-200 dark:border-slate-600 rounded-lg px-2 py-1.5 text-xs bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        value={ct.label}
+                        onChange={e => updateCustomTier({ label: e.target.value })}
+                      />
+                      <input type="number" min="0"
+                        className="w-full text-center border border-slate-200 dark:border-slate-600 rounded-lg px-2 py-1.5 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        value={ct.pax}
+                        onChange={e => updateCustomTier({ pax: +e.target.value })} />
+                      <span className="text-center text-slate-300 dark:text-slate-600 text-xs select-none">×</span>
+                      <input type="number" min="0"
+                        className="w-full text-right border border-slate-200 dark:border-slate-600 rounded-lg px-2 py-1.5 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                        value={ct.price}
+                        onChange={e => updateCustomTier({ price: +e.target.value })} />
+                      <span className={`text-right text-xs font-medium tabular-nums ${
+                        sub > 0 ? "text-emerald-700 dark:text-emerald-400" : "text-slate-300 dark:text-slate-600"
+                      }`}>
+                        {sub > 0 ? `NT$${sub.toLocaleString()}` : "—"}
+                      </span>
+                      <button
+                        onClick={removeCustomTier}
+                        className="flex items-center justify-center w-5 h-5 rounded-full hover:bg-red-100 dark:hover:bg-red-900/40 text-slate-300 hover:text-red-500 dark:text-slate-600 dark:hover:text-red-400 transition-colors"
+                        title="刪除此類別"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  );
+                })}
+                {/* add custom tier button */}
+                <div className="border-t border-dashed border-slate-200 dark:border-slate-700">
+                  <button
+                    onClick={() => {
+                      const newTier: CustomPriceTier = {
+                        id: crypto.randomUUID(),
+                        label: "",
+                        pax: 0,
+                        price: 0,
+                      };
+                      setForm({ ...form, custom_price_tiers: [...(form.custom_price_tiers || []), newTier] });
+                    }}
+                    className="flex items-center gap-1.5 w-full px-3 py-2 text-xs text-blue-500 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    新增類別
+                  </button>
+                </div>
                 {/* total row */}
                 {(() => {
-                  const totalPax = PRICE_TIERS.reduce((s, t) => s + ((form[t.paxKey] as number) || 0), 0);
-                  const totalRev = PRICE_TIERS.reduce((s, t) =>
+                  const fixedPax = PRICE_TIERS.reduce((s, t) => s + ((form[t.paxKey] as number) || 0), 0);
+                  const fixedRev = PRICE_TIERS.reduce((s, t) =>
                     s + ((form[t.paxKey] as number) || 0) * ((form[t.priceKey] as number) || 0), 0);
+                  const customPax = (form.custom_price_tiers || []).reduce((s, ct) => s + ct.pax, 0);
+                  const customRev = (form.custom_price_tiers || []).reduce((s, ct) => s + ct.pax * ct.price, 0);
+                  const totalPax = fixedPax + customPax;
+                  const totalRev = fixedRev + customRev;
                   return (
                     <div className="grid items-center px-3 py-2.5 bg-slate-50 dark:bg-slate-700/30 border-t border-slate-200 dark:border-slate-700 gap-x-2"
-                      style={{ gridTemplateColumns: "5.5rem 1fr 0.75rem 1fr 5.5rem" }}>
+                      style={{ gridTemplateColumns: "5.5rem 1fr 0.75rem 1fr 5.5rem 1.5rem" }}>
                       <span className="text-xs font-bold text-slate-600 dark:text-slate-300">合計</span>
                       <span className="text-center text-xs font-bold text-slate-700 dark:text-slate-200 tabular-nums">{totalPax} 人</span>
                       <span /><span />
@@ -571,6 +644,7 @@ export default function GroupDetailPage() {
                       }`}>
                         {totalRev > 0 ? `NT$${totalRev.toLocaleString()}` : "—"}
                       </span>
+                      <span />
                     </div>
                   );
                 })()}
