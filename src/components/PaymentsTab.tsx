@@ -24,6 +24,8 @@ interface Props {
   tourId: string;
   pax: number;
   sellingPrice: number;
+  /** 本團所有報名旅客（用於款項關聯） */
+  participants?: { customer_id: string; customer: { name: string } }[];
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -72,7 +74,7 @@ function SummaryCard({
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function PaymentsTab({ tourId, pax, sellingPrice }: Props) {
+export default function PaymentsTab({ tourId, pax, sellingPrice, participants = [] }: Props) {
   const [payments,   setPayments]   = useState<TourPayment[]>([]);
   const [tourCosts,  setTourCosts]  = useState<TourCost[]>([]);
   const [filter,     setFilter]     = useState<"all" | "income" | "expense">("all");
@@ -81,12 +83,16 @@ export default function PaymentsTab({ tourId, pax, sellingPrice }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [saving,     setSaving]     = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  // 旅客對應（新增款項時多選）
+  const [formCustIds, setFormCustIds] = useState<string[]>([]);
+  const toggleFormCust = (cid: string) =>
+    setFormCustIds(prev => prev.includes(cid) ? prev.filter(x => x !== cid) : [...prev, cid]);
 
   // Modal form state
   const emptyForm = (): Partial<TourPayment> => ({
     type: "income", category: "deposit",
     description: "", amount: 0, payment_date: new Date().toISOString().slice(0, 10),
-    note: "", image: "",
+    note: "", image: "", customer_ids: [],
   });
   const [form, setForm] = useState<Partial<TourPayment>>(emptyForm());
 
@@ -147,12 +153,20 @@ export default function PaymentsTab({ tourId, pax, sellingPrice }: Props) {
       payment_date: form.payment_date || null,
       note: form.note || "",
       image: form.image || "",
+      customer_ids: formCustIds,
     }]);
     setSaving(false);
     if (error) { alert("儲存失敗：" + error.message); return; }
     setShowModal(false);
     setForm(emptyForm());
+    setFormCustIds([]);
     await loadPayments();
+  };
+
+  // ── Update customer_ids on existing record ──
+  const updatePaymentCusts = async (payId: string, newIds: string[]) => {
+    await supabase.from("tour_payments").update({ customer_ids: newIds }).eq("id", payId);
+    setPayments(prev => prev.map(p => p.id === payId ? { ...p, customer_ids: newIds } : p));
   };
 
   // ── Delete record ──
@@ -231,7 +245,7 @@ export default function PaymentsTab({ tourId, pax, sellingPrice }: Props) {
           ))}
         </div>
         <button
-          onClick={() => { setForm(emptyForm()); setShowModal(true); }}
+          onClick={() => { setForm(emptyForm()); setFormCustIds([]); setShowModal(true); }}
           className="flex items-center gap-1.5 text-sm px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
         >
           <Plus className="w-4 h-4" /> 新增紀錄
@@ -289,6 +303,20 @@ export default function PaymentsTab({ tourId, pax, sellingPrice }: Props) {
                       {p.description && (
                         <span className="text-slate-400 dark:text-slate-500 ml-1.5">{p.description}</span>
                       )}
+                      {/* 旅客對應 chips */}
+                      {p.customer_ids && p.customer_ids.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {p.customer_ids.map(cid => {
+                            const part = participants.find(x => x.customer_id === cid);
+                            return part ? (
+                              <span key={cid}
+                                className="inline-flex items-center gap-0.5 text-[10px] bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-300 border border-blue-100 dark:border-blue-800/60 px-1.5 py-0.5 rounded-md font-medium">
+                                👤 {part.customer.name}
+                              </span>
+                            ) : null;
+                          })}
+                        </div>
+                      )}
                     </td>
                     <td className={`px-4 py-3 text-right font-semibold tabular-nums ${
                       p.type === "income" ? "text-emerald-600" : "text-orange-600"
@@ -317,29 +345,66 @@ export default function PaymentsTab({ tourId, pax, sellingPrice }: Props) {
                   {expandedId === p.id && (
                     <tr key={`${p.id}-exp`} className="bg-slate-50/60 dark:bg-slate-700/20">
                       <td colSpan={6} className="px-5 py-4">
-                        <div className="flex items-start gap-5 flex-wrap">
-                          <div className="flex-1 min-w-0 space-y-1.5 text-sm">
-                            {p.note && (
-                              <p className="text-slate-600 dark:text-slate-300"><span className="text-slate-400 dark:text-slate-500 text-xs">備註</span>　{p.note}</p>
-                            )}
-                            <p className="text-slate-400 dark:text-slate-500 text-xs">
-                              建立時間：{new Date(p.created_at).toLocaleString("zh-TW")}
-                            </p>
-                          </div>
-                          {p.image && (
-                            <img
-                              src={p.image}
-                              alt="佐證截圖"
-                              className="h-24 rounded-lg border border-slate-200 dark:border-slate-600 object-cover cursor-pointer hover:opacity-90 transition-opacity"
-                              onClick={() => setLightbox(p.image)}
-                            />
+                        <div className="space-y-3">
+                          {/* 旅客對應管理 */}
+                          {participants.length > 0 && (
+                            <div>
+                              <p className="text-[11px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide mb-2">對應旅客</p>
+                              <div className="flex flex-wrap gap-1.5">
+                                {participants.map(pt => {
+                                  const linked = (p.customer_ids || []).includes(pt.customer_id);
+                                  return (
+                                    <button key={pt.customer_id}
+                                      onClick={() => {
+                                        const cur = p.customer_ids || [];
+                                        const next = linked
+                                          ? cur.filter(x => x !== pt.customer_id)
+                                          : [...cur, pt.customer_id];
+                                        updatePaymentCusts(p.id, next);
+                                      }}
+                                      className={`flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg border transition-all font-medium ${
+                                        linked
+                                          ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                                          : "bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-600 hover:border-blue-400 hover:text-blue-500"
+                                      }`}>
+                                      {linked ? "✓" : "+"} {pt.customer.name}
+                                    </button>
+                                  );
+                                })}
+                                {(p.customer_ids || []).length > 0 && (
+                                  <button onClick={() => updatePaymentCusts(p.id, [])}
+                                    className="text-xs text-slate-300 hover:text-red-400 px-2 py-1.5 transition-colors">
+                                    清除全部
+                                  </button>
+                                )}
+                              </div>
+                            </div>
                           )}
-                          <button
-                            onClick={() => deleteRecord(p.id)}
-                            className="flex items-center gap-1 text-xs text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 px-2 py-1 rounded transition-colors self-start"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" /> 刪除
-                          </button>
+                          {/* Note + image + delete */}
+                          <div className="flex items-start gap-5 flex-wrap">
+                            <div className="flex-1 min-w-0 space-y-1.5 text-sm">
+                              {p.note && (
+                                <p className="text-slate-600 dark:text-slate-300"><span className="text-slate-400 dark:text-slate-500 text-xs">備註</span>　{p.note}</p>
+                              )}
+                              <p className="text-slate-400 dark:text-slate-500 text-xs">
+                                建立時間：{new Date(p.created_at).toLocaleString("zh-TW")}
+                              </p>
+                            </div>
+                            {p.image && (
+                              <img
+                                src={p.image}
+                                alt="佐證截圖"
+                                className="h-24 rounded-lg border border-slate-200 dark:border-slate-600 object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                                onClick={() => setLightbox(p.image)}
+                              />
+                            )}
+                            <button
+                              onClick={() => deleteRecord(p.id)}
+                              className="flex items-center gap-1 text-xs text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 px-2 py-1 rounded transition-colors self-start"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" /> 刪除
+                            </button>
+                          </div>
                         </div>
                       </td>
                     </tr>
@@ -480,6 +545,47 @@ export default function PaymentsTab({ tourId, pax, sellingPrice }: Props) {
                   onChange={e => setForm(f => ({ ...f, note: e.target.value }))}
                 />
               </div>
+
+              {/* 旅客對應（多選）*/}
+              {participants.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className={lbl + " mb-0"}>對應旅客（可多選）</label>
+                    <div className="flex items-center gap-2 text-xs text-slate-400">
+                      {formCustIds.length > 0 && (
+                        <span className="text-blue-600 dark:text-blue-400 font-medium">{formCustIds.length} 位已選</span>
+                      )}
+                      <button type="button"
+                        onClick={() => setFormCustIds(participants.map(p => p.customer_id))}
+                        className="hover:text-blue-600 hover:underline">全選</button>
+                      <button type="button"
+                        onClick={() => setFormCustIds([])}
+                        className="hover:text-slate-600 hover:underline">清除</button>
+                    </div>
+                  </div>
+                  <div className="border border-slate-200 dark:border-slate-600 rounded-xl max-h-44 overflow-y-auto">
+                    {participants.map(pt => {
+                      const checked = formCustIds.includes(pt.customer_id);
+                      return (
+                        <label key={pt.customer_id}
+                          className={`flex items-center gap-2.5 px-3 py-2 cursor-pointer transition-colors ${
+                            checked
+                              ? "bg-blue-50 dark:bg-blue-900/20"
+                              : "hover:bg-slate-50 dark:hover:bg-slate-700/30"
+                          }`}>
+                          <input type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleFormCust(pt.customer_id)}
+                            className="w-4 h-4 accent-blue-600 flex-shrink-0" />
+                          <span className={`text-sm font-medium ${checked ? "text-blue-700 dark:text-blue-300" : "text-slate-700 dark:text-slate-200"}`}>
+                            {pt.customer.name}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Screenshot upload */}
               <div>

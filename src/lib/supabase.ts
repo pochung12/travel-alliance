@@ -160,5 +160,6 @@ export interface TourPayment {
   payment_date: string;   // YYYY-MM-DD
   note: string;
   image: string;          // base64 screenshot evidence
+  customer_ids: string[]; // 對應旅客 customer_id 陣列（多對多）
   created_at: string;
 }

@@ -99,6 +99,8 @@ export default function GroupDetailPage() {
   const [modalSort,        setModalSort]        = useState<"name"|"labels">("name");
   // 收付款總計（從 tour_payments 載入，用於顯示聯動）
   const [payTotals, setPayTotals] = useState<{ deposit: number; balance: number }>({ deposit: 0, balance: 0 });
+  // 財務三卡片用的費用試算 / 已付支出
+  const [financials, setFinancials] = useState<{ costsTotal: number; expensePaid: number }>({ costsTotal: 0, expensePaid: 0 });
   // 訂金/尾款 inline edit
   const [editingAmtId,   setEditingAmtId]   = useState<string|null>(null);
   const [editingAmtField, setEditingAmtField] = useState<"deposit_amount"|"balance_amount"|null>(null);
@@ -156,17 +158,24 @@ export default function GroupDetailPage() {
   };
 
   const loadPayTotals = async () => {
-    const { data } = await supabase
-      .from("tour_payments")
-      .select("category, amount")
-      .eq("tour_id", id)
-      .eq("type", "income");
-    let deposit = 0, balance = 0;
-    (data || []).forEach((r: { category: string; amount: number }) => {
-      if (r.category === "deposit") deposit += r.amount;
-      else if (r.category === "balance") balance += r.amount;
+    const [{ data: pays }, { data: costs }] = await Promise.all([
+      supabase.from("tour_payments").select("type,category,amount").eq("tour_id", id),
+      supabase.from("tour_costs").select("unit_price,quantity").eq("tour_id", id),
+    ]);
+    let deposit = 0, balance = 0, expensePaid = 0;
+    (pays || []).forEach((r: { type: string; category: string; amount: number }) => {
+      if (r.type === "income") {
+        if (r.category === "deposit") deposit += r.amount;
+        else if (r.category === "balance") balance += r.amount;
+      } else {
+        expensePaid += r.amount;
+      }
     });
+    const costsTotal = (costs || []).reduce(
+      (s: number, r: { unit_price: number; quantity: number }) => s + (r.unit_price * r.quantity), 0
+    );
     setPayTotals({ deposit, balance });
+    setFinancials({ costsTotal, expensePaid });
   };
 
   // 從 localStorage 載入欄位設定
@@ -598,6 +607,7 @@ export default function GroupDetailPage() {
           tourId={id}
           pax={tour.pax}
           sellingPrice={tour.selling_price}
+          participants={participants}
         />
       )}
 
