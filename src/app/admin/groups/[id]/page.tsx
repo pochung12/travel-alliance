@@ -671,7 +671,13 @@ export default function GroupDetailPage() {
         <CostSpreadsheet
           tourId={id}
           pax={tour.pax}
-          sellingPrice={tour.selling_price}
+          revenue={
+            (tour.pax_adult     || 0) * (tour.selling_price   || 0) +
+            (tour.pax_tour_only || 0) * (tour.price_tour_only || 0) +
+            (tour.pax_child     || 0) * (tour.price_child     || 0) +
+            (tour.pax_infant    || 0) * (tour.price_infant    || 0) +
+            (tour.custom_price_tiers || []).reduce((s, ct) => s + ct.pax * ct.price, 0)
+          }
         />
       )}
 

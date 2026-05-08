@@ -32,7 +32,7 @@ interface TourImage {
 interface Props {
   tourId: string;
   pax: number;
-  sellingPrice: number;
+  revenue: number;   // 預估收入（各類別人數×售價加總，由父層計算傳入）
   onSaved?: () => void;
 }
 
@@ -57,7 +57,7 @@ function compressImage(file: File, maxPx = 2400, quality = 0.92): Promise<string
   });
 }
 
-export default function CostSpreadsheet({ tourId, pax, sellingPrice, onSaved }: Props) {
+export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props) {
   const [rows, setRows]               = useState<Row[]>([]);
   const [saving, setSaving]           = useState(false);
   const [lastSaved, setLastSaved]     = useState<Date | null>(null);
@@ -284,7 +284,6 @@ export default function CostSpreadsheet({ tourId, pax, sellingPrice, onSaved }: 
 
   // ── Calculations ───────────────────────────────────────────────────────────
   const totalCost  = rows.reduce((sum, r) => sum + r.unit_price * r.quantity, 0);
-  const revenue    = sellingPrice * pax;
   const profit     = revenue - totalCost;
   const margin     = revenue > 0 ? (profit / revenue * 100) : 0;
   const costPerPax = pax > 0 ? totalCost / pax : 0;
@@ -479,7 +478,7 @@ export default function CostSpreadsheet({ tourId, pax, sellingPrice, onSaved }: 
           sub={pax > 0 ? `每人 NT$${Math.round(costPerPax).toLocaleString()}` : undefined}
           color="text-red-600 dark:text-red-400" bg="bg-red-50 dark:bg-red-900/20" />
         <SummaryCard label="預估收入" value={`NT$${revenue.toLocaleString()}`}
-          sub={`${pax} 人 × NT$${sellingPrice.toLocaleString()}`}
+          sub={`共 ${pax} 人（各類別合計）`}
           color="text-blue-600 dark:text-blue-400" bg="bg-blue-50 dark:bg-blue-900/20" />
         <SummaryCard label="預估毛利" value={`NT$${profit.toLocaleString()}`}
           sub={profit >= 0 ? "✅ 有利潤" : "⚠️ 虧損"}
