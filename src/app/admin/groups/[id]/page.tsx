@@ -397,9 +397,9 @@ export default function GroupDetailPage() {
     if (toCreate.length > 0) {
       const newRecords = toCreate.map(e => ({
         name: e.name, phone: "", email: "",
-        id_number: "", passport: "", passport_expiry: "",
-        taibao_number: "", taibao_expiry: "",
-        birthday: "", gender: "other" as const,
+        id_number: "", passport: "", passport_expiry: null,
+        taibao_number: "", taibao_expiry: null,
+        birthday: null, gender: "other" as const,
         address: "", emergency_contact: "", emergency_phone: "",
         notes: "", meal_preference: "",
         id_card_image: "", passport_image: "", taibao_image: "", name_en: "",
