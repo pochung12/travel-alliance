@@ -101,6 +101,8 @@ export default function GroupDetailPage() {
   const [payTotals, setPayTotals] = useState<{ deposit: number; balance: number }>({ deposit: 0, balance: 0 });
   // 財務三卡片用的費用試算 / 已付支出
   const [financials, setFinancials] = useState<{ costsTotal: number; expensePaid: number }>({ costsTotal: 0, expensePaid: 0 });
+  // 完整收付款紀錄（含 customer_ids，用於旅客 tab 自動計算訂金/尾款）
+  const [tourPayments, setTourPayments] = useState<{ id: string; type: string; category: string; amount: number; customer_ids: string[] }[]>([]);
   // 訂金/尾款 inline edit
   const [editingAmtId,   setEditingAmtId]   = useState<string|null>(null);
   const [editingAmtField, setEditingAmtField] = useState<"deposit_amount"|"balance_amount"|null>(null);
@@ -159,7 +161,7 @@ export default function GroupDetailPage() {
 
   const loadPayTotals = async () => {
     const [{ data: pays }, { data: costs }] = await Promise.all([
-      supabase.from("tour_payments").select("type,category,amount").eq("tour_id", id),
+      supabase.from("tour_payments").select("id,type,category,amount,customer_ids").eq("tour_id", id),
       supabase.from("tour_costs").select("unit_price,quantity").eq("tour_id", id),
     ]);
     let deposit = 0, balance = 0, expensePaid = 0;
@@ -176,6 +178,7 @@ export default function GroupDetailPage() {
     );
     setPayTotals({ deposit, balance });
     setFinancials({ costsTotal, expensePaid });
+    setTourPayments((pays || []) as { id: string; type: string; category: string; amount: number; customer_ids: string[] }[]);
   };
 
   // 從 localStorage 載入欄位設定
@@ -862,8 +865,21 @@ export default function GroupDetailPage() {
 
             {/* ── Payment totals summary bar ── */}
             {(() => {
-              const allocDeposit = participants.reduce((s,p)=>s+(p.deposit_amount||0),0);
-              const allocBalance = participants.reduce((s,p)=>s+(p.balance_amount||0),0);
+              // 輔助：計算某位旅客在某類別的分配金額（收付款紀錄中有勾選此旅客者平分）
+              const getLinkedAmt = (customerId: string, category: "deposit" | "balance") =>
+                tourPayments
+                  .filter(p => p.type === "income" && p.category === category && (p.customer_ids || []).includes(customerId))
+                  .reduce((s, p) => s + Math.round(p.amount / Math.max(1, (p.customer_ids || []).length)), 0);
+
+              // 已分配 = 各旅客已關聯金額加總（優先用收付款勾選；若無則用手動填寫金額）
+              const allocDeposit = participants.reduce((s, p) => {
+                const linked = getLinkedAmt(p.customer_id, "deposit");
+                return s + (linked > 0 ? linked : (p.deposit_amount || 0));
+              }, 0);
+              const allocBalance = participants.reduce((s, p) => {
+                const linked = getLinkedAmt(p.customer_id, "balance");
+                return s + (linked > 0 ? linked : (p.balance_amount || 0));
+              }, 0);
               const remDeposit = payTotals.deposit - allocDeposit;
               const remBalance = payTotals.balance - allocBalance;
               if (payTotals.deposit === 0 && payTotals.balance === 0) return null;
@@ -908,8 +924,11 @@ export default function GroupDetailPage() {
                 count: participants.filter(p => (p.participant_type || "adult") === t.key).length,
                 price: priceMap[t.key],
               })).filter(t => t.count > 0);
-              if (rows.length === 0) return null;
-              const totalAmt = rows.reduce((s, t) => s + t.count * t.price, 0);
+              const customTiers = (tour.custom_price_tiers || []).filter(ct => ct.pax > 0);
+              const fixedAmt  = rows.reduce((s, t) => s + t.count * t.price, 0);
+              const customAmt = customTiers.reduce((s, ct) => s + ct.pax * ct.price, 0);
+              const totalAmt  = fixedAmt + customAmt;
+              if (rows.length === 0 && customTiers.length === 0) return null;
               return (
                 <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 px-4 py-3">
                   <div className="flex items-center justify-between mb-2.5">
@@ -932,6 +951,23 @@ export default function GroupDetailPage() {
                             <span>NT${t.price.toLocaleString()}</span>
                             <span className="opacity-50">=</span>
                             <span className="font-bold">NT${(t.count * t.price).toLocaleString()}</span>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                    {customTiers.map(ct => (
+                      <div key={ct.id}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300 border border-violet-200 dark:border-violet-700">
+                        <span>✦</span>
+                        <span>{ct.label || "自訂"}</span>
+                        <span className="opacity-70">·</span>
+                        <span>{ct.pax} 人</span>
+                        {ct.price > 0 && (
+                          <>
+                            <span className="opacity-50">×</span>
+                            <span>NT${ct.price.toLocaleString()}</span>
+                            <span className="opacity-50">=</span>
+                            <span className="font-bold">NT${(ct.pax * ct.price).toLocaleString()}</span>
                           </>
                         )}
                       </div>
@@ -1120,10 +1156,17 @@ export default function GroupDetailPage() {
                             );
                           }
                           if (col.key === "deposit_amount" || col.key === "balance_amount") {
-                            const field = col.key as "deposit_amount" | "balance_amount";
-                            const label = field === "deposit_amount" ? "訂金" : "尾款";
-                            const val   = p[field] || 0;
-                            const isEdit = editingAmtId === p.id && editingAmtField === field;
+                            const field    = col.key as "deposit_amount" | "balance_amount";
+                            const category = field === "deposit_amount" ? "deposit" : "balance";
+                            const label    = field === "deposit_amount" ? "訂金" : "尾款";
+                            // 優先：收付款紀錄中有勾選此旅客的款項，依人數平分
+                            const linkedAmt = tourPayments
+                              .filter(pay => pay.type === "income" && pay.category === category && (pay.customer_ids || []).includes(p.customer_id))
+                              .reduce((s, pay) => s + Math.round(pay.amount / Math.max(1, (pay.customer_ids || []).length)), 0);
+                            const manualVal = p[field] || 0;
+                            const displayVal = linkedAmt > 0 ? linkedAmt : manualVal;
+                            const isLinked  = linkedAmt > 0;
+                            const isEdit    = !isLinked && editingAmtId === p.id && editingAmtField === field;
                             return (
                               <div key={col.key} className="w-24 flex-shrink-0 flex items-center justify-end">
                                 {isEdit ? (
@@ -1137,16 +1180,23 @@ export default function GroupDetailPage() {
                                       if (e.key === "Escape") { setEditingAmtId(null); setEditingAmtField(null); }
                                     }}
                                     placeholder="0" />
+                                ) : isLinked ? (
+                                  // 從收付款紀錄自動計算——不可手動編輯，顯示藍色帶標記
+                                  <span
+                                    title={`從收付款紀錄自動計算（${label}共 NT$${displayVal.toLocaleString()}）`}
+                                    className="text-xs px-2 py-1 rounded-lg text-blue-700 dark:text-blue-300 font-semibold bg-blue-50 dark:bg-blue-900/20 flex items-center gap-1">
+                                    NT${displayVal.toLocaleString()}
+                                  </span>
                                 ) : (
                                   <button
-                                    onClick={() => { setEditingAmtId(p.id); setEditingAmtField(field); setAmtInput(val ? String(val) : ""); }}
+                                    onClick={() => { setEditingAmtId(p.id); setEditingAmtField(field); setAmtInput(manualVal ? String(manualVal) : ""); }}
                                     className={`group/amt text-xs px-2 py-1 rounded-lg transition-all text-right ${
-                                      val > 0
+                                      manualVal > 0
                                         ? "text-emerald-700 dark:text-emerald-400 font-semibold bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/30"
                                         : "text-slate-300 dark:text-slate-600 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20"
                                     }`}
                                     title={`點擊編輯${label}`}>
-                                    {val > 0 ? `NT$${val.toLocaleString()}` : <span className="group-hover/amt:text-blue-400">{label}</span>}
+                                    {manualVal > 0 ? `NT$${manualVal.toLocaleString()}` : <span className="group-hover/amt:text-blue-400">{label}</span>}
                                   </button>
                                 )}
                               </div>
