@@ -1297,8 +1297,8 @@ export default function GroupDetailPage() {
                               if (pTypeKey === "infant")    return tour.price_infant    || 0;
                               return (tour.custom_price_tiers || []).find(ct => ct.id === pTypeKey)?.price || 0;
                             })();
-                            // 空白且有應付金額時顯示提示（琥珀色，僅訂金欄顯示）
-                            const showHint = !isLinked && manualVal === 0 && expectedPrice > 0 && field === "deposit_amount";
+                            // 空白且有應付金額時顯示紅色應收警示（訂金/尾款欄均顯示）
+                            const showHint = !isLinked && manualVal === 0 && expectedPrice > 0;
                             return (
                               <div key={col.key} className="w-24 flex-shrink-0 flex items-center justify-end">
                                 {isEdit ? (
@@ -1319,12 +1319,12 @@ export default function GroupDetailPage() {
                                     NT${linkedAmt.toLocaleString()}
                                   </span>
                                 ) : showHint ? (
-                                  // 應付提示（琥珀色虛線框，點擊可填入）
+                                  // 應收警示（紅色，點擊可填入）
                                   <button
                                     onClick={() => { setEditingAmtId(p.id); setEditingAmtField(field); setAmtInput(String(expectedPrice)); }}
-                                    title={`應付 NT$${expectedPrice.toLocaleString()}（依${PARTICIPANT_TYPES.find(t=>t.key===pTypeKey)?.label ?? "自訂"}售價），點擊填入`}
-                                    className="text-xs px-2 py-1 rounded-lg border border-dashed border-amber-300 dark:border-amber-600 text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 tabular-nums">
-                                    NT${expectedPrice.toLocaleString()}
+                                    title={`尚未收款，點擊填入金額`}
+                                    className="text-xs px-2 py-1 rounded-lg border border-red-200 dark:border-red-700 text-red-600 dark:text-red-400 font-semibold bg-red-50 dark:bg-red-900/20 tabular-nums whitespace-nowrap">
+                                    應收 NT${expectedPrice.toLocaleString()}
                                   </button>
                                 ) : (
                                   <button
