@@ -351,7 +351,7 @@ export default function GroupDetailPage() {
 
   const changeParticipantType = async (ctId: string, type: string) => {
     await supabase.from("customer_tours").update({ participant_type: type }).eq("id", ctId);
-    setParticipants(prev => prev.map(x => x.id === ctId ? { ...x, participant_type: type as "adult"|"tour_only"|"child"|"infant" } : x));
+    setParticipants(prev => prev.map(x => x.id === ctId ? { ...x, participant_type: type } : x));
     setTypePickerId(null);
     setTypePickerRect(null);
   };
@@ -931,9 +931,13 @@ export default function GroupDetailPage() {
                 count: participants.filter(p => (p.participant_type || "adult") === t.key).length,
                 price: priceMap[t.key],
               })).filter(t => t.count > 0);
-              const customTiers = (tour.custom_price_tiers || []).filter(ct => ct.pax > 0);
+              // 自訂類別：以實際分配到該 tier 的旅客人數計算
+              const customTiers = (tour.custom_price_tiers || []).map(ct => ({
+                ...ct,
+                assignedCount: participants.filter(p => p.participant_type === ct.id).length,
+              })).filter(ct => ct.pax > 0 || ct.assignedCount > 0);
               const fixedAmt  = rows.reduce((s, t) => s + t.count * t.price, 0);
-              const customAmt = customTiers.reduce((s, ct) => s + ct.pax * ct.price, 0);
+              const customAmt = customTiers.reduce((s, ct) => s + ct.assignedCount * ct.price, 0);
               const totalAmt  = fixedAmt + customAmt;
               if (rows.length === 0 && customTiers.length === 0) return null;
               return (
@@ -968,13 +972,16 @@ export default function GroupDetailPage() {
                         <span>✦</span>
                         <span>{ct.label || "自訂"}</span>
                         <span className="opacity-70">·</span>
-                        <span>{ct.pax} 人</span>
+                        <span>{ct.assignedCount} 人</span>
+                        {ct.assignedCount !== ct.pax && (
+                          <span className="opacity-50 text-[9px]">/ 預設 {ct.pax}</span>
+                        )}
                         {ct.price > 0 && (
                           <>
                             <span className="opacity-50">×</span>
                             <span>NT${ct.price.toLocaleString()}</span>
                             <span className="opacity-50">=</span>
-                            <span className="font-bold">NT${(ct.pax * ct.price).toLocaleString()}</span>
+                            <span className="font-bold">NT${(ct.assignedCount * ct.price).toLocaleString()}</span>
                           </>
                         )}
                       </div>
@@ -1098,7 +1105,11 @@ export default function GroupDetailPage() {
                         </div>
                         {/* participant type badge */}
                         {(() => {
-                          const pType = PARTICIPANT_TYPES.find(t => t.key === (p.participant_type || "adult")) || PARTICIPANT_TYPES[0];
+                          const pTypeKey = p.participant_type || "adult";
+                          const fixedType = PARTICIPANT_TYPES.find(t => t.key === pTypeKey);
+                          const customTier = !fixedType
+                            ? (tour.custom_price_tiers || []).find(ct => ct.id === pTypeKey)
+                            : undefined;
                           const isOpen = typePickerId === p.id;
                           return (
                             <div className="w-20 flex-shrink-0 flex items-center">
@@ -1107,9 +1118,13 @@ export default function GroupDetailPage() {
                                   if (isOpen) { setTypePickerId(null); setTypePickerRect(null); }
                                   else { setTypePickerId(p.id); setTypePickerRect(e.currentTarget.getBoundingClientRect()); }
                                 }}
-                                className={`flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg border transition-all font-medium ${pType.badge}`}>
-                                <span>{pType.icon}</span>
-                                <span>{pType.label}</span>
+                                className={`flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg border transition-all font-medium ${
+                                  fixedType
+                                    ? fixedType.badge
+                                    : "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300 border-violet-200 dark:border-violet-700"
+                                }`}>
+                                <span>{fixedType ? fixedType.icon : "✦"}</span>
+                                <span className="truncate max-w-[44px]">{fixedType ? fixedType.label : (customTier?.label || "自訂")}</span>
                               </button>
                             </div>
                           );
@@ -1171,9 +1186,19 @@ export default function GroupDetailPage() {
                               .filter(pay => pay.type === "income" && pay.category === category && (pay.customer_ids || []).includes(p.customer_id))
                               .reduce((s, pay) => s + Math.round(pay.amount / Math.max(1, (pay.customer_ids || []).length)), 0);
                             const manualVal = p[field] || 0;
-                            const displayVal = linkedAmt > 0 ? linkedAmt : manualVal;
                             const isLinked  = linkedAmt > 0;
                             const isEdit    = !isLinked && editingAmtId === p.id && editingAmtField === field;
+                            // 應付金額提示（依身份類別售價）
+                            const pTypeKey = p.participant_type || "adult";
+                            const expectedPrice = (() => {
+                              if (pTypeKey === "adult")     return tour.selling_price   || 0;
+                              if (pTypeKey === "tour_only") return tour.price_tour_only || 0;
+                              if (pTypeKey === "child")     return tour.price_child     || 0;
+                              if (pTypeKey === "infant")    return tour.price_infant    || 0;
+                              return (tour.custom_price_tiers || []).find(ct => ct.id === pTypeKey)?.price || 0;
+                            })();
+                            // 空白且有應付金額時顯示提示（琥珀色，僅訂金欄顯示）
+                            const showHint = !isLinked && manualVal === 0 && expectedPrice > 0 && field === "deposit_amount";
                             return (
                               <div key={col.key} className="w-24 flex-shrink-0 flex items-center justify-end">
                                 {isEdit ? (
@@ -1188,12 +1213,19 @@ export default function GroupDetailPage() {
                                     }}
                                     placeholder="0" />
                                 ) : isLinked ? (
-                                  // 從收付款紀錄自動計算——不可手動編輯，顯示藍色帶標記
                                   <span
-                                    title={`從收付款紀錄自動計算（${label}共 NT$${displayVal.toLocaleString()}）`}
-                                    className="text-xs px-2 py-1 rounded-lg text-blue-700 dark:text-blue-300 font-semibold bg-blue-50 dark:bg-blue-900/20 flex items-center gap-1">
-                                    NT${displayVal.toLocaleString()}
+                                    title={`從收付款紀錄自動計算`}
+                                    className="text-xs px-2 py-1 rounded-lg text-blue-700 dark:text-blue-300 font-semibold bg-blue-50 dark:bg-blue-900/20">
+                                    NT${linkedAmt.toLocaleString()}
                                   </span>
+                                ) : showHint ? (
+                                  // 應付提示（琥珀色虛線框，點擊可填入）
+                                  <button
+                                    onClick={() => { setEditingAmtId(p.id); setEditingAmtField(field); setAmtInput(String(expectedPrice)); }}
+                                    title={`應付 NT$${expectedPrice.toLocaleString()}（依${PARTICIPANT_TYPES.find(t=>t.key===pTypeKey)?.label ?? "自訂"}售價），點擊填入`}
+                                    className="text-xs px-2 py-1 rounded-lg border border-dashed border-amber-300 dark:border-amber-600 text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 tabular-nums">
+                                    NT${expectedPrice.toLocaleString()}
+                                  </button>
                                 ) : (
                                   <button
                                     onClick={() => { setEditingAmtId(p.id); setEditingAmtField(field); setAmtInput(manualVal ? String(manualVal) : ""); }}
@@ -1296,7 +1328,7 @@ export default function GroupDetailPage() {
       {/* ── Type picker (fixed) ── */}
       {typePickerId && typePickerRect && (() => {
         const spaceBelow = window.innerHeight - typePickerRect.bottom;
-        const openUp = spaceBelow < 200;
+        const openUp = spaceBelow < 260;
         const dropStyle: React.CSSProperties = {
           position: "fixed",
           left: typePickerRect.left,
@@ -1306,11 +1338,12 @@ export default function GroupDetailPage() {
             : { top: typePickerRect.bottom + 4 }),
         };
         const curType = participants.find(x => x.id === typePickerId)?.participant_type || "adult";
+        const customTiers = (tour.custom_price_tiers || []);
         return (
           <>
             <div className="fixed inset-0" style={{ zIndex: 9998 }}
               onClick={() => { setTypePickerId(null); setTypePickerRect(null); }} />
-            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-100 dark:border-slate-700 p-2 min-w-[120px]"
+            <div className="bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-100 dark:border-slate-700 p-2 min-w-[140px]"
               style={dropStyle}>
               <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 px-2 py-1 uppercase tracking-wide">身份類型</p>
               {PARTICIPANT_TYPES.map(t => {
@@ -1323,9 +1356,41 @@ export default function GroupDetailPage() {
                     }`}>
                     <span>{t.icon}</span>
                     {active ? "✓" : "○"} {t.label}
+                    {(() => {
+                      const priceByKey: Record<string, number> = {
+                        adult:     tour.selling_price   || 0,
+                        tour_only: tour.price_tour_only || 0,
+                        child:     tour.price_child     || 0,
+                        infant:    tour.price_infant    || 0,
+                      };
+                      const p = priceByKey[t.key] || 0;
+                      return p > 0 ? <span className="ml-auto text-[9px] opacity-50">NT${p.toLocaleString()}</span> : null;
+                    })()}
                   </button>
                 );
               })}
+              {customTiers.length > 0 && (
+                <>
+                  <div className="my-1.5 border-t border-slate-100 dark:border-slate-700" />
+                  <p className="text-[10px] font-semibold text-slate-400 dark:text-slate-500 px-2 py-1 uppercase tracking-wide">自訂類別</p>
+                  {customTiers.map(ct => {
+                    const active = curType === ct.id;
+                    return (
+                      <button key={ct.id}
+                        onClick={() => changeParticipantType(typePickerId!, ct.id)}
+                        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-xs transition-colors ${
+                          active
+                            ? "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300 border border-violet-200 dark:border-violet-700"
+                            : "hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-600 dark:text-slate-300"
+                        }`}>
+                        <span>✦</span>
+                        {active ? "✓" : "○"} {ct.label || "自訂"}
+                        {ct.price > 0 && <span className="ml-auto text-[9px] opacity-50">NT${ct.price.toLocaleString()}</span>}
+                      </button>
+                    );
+                  })}
+                </>
+              )}
             </div>
           </>
         );

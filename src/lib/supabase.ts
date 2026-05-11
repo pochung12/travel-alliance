@@ -100,7 +100,8 @@ export interface Customer {
   created_at: string;
 }
 
-export type ParticipantType = 'adult' | 'tour_only' | 'child' | 'infant';
+// 固定四類 + 自訂類別（存 custom_price_tiers 的 id）
+export type ParticipantType = 'adult' | 'tour_only' | 'child' | 'infant' | (string & {});
 
 export interface CustomerTour {
   id: string;
