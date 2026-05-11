@@ -698,6 +698,12 @@ export default function GroupDetailPage() {
           }
           participants={participants}
           onChanged={loadPayTotals}
+          onPaymentCustsChanged={(payId, newIds) => {
+            // 直接更新 tourPayments state，不需重新 fetch DB
+            setTourPayments(prev =>
+              prev.map(p => p.id === payId ? { ...p, customer_ids: newIds } : p)
+            );
+          }}
         />
       )}
 

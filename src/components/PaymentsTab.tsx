@@ -26,8 +26,10 @@ interface Props {
   revenue: number;   // 預估收入（各類別人數×售價加總，由父層計算傳入）
   /** 本團所有報名旅客（用於款項關聯） */
   participants?: { customer_id: string; customer: { name: string } }[];
-  /** 任何付款紀錄有異動時通知父層（讓旅客 tab 重新計算）*/
+  /** 新增/刪除紀錄時通知父層重新載入 */
   onChanged?: () => void;
+  /** 更新 customer_ids 時即時通知父層（optimistic，不需重新 fetch）*/
+  onPaymentCustsChanged?: (payId: string, newIds: string[]) => void;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -76,7 +78,7 @@ function SummaryCard({
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function PaymentsTab({ tourId, pax, revenue, participants = [], onChanged }: Props) {
+export default function PaymentsTab({ tourId, pax, revenue, participants = [], onChanged, onPaymentCustsChanged }: Props) {
   const [payments,   setPayments]   = useState<TourPayment[]>([]);
   const [tourCosts,  setTourCosts]  = useState<TourCost[]>([]);
   const [filter,     setFilter]     = useState<"all" | "income" | "expense">("all");
@@ -170,7 +172,8 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], o
   const updatePaymentCusts = async (payId: string, newIds: string[]) => {
     await supabase.from("tour_payments").update({ customer_ids: newIds }).eq("id", payId);
     setPayments(prev => prev.map(p => p.id === payId ? { ...p, customer_ids: newIds } : p));
-    onChanged?.();
+    // optimistic：直接把新 ids 傳給父層，不需要重新 fetch
+    onPaymentCustsChanged?.(payId, newIds);
   };
 
   // ── Delete record ──
