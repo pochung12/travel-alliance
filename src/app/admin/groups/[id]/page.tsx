@@ -282,18 +282,31 @@ export default function GroupDetailPage() {
     }).eq("id", id);
 
     if (error) {
-      // 若 DB 尚未執行 migration（42703 = column not found），降級只存基本欄位
-      if (error.code === "42703" || error.message?.includes("does not exist")) {
+      // 若 DB 尚未執行 migration（欄位不存在），降級改存已知欄位
+      const isMissingCol = error.code === "42703"
+        || error.message?.includes("does not exist")
+        || error.message?.includes("schema cache")
+        || error.message?.includes("Could not find");
+      if (isMissingCol) {
+        // 先嘗試含舊有自訂欄位（不含 deposit_per_person）的中間版本
         const { error: e2 } = await supabase.from("tours").update({
           name: form.name, destination: form.destination,
           start_date: form.start_date, end_date: form.end_date,
-          pax:          totalPax > 0 ? totalPax : (form.pax || 0),
-          selling_price: form.selling_price || 0,
+          pax:             totalPax > 0 ? totalPax : (form.pax || 0),
+          pax_adult:       paxAdult,
+          pax_tour_only:   paxTourOnly,
+          pax_child:       paxChild,
+          pax_infant:      paxInfant,
+          selling_price:   form.selling_price   || 0,
+          price_tour_only: form.price_tour_only || 0,
+          price_child:     form.price_child     || 0,
+          price_infant:    form.price_infant    || 0,
+          custom_price_tiers: form.custom_price_tiers || [],
           status: form.status, notes: form.notes,
         }).eq("id", id);
         setSaving(false);
         if (e2) { alert("儲存失敗：" + e2.message); return; }
-        alert("基本資料已儲存。\n\n⚠️ 各類別人數/售價需先在 Supabase SQL Editor 執行以下 SQL：\n\nALTER TABLE tours\n  ADD COLUMN IF NOT EXISTS price_tour_only NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS price_child NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS price_infant NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS pax_adult INT NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS pax_tour_only INT NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS pax_child INT NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS pax_infant INT NOT NULL DEFAULT 0;\n\nALTER TABLE customer_tours\n  ADD COLUMN IF NOT EXISTS participant_type TEXT NOT NULL DEFAULT 'adult';");
+        alert("基本資料已儲存（訂金金額欄位尚未建立）。\n\n請在 Supabase SQL Editor 執行：\n\nALTER TABLE tours\n  ADD COLUMN IF NOT EXISTS deposit_per_person NUMERIC(10,2) NOT NULL DEFAULT 0;");
         await loadTour();
         return;
       }
