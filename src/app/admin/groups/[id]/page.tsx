@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase, Tour, TourStatus, Customer, CustomerTour, CustomPriceTier } from "@/lib/supabase";
 import CostSpreadsheet from "@/components/CostSpreadsheet";
@@ -77,6 +77,14 @@ const input = "w-full border border-slate-200 dark:border-slate-600 rounded-lg p
 
 type BulkPreviewEntry = { name: string; existing: Customer | null; inTour: boolean; selected: boolean };
 
+const COL_WIDTHS_DEFAULT: Record<string, number> = {
+  name: 112, type_badge: 80,
+  phone: 120, email: 160, passport: 112, passport_expiry: 96,
+  taibao_number: 112, taibao_expiry: 96,
+  deposit_amount: 110, balance_amount: 110,
+  meal_preference: 112, room_number: 112,
+};
+
 export default function GroupDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router  = useRouter();
@@ -121,6 +129,27 @@ export default function GroupDetailPage() {
   const [dragPartIdx,   setDragPartIdx]   = useState<number | null>(null);
   // 列印名單
   const [showPrintMenu,   setShowPrintMenu]   = useState(false);
+  // 欄位寬度（可拖曳調整）
+  const [colWidths, setColWidths] = useState<Record<string, number>>(COL_WIDTHS_DEFAULT);
+  const resizeDrag = useRef<{ key: string; startX: number; startW: number } | null>(null);
+  const startResize = useCallback((key: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    const startW = colWidths[key] ?? 112;
+    resizeDrag.current = { key, startX: e.clientX, startW };
+    const onMove = (ev: MouseEvent) => {
+      if (!resizeDrag.current) return;
+      const w = Math.max(60, resizeDrag.current.startW + ev.clientX - resizeDrag.current.startX);
+      setColWidths(p => ({ ...p, [resizeDrag.current!.key]: w }));
+    };
+    const onUp = () => {
+      resizeDrag.current = null;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }, [colWidths]);
+
   // 批量輸入旅客
   const [showBulkModal,   setShowBulkModal]   = useState(false);
   const [bulkText,        setBulkText]        = useState("");
@@ -1165,6 +1194,53 @@ export default function GroupDetailPage() {
               </div>
             ) : (
               <div className="overflow-x-auto -mx-4 md:mx-0 px-4 md:px-0">
+              {/* ── 欄位標題列（可拖曳調整寬度）── */}
+              <div className="flex items-center bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-2 py-1.5 mb-2 min-w-[540px] md:min-w-0 select-none">
+                {/* drag handle 佔位 */}
+                <div className="w-6 flex-shrink-0" />
+                {/* color bar 佔位 */}
+                <div className="w-1 flex-shrink-0" />
+                {/* seq# 佔位 */}
+                <div className="w-5 flex-shrink-0" />
+                {/* 欄位名稱 */}
+                <div className="flex items-center gap-0 px-2 flex-1 min-w-0">
+                  {/* 姓名 */}
+                  <div style={{width: colWidths.name}} className="relative flex-shrink-0 text-[10px] font-semibold text-slate-400 uppercase tracking-wide pr-3">
+                    姓名
+                    <div onMouseDown={e => startResize("name", e)}
+                      className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize flex items-center justify-center group">
+                      <div className="w-0.5 h-3 bg-slate-300 dark:bg-slate-600 group-hover:bg-blue-400 rounded-full transition-colors" />
+                    </div>
+                  </div>
+                  {/* 身份 */}
+                  <div style={{width: colWidths.type_badge}} className="relative flex-shrink-0 text-[10px] font-semibold text-slate-400 uppercase tracking-wide pr-3">
+                    身份
+                    <div onMouseDown={e => startResize("type_badge", e)}
+                      className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize flex items-center justify-center group">
+                      <div className="w-0.5 h-3 bg-slate-300 dark:bg-slate-600 group-hover:bg-blue-400 rounded-full transition-colors" />
+                    </div>
+                  </div>
+                  {/* 動態欄位 */}
+                  {partCols.filter(c => c.visible).map(col => (
+                    <div key={col.key}
+                      style={{width: colWidths[col.key] ?? 110}}
+                      className="relative flex-shrink-0 text-[10px] font-semibold text-slate-400 uppercase tracking-wide pr-3">
+                      {col.label}
+                      <div onMouseDown={e => startResize(col.key, e)}
+                        className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize flex items-center justify-center group">
+                        <div className="w-0.5 h-3 bg-slate-300 dark:bg-slate-600 group-hover:bg-blue-400 rounded-full transition-colors" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {/* reset 按鈕 */}
+                <button
+                  onClick={() => setColWidths(COL_WIDTHS_DEFAULT)}
+                  title="重設欄位寬度"
+                  className="ml-1 text-[9px] text-slate-300 dark:text-slate-600 hover:text-blue-400 transition-colors flex-shrink-0">
+                  ↺
+                </button>
+              </div>
               <div className="space-y-1.5 min-w-[540px] md:min-w-0">
                 {orderedParts.map((p, idx) => {
                   const palette = p.room_number ? paletteMap.get(p.room_number) ?? ROOM_PALETTES[0] : null;
@@ -1198,7 +1274,7 @@ export default function GroupDetailPage() {
                       {/* main content */}
                       <div className="flex-1 flex items-center gap-0 min-w-0 px-2 py-3">
                         {/* name */}
-                        <div className="w-28 flex-shrink-0">
+                        <div style={{width: colWidths.name}} className="flex-shrink-0">
                           <Link href={`/admin/crm/${p.customer_id}`} className="font-medium text-blue-600 dark:text-blue-400 hover:underline text-sm">
                             {p.customer.name}
                           </Link>
@@ -1212,7 +1288,7 @@ export default function GroupDetailPage() {
                             : undefined;
                           const isOpen = typePickerId === p.id;
                           return (
-                            <div className="w-20 flex-shrink-0 flex items-center">
+                            <div style={{width: colWidths.type_badge}} className="flex-shrink-0 flex items-center">
                               <button
                                 onClick={(e) => {
                                   if (isOpen) { setTypePickerId(null); setTypePickerRect(null); }
@@ -1232,24 +1308,24 @@ export default function GroupDetailPage() {
                         {/* dynamic columns */}
                         {partCols.filter(c => c.visible).map(col => {
                           if (col.key === "phone") return (
-                            <div key="phone" className="flex-1 text-sm text-slate-500 dark:text-slate-400 truncate min-w-0 max-w-[120px]">
+                            <div key="phone" style={{width: colWidths.phone}} className="flex-shrink-0 text-sm text-slate-500 dark:text-slate-400 truncate">
                               {p.customer.phone || "—"}
                             </div>
                           );
                           if (col.key === "email") return (
-                            <div key="email" className="flex-1 text-sm text-slate-500 dark:text-slate-400 truncate min-w-0 max-w-[160px]">
+                            <div key="email" style={{width: colWidths.email}} className="flex-shrink-0 text-sm text-slate-500 dark:text-slate-400 truncate">
                               {p.customer.email || "—"}
                             </div>
                           );
                           if (col.key === "passport") return (
-                            <div key="passport" className="w-28 flex-shrink-0 text-xs text-slate-500 dark:text-slate-400 truncate font-mono">
+                            <div key="passport" style={{width: colWidths.passport}} className="flex-shrink-0 text-xs text-slate-500 dark:text-slate-400 truncate font-mono">
                               {p.customer.passport || <span className="text-slate-300 dark:text-slate-600">—</span>}
                             </div>
                           );
                           if (col.key === "passport_expiry") {
                             const expired = p.customer.passport_expiry && new Date(p.customer.passport_expiry) < new Date();
                             return (
-                              <div key="passport_expiry" className={`w-24 flex-shrink-0 text-xs font-mono ${
+                              <div key="passport_expiry" style={{width: colWidths.passport_expiry}} className={`flex-shrink-0 text-xs font-mono ${
                                 !p.customer.passport_expiry ? "text-slate-300 dark:text-slate-600" :
                                 expired ? "text-red-500 dark:text-red-400 font-semibold" :
                                 "text-slate-500 dark:text-slate-400"
@@ -1260,14 +1336,14 @@ export default function GroupDetailPage() {
                             );
                           }
                           if (col.key === "taibao_number") return (
-                            <div key="taibao_number" className="w-28 flex-shrink-0 text-xs text-slate-500 dark:text-slate-400 truncate font-mono">
+                            <div key="taibao_number" style={{width: colWidths.taibao_number}} className="flex-shrink-0 text-xs text-slate-500 dark:text-slate-400 truncate font-mono">
                               {p.customer.taibao_number || <span className="text-slate-300 dark:text-slate-600">—</span>}
                             </div>
                           );
                           if (col.key === "taibao_expiry") {
                             const expired = p.customer.taibao_expiry && new Date(p.customer.taibao_expiry) < new Date();
                             return (
-                              <div key="taibao_expiry" className={`w-24 flex-shrink-0 text-xs font-mono ${
+                              <div key="taibao_expiry" style={{width: colWidths.taibao_expiry}} className={`flex-shrink-0 text-xs font-mono ${
                                 !p.customer.taibao_expiry ? "text-slate-300 dark:text-slate-600" :
                                 expired ? "text-red-500 dark:text-red-400 font-semibold" :
                                 "text-slate-500 dark:text-slate-400"
@@ -1297,13 +1373,24 @@ export default function GroupDetailPage() {
                               if (pTypeKey === "infant")    return tour.price_infant    || 0;
                               return (tour.custom_price_tiers || []).find(ct => ct.id === pTypeKey)?.price || 0;
                             })();
-                            // 空白且有應付金額時顯示紅色應收警示（訂金/尾款欄均顯示）
-                            const showHint = !isLinked && manualVal === 0 && expectedPrice > 0;
+                            // 尾款：應收 = 總價 - 已繳訂金
+                            const hintAmt = (() => {
+                              if (field === "deposit_amount") return expectedPrice;
+                              // 計算已繳訂金
+                              const depositLinked = tourPayments
+                                .filter(pay => pay.type === "income" && pay.category === "deposit" && (pay.customer_ids || []).includes(p.customer_id))
+                                .reduce((s, pay) => s + Math.round(pay.amount / Math.max(1, (pay.customer_ids || []).length)), 0);
+                              const depositManual = p.deposit_amount || 0;
+                              const depositPaid = depositLinked > 0 ? depositLinked : depositManual;
+                              return Math.max(0, expectedPrice - depositPaid);
+                            })();
+                            // 空白且有應付金額時顯示紅色警示
+                            const showHint = !isLinked && manualVal === 0 && hintAmt > 0;
                             return (
-                              <div key={col.key} className="w-24 flex-shrink-0 flex items-center justify-end">
+                              <div key={col.key} style={{width: colWidths[col.key] ?? 110}} className="flex-shrink-0 flex items-center justify-end">
                                 {isEdit ? (
                                   <input autoFocus type="text" inputMode="numeric"
-                                    className="w-20 text-xs border border-blue-400 rounded-lg px-2 py-1 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-right focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                    className="w-full text-xs border border-blue-400 rounded-lg px-2 py-1 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 text-right focus:outline-none focus:ring-2 focus:ring-blue-400"
                                     value={amtInput}
                                     onChange={e => setAmtInput(e.target.value)}
                                     onBlur={() => saveAmount(p.id, field, amtInput)}
@@ -1319,12 +1406,12 @@ export default function GroupDetailPage() {
                                     NT${linkedAmt.toLocaleString()}
                                   </span>
                                 ) : showHint ? (
-                                  // 應收警示（紅色，點擊可填入）
+                                  // 未收警示（紅色，點擊可填入）
                                   <button
-                                    onClick={() => { setEditingAmtId(p.id); setEditingAmtField(field); setAmtInput(String(expectedPrice)); }}
+                                    onClick={() => { setEditingAmtId(p.id); setEditingAmtField(field); setAmtInput(String(hintAmt)); }}
                                     title={`尚未收款，點擊填入金額`}
                                     className="text-xs px-2 py-1 rounded-lg border border-red-200 dark:border-red-700 text-red-600 dark:text-red-400 font-semibold bg-red-50 dark:bg-red-900/20 tabular-nums whitespace-nowrap">
-                                    應收 NT${expectedPrice.toLocaleString()}
+                                    未收{label} {hintAmt.toLocaleString()}元
                                   </button>
                                 ) : (
                                   <button
@@ -1345,7 +1432,7 @@ export default function GroupDetailPage() {
                             const meals = (p.meal_preference || "").split(",").map(s => s.trim()).filter(Boolean);
                             const isOpen = mealPickerId === p.id;
                             return (
-                              <div key="meal" className="w-28 flex-shrink-0 flex items-center">
+                              <div key="meal" style={{width: colWidths.meal_preference}} className="flex-shrink-0 flex items-center">
                                 <button
                                   onClick={(e) => {
                                     if (isOpen) { setMealPickerId(null); setMealPickerRect(null); }
@@ -1364,7 +1451,7 @@ export default function GroupDetailPage() {
                           }
                           if (col.key === "room_number") {
                             return (
-                              <div key="room" className="w-28 flex-shrink-0 flex justify-end pr-1">
+                              <div key="room" style={{width: colWidths.room_number}} className="flex-shrink-0 flex justify-end pr-1">
                                 {editingRoomId === p.id ? (
                                   <input autoFocus
                                     className="w-20 text-xs border border-blue-400 rounded-lg px-2 py-1 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
