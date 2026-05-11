@@ -150,7 +150,7 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], o
     if (!form.amount || form.amount <= 0) { alert("請輸入金額"); return; }
     if (!form.category) { alert("請選擇類別"); return; }
     setSaving(true);
-    const { error } = await supabase.from("tour_payments").insert([{
+    const basePayload = {
       tour_id: tourId,
       type: form.type,
       category: form.category,
@@ -160,10 +160,32 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], o
       note: form.note || "",
       image: form.image || "",
       customer_ids: formCustIds,
+    };
+    const { error } = await supabase.from("tour_payments").insert([{
+      ...basePayload,
       is_payable: form.type === "expense" ? formIsPayable : false,
     }]);
+    if (error) {
+      const isMissingCol = error.message?.includes("schema cache") || error.message?.includes("Could not find") || error.code === "42703";
+      if (isMissingCol) {
+        // 降級：不帶 is_payable 欄位儲存
+        const { error: e2 } = await supabase.from("tour_payments").insert([basePayload]);
+        setSaving(false);
+        if (e2) { alert("儲存失敗：" + e2.message); return; }
+        alert("已儲存（應付欄位尚未建立）。\n請在 Supabase SQL Editor 執行：\n\nALTER TABLE tour_payments\n  ADD COLUMN IF NOT EXISTS is_payable BOOLEAN NOT NULL DEFAULT FALSE;");
+        setShowModal(false);
+        setForm(emptyForm());
+        setFormCustIds([]);
+        setFormIsPayable(false);
+        await loadPayments();
+        onChanged?.();
+        return;
+      }
+      setSaving(false);
+      alert("儲存失敗：" + error.message);
+      return;
+    }
     setSaving(false);
-    if (error) { alert("儲存失敗：" + error.message); return; }
     setShowModal(false);
     setForm(emptyForm());
     setFormCustIds([]);
