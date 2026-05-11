@@ -151,6 +151,7 @@ export const INCOME_CATEGORIES = [
 
 export const EXPENSE_CATEGORIES = [
   { key: 'deposit',   label: '💰 訂金' },
+  { key: 'balance',   label: '💵 尾款' },
   { key: 'flight',    label: '✈️ 機票款' },
   { key: 'bus',       label: '🚌 巴士款' },
   { key: 'hotel',     label: '🏨 住宿費' },
