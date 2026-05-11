@@ -918,14 +918,27 @@ export default function GroupDetailPage() {
               }, 0);
               const remDeposit = payTotals.deposit - allocDeposit;
               const remBalance = payTotals.balance - allocBalance;
+              // 總應收金額（依各類別人數×售價計算）
+              const totalExpected =
+                (tour.pax_adult     || 0) * (tour.selling_price   || 0) +
+                (tour.pax_tour_only || 0) * (tour.price_tour_only || 0) +
+                (tour.pax_child     || 0) * (tour.price_child     || 0) +
+                (tour.pax_infant    || 0) * (tour.price_infant    || 0) +
+                (tour.custom_price_tiers || []).reduce((s, ct) => s + ct.pax * ct.price, 0);
+              const totalExpectedBalance = Math.max(0, totalExpected - payTotals.deposit);
               if (payTotals.deposit === 0 && payTotals.balance === 0) return null;
               return (
                 <div className="grid grid-cols-2 gap-3">
                   {[
-                    { label:"訂金", received: payTotals.deposit, alloc: allocDeposit, rem: remDeposit, color:"emerald" },
-                    { label:"尾款", received: payTotals.balance,  alloc: allocBalance, rem: remBalance, color:"blue" },
-                  ].map(({ label, received, alloc, rem, color }) => received > 0 && (
+                    { label:"訂金", totalExp: totalExpected,        received: payTotals.deposit, alloc: allocDeposit, rem: remDeposit, color:"emerald" },
+                    { label:"尾款", totalExp: totalExpectedBalance,  received: payTotals.balance, alloc: allocBalance, rem: remBalance, color:"blue"    },
+                  ].map(({ label, totalExp, received, alloc, rem, color }) => received > 0 && (
                     <div key={label} className={`bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 px-4 py-3`}>
+                      {/* 總應收 */}
+                      <div className="flex items-center justify-between mb-2 pb-2 border-b border-slate-100 dark:border-slate-700">
+                        <span className="text-[10px] text-slate-400 dark:text-slate-500">總應收{label}</span>
+                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400">NT${totalExp.toLocaleString()}</span>
+                      </div>
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">{label}（收付款合計）</span>
                         <span className="text-sm font-bold text-slate-800 dark:text-slate-100">NT${received.toLocaleString()}</span>
