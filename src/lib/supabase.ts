@@ -45,6 +45,7 @@ export interface Tour {
   price_child: number;      // 兒童售價 (NT$)
   price_infant: number;     // 嬰兒售價 (NT$)
   custom_price_tiers?: CustomPriceTier[]; // 自訂類別（JSONB）
+  deposit_per_person?: number;            // 每人訂金金額
   status: TourStatus;
   notes: string;
   created_at: string;

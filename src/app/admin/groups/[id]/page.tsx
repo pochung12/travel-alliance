@@ -277,6 +277,7 @@ export default function GroupDetailPage() {
       price_child:     form.price_child     || 0,
       price_infant:    form.price_infant    || 0,
       custom_price_tiers: form.custom_price_tiers || [],
+      deposit_per_person: form.deposit_per_person || 0,
       status: form.status, notes: form.notes,
     }).eq("id", id);
 
@@ -683,6 +684,33 @@ export default function GroupDetailPage() {
               </div>
             </div>
             <div className="col-span-2">
+              <label className={lbl}>訂金金額（每人）</label>
+              <div className="flex items-center gap-2 mt-1">
+                <div className="relative w-40">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 select-none">NT$</span>
+                  <input type="number" min="0"
+                    className="w-full pl-9 pr-3 border border-slate-200 dark:border-slate-600 rounded-lg py-2 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400 text-right"
+                    value={form.deposit_per_person || 0}
+                    onChange={e => setForm({ ...form, deposit_per_person: +e.target.value })} />
+                </div>
+                <span className="text-xs text-slate-400 dark:text-slate-500">不含招待／領隊等售價為 0 的名額</span>
+              </div>
+              {(() => {
+                const freePax  = (form.custom_price_tiers || []).filter(ct => ct.price === 0).reduce((s, ct) => s + ct.pax, 0);
+                const fixedPax = PRICE_TIERS.reduce((s, t) => s + ((form[t.paxKey] as number) || 0), 0);
+                const customPax= (form.custom_price_tiers || []).reduce((s, ct) => s + ct.pax, 0);
+                const totalPax = fixedPax + customPax;
+                const payingPax = totalPax - freePax;
+                const dep = form.deposit_per_person || 0;
+                if (!dep || totalPax === 0) return null;
+                return (
+                  <p className="mt-1.5 text-[11px] text-emerald-600 dark:text-emerald-400">
+                    總應收訂金：NT${(dep * payingPax).toLocaleString()}（{dep.toLocaleString()} × {payingPax} 人）
+                  </p>
+                );
+              })()}
+            </div>
+            <div className="col-span-2">
               <label className={lbl}>備註</label>
               <textarea className={input + " h-20 resize-none"} value={form.notes || ""}
                 onChange={e => setForm({...form, notes: e.target.value})} />
@@ -918,14 +946,21 @@ export default function GroupDetailPage() {
               }, 0);
               const remDeposit = payTotals.deposit - allocDeposit;
               const remBalance = payTotals.balance - allocBalance;
-              // 總應收金額（依各類別人數×售價計算）
-              const totalExpected =
+              // 總應收訂金：訂金金額 × (總人數 - 招待/領隊等免費人數)
+              const freePax = (tour.custom_price_tiers || []).filter(ct => ct.price === 0).reduce((s, ct) => s + ct.pax, 0);
+              const payingPax = (tour.pax || 0) - freePax;
+              const depositPerPerson = tour.deposit_per_person || 0;
+              const totalExpected = depositPerPerson > 0
+                ? depositPerPerson * payingPax
+                : 0;
+              // 總應收尾款：各類別售價合計 - 已收訂金
+              const totalRevenue =
                 (tour.pax_adult     || 0) * (tour.selling_price   || 0) +
                 (tour.pax_tour_only || 0) * (tour.price_tour_only || 0) +
                 (tour.pax_child     || 0) * (tour.price_child     || 0) +
                 (tour.pax_infant    || 0) * (tour.price_infant    || 0) +
                 (tour.custom_price_tiers || []).reduce((s, ct) => s + ct.pax * ct.price, 0);
-              const totalExpectedBalance = Math.max(0, totalExpected - payTotals.deposit);
+              const totalExpectedBalance = Math.max(0, totalRevenue - payTotals.deposit);
               if (payTotals.deposit === 0 && payTotals.balance === 0) return null;
               return (
                 <div className="grid grid-cols-2 gap-3">
@@ -937,7 +972,10 @@ export default function GroupDetailPage() {
                       {/* 總應收 */}
                       <div className="flex items-center justify-between mb-2 pb-2 border-b border-slate-100 dark:border-slate-700">
                         <span className="text-[10px] text-slate-400 dark:text-slate-500">總應收{label}</span>
-                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400">NT${totalExp.toLocaleString()}</span>
+                        {totalExp > 0
+                          ? <span className="text-xs font-bold text-slate-500 dark:text-slate-400">NT${totalExp.toLocaleString()}</span>
+                          : <span className="text-[10px] text-slate-300 dark:text-slate-600 italic">{label === "訂金" ? "請先設定訂金金額" : "—"}</span>
+                        }
                       </div>
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">{label}（收付款合計）</span>
