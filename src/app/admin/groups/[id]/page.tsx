@@ -936,9 +936,13 @@ export default function GroupDetailPage() {
                 ...ct,
                 assignedCount: participants.filter(p => p.participant_type === ct.id).length,
               })).filter(ct => ct.pax > 0 || ct.assignedCount > 0);
-              const fixedAmt  = rows.reduce((s, t) => s + t.count * t.price, 0);
-              const customAmt = customTiers.reduce((s, ct) => s + ct.assignedCount * ct.price, 0);
-              const totalAmt  = fixedAmt + customAmt;
+              // 合計以『基本資料→各類別人數與售價』的設定值為準（同費用試算/收付款公式）
+              const totalAmt =
+                (tour.pax_adult     || 0) * (tour.selling_price   || 0) +
+                (tour.pax_tour_only || 0) * (tour.price_tour_only || 0) +
+                (tour.pax_child     || 0) * (tour.price_child     || 0) +
+                (tour.pax_infant    || 0) * (tour.price_infant    || 0) +
+                (tour.custom_price_tiers || []).reduce((s, ct) => s + ct.pax * ct.price, 0);
               if (rows.length === 0 && customTiers.length === 0) return null;
               return (
                 <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 px-4 py-3">
