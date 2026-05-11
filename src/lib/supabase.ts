@@ -150,6 +150,7 @@ export const INCOME_CATEGORIES = [
 ] as const;
 
 export const EXPENSE_CATEGORIES = [
+  { key: 'deposit',   label: '💰 訂金' },
   { key: 'flight',    label: '✈️ 機票款' },
   { key: 'bus',       label: '🚌 巴士款' },
   { key: 'hotel',     label: '🏨 住宿費' },
@@ -172,5 +173,6 @@ export interface TourPayment {
   note: string;
   image: string;          // base64 screenshot evidence
   customer_ids: string[]; // 對應旅客 customer_id 陣列（多對多）
+  is_payable?: boolean;   // 應付（未付）標記，僅支出使用
   created_at: string;
 }

@@ -86,6 +86,7 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], o
   const [lightbox,   setLightbox]   = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [saving,     setSaving]     = useState(false);
+  const [formIsPayable, setFormIsPayable] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   // 旅客對應（新增款項時多選）
   const [formCustIds, setFormCustIds] = useState<string[]>([]);
@@ -124,7 +125,8 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], o
   const estimatedCost   = tourCosts.reduce((s, c) => s + c.unit_price * c.quantity, 0);
   const expectedRevenue = revenue;
   const actualIncome    = payments.filter(p => p.type === "income").reduce((s, p) => s + p.amount, 0);
-  const actualExpense   = payments.filter(p => p.type === "expense").reduce((s, p) => s + p.amount, 0);
+  const actualExpense   = payments.filter(p => p.type === "expense" && !p.is_payable).reduce((s, p) => s + p.amount, 0);
+  const payableExpense  = payments.filter(p => p.type === "expense" &&  p.is_payable).reduce((s, p) => s + p.amount, 0);
   const netBalance      = actualIncome - actualExpense;
   const incomeGap       = expectedRevenue - actualIncome;   // 尚未收到
   const expenseGap      = estimatedCost   - actualExpense;  // 尚未付出
@@ -158,12 +160,14 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], o
       note: form.note || "",
       image: form.image || "",
       customer_ids: formCustIds,
+      is_payable: form.type === "expense" ? formIsPayable : false,
     }]);
     setSaving(false);
     if (error) { alert("儲存失敗：" + error.message); return; }
     setShowModal(false);
     setForm(emptyForm());
     setFormCustIds([]);
+    setFormIsPayable(false);
     await loadPayments();
     onChanged?.();
   };
@@ -215,7 +219,7 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], o
         <SummaryCard
           label="實際收入"
           value={fmt(actualIncome)}
-          sub={`已付支出 ${fmt(actualExpense)}`}
+          sub={`已付支出 ${fmt(actualExpense)}${payableExpense > 0 ? ` ／ 應付 ${fmt(payableExpense)}` : ""}`}
           color="bg-emerald-50 border-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:border-emerald-800 dark:text-emerald-200"
           icon={<TrendingUp className="w-5 h-5" />}
         />
@@ -253,7 +257,7 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], o
           ))}
         </div>
         <button
-          onClick={() => { setForm(emptyForm()); setFormCustIds([]); setShowModal(true); }}
+          onClick={() => { setForm(emptyForm()); setFormCustIds([]); setFormIsPayable(false); setShowModal(true); }}
           className="flex items-center gap-1.5 text-sm px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
         >
           <Plus className="w-4 h-4" /> 新增紀錄
@@ -266,7 +270,7 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], o
           <Receipt className="w-8 h-8 text-slate-200 dark:text-slate-600 mx-auto mb-2" />
           <p className="text-sm text-slate-400 dark:text-slate-500">還沒有{filter === "income" ? "收款" : filter === "expense" ? "付款" : "收付款"}紀錄</p>
           <button
-            onClick={() => { setForm(emptyForm()); setShowModal(true); }}
+            onClick={() => { setForm(emptyForm()); setFormCustIds([]); setFormIsPayable(false); setShowModal(true); }}
             className="mt-3 text-xs text-blue-600 hover:underline"
           >
             + 新增第一筆
@@ -300,10 +304,12 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], o
                     <td className="px-4 py-3">
                       <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
                         p.type === "income"
-                          ? "bg-emerald-100 text-emerald-700"
-                          : "bg-orange-100 text-orange-700"
+                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+                          : p.is_payable
+                            ? "bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300"
+                            : "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300"
                       }`}>
-                        {p.type === "income" ? "收入" : "支出"}
+                        {p.type === "income" ? "收入" : p.is_payable ? "應付" : "支出"}
                       </span>
                     </td>
                     <td className="px-4 py-3">
@@ -327,9 +333,14 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], o
                       )}
                     </td>
                     <td className={`px-4 py-3 text-right font-semibold tabular-nums ${
-                      p.type === "income" ? "text-emerald-600" : "text-orange-600"
+                      p.type === "income"
+                        ? "text-emerald-600"
+                        : p.is_payable
+                          ? "text-red-500 dark:text-red-400"
+                          : "text-orange-600"
                     }`}>
                       {p.type === "income" ? "+" : "-"}{fmt(p.amount)}
+                      {p.is_payable && <span className="ml-1 text-[9px] font-normal opacity-70">未付</span>}
                     </td>
                     <td className="px-4 py-3 text-center">
                       {p.image ? (
@@ -432,13 +443,20 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], o
                 </tr>
               )}
               {filter !== "income" && (
-                <tr>
-                  <td colSpan={3} className="px-4 py-2.5 text-slate-500 dark:text-slate-400 text-xs">支出小計</td>
-                  <td className="px-4 py-2.5 text-right text-orange-600 tabular-nums">
-                    -{fmt(actualExpense)}
-                  </td>
-                  <td colSpan={2}></td>
-                </tr>
+                <>
+                  <tr>
+                    <td colSpan={3} className="px-4 py-2 text-slate-500 dark:text-slate-400 text-xs">已付支出小計</td>
+                    <td className="px-4 py-2 text-right text-orange-600 tabular-nums">-{fmt(actualExpense)}</td>
+                    <td colSpan={2}></td>
+                  </tr>
+                  {payableExpense > 0 && (
+                    <tr>
+                      <td colSpan={3} className="px-4 py-2 text-slate-500 dark:text-slate-400 text-xs">應付（未付）小計</td>
+                      <td className="px-4 py-2 text-right text-red-500 dark:text-red-400 tabular-nums font-semibold">-{fmt(payableExpense)}</td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  )}
+                </>
               )}
               {filter === "all" && (
                 <tr className="border-t border-slate-200 dark:border-slate-600">
@@ -476,10 +494,10 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], o
                   {(["income","expense"] as const).map(t => (
                     <button
                       key={t}
-                      onClick={() => setForm(f => ({
+                      onClick={() => { setForm(f => ({
                         ...f, type: t,
-                        category: t === "income" ? "deposit" : "flight"
-                      }))}
+                        category: t === "income" ? "deposit" : "deposit"
+                      })); if (t === "income") setFormIsPayable(false); }}
                       className={`py-2.5 text-sm font-medium rounded-lg border transition-colors ${
                         form.type === t
                           ? t === "income"
@@ -542,6 +560,22 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], o
                   />
                 </div>
               </div>
+
+              {/* 應付 checkbox（支出才顯示）*/}
+              {form.type === "expense" && (
+                <label className="flex items-center gap-3 px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/60 rounded-xl cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={formIsPayable}
+                    onChange={e => setFormIsPayable(e.target.checked)}
+                    className="w-4 h-4 accent-red-600 flex-shrink-0"
+                  />
+                  <div>
+                    <span className="text-sm font-semibold text-red-700 dark:text-red-300">應付（未付）</span>
+                    <p className="text-[11px] text-red-400 dark:text-red-500 mt-0.5">勾選代表此筆支出尚未實際付款，僅作為應付紀錄</p>
+                  </div>
+                </label>
+              )}
 
               {/* Note */}
               <div>
