@@ -918,6 +918,102 @@ export default function GroupDetailPage() {
               );
             })()}
 
+            {/* ── 收款統計 ── */}
+            {participants.length > 0 && (() => {
+              const getLinkedAmt = (customerId: string, category: "deposit" | "balance") =>
+                tourPayments
+                  .filter(pay => pay.type === "income" && pay.category === category && (pay.customer_ids || []).includes(customerId))
+                  .reduce((s, pay) => s + Math.round(pay.amount / Math.max(1, (pay.customer_ids || []).length)), 0);
+
+              const depositPaid   = participants.filter(p => {
+                const linked = getLinkedAmt(p.customer_id, "deposit");
+                return (linked > 0 ? linked : (p.deposit_amount || 0)) > 0;
+              });
+              const balancePaid   = participants.filter(p => {
+                const linked = getLinkedAmt(p.customer_id, "balance");
+                return (linked > 0 ? linked : (p.balance_amount || 0)) > 0;
+              });
+              const depositUnpaid = participants.length - depositPaid.length;
+              const balanceUnpaid = participants.length - balancePaid.length;
+
+              return (
+                <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 px-4 py-3">
+                  <div className="flex items-center justify-between mb-2.5">
+                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                      💳 收款統計
+                    </span>
+                    <span className="text-xs text-slate-400">{participants.length} 人</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    {/* 訂金 */}
+                    <div className="rounded-lg border border-slate-100 dark:border-slate-700 px-3 py-2.5">
+                      <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">訂金</div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                          <span className="text-xs text-slate-600 dark:text-slate-300">已收</span>
+                          <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">{depositPaid.length} 人</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                          <span className="text-xs text-slate-600 dark:text-slate-300">未收</span>
+                          <span className={`text-sm font-bold ${depositUnpaid > 0 ? "text-amber-500 dark:text-amber-400" : "text-slate-300 dark:text-slate-600"}`}>
+                            {depositUnpaid} 人
+                          </span>
+                        </div>
+                      </div>
+                      {depositPaid.length > 0 && (
+                        <div className="mt-1.5 h-1.5 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
+                          <div className="h-full rounded-full bg-emerald-500 transition-all"
+                            style={{ width: `${Math.round(depositPaid.length / participants.length * 100)}%` }} />
+                        </div>
+                      )}
+                      {depositUnpaid > 0 && (
+                        <div className="mt-1.5 text-[10px] text-slate-400 leading-relaxed">
+                          {participants.filter(p => {
+                            const linked = getLinkedAmt(p.customer_id, "deposit");
+                            return (linked > 0 ? linked : (p.deposit_amount || 0)) === 0;
+                          }).map(p => p.customer.name).join("、")}
+                        </div>
+                      )}
+                    </div>
+                    {/* 尾款 */}
+                    <div className="rounded-lg border border-slate-100 dark:border-slate-700 px-3 py-2.5">
+                      <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">尾款</div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+                          <span className="text-xs text-slate-600 dark:text-slate-300">已收</span>
+                          <span className="text-sm font-bold text-blue-600 dark:text-blue-400">{balancePaid.length} 人</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
+                          <span className="text-xs text-slate-600 dark:text-slate-300">未收</span>
+                          <span className={`text-sm font-bold ${balanceUnpaid > 0 ? "text-amber-500 dark:text-amber-400" : "text-slate-300 dark:text-slate-600"}`}>
+                            {balanceUnpaid} 人
+                          </span>
+                        </div>
+                      </div>
+                      {balancePaid.length > 0 && (
+                        <div className="mt-1.5 h-1.5 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
+                          <div className="h-full rounded-full bg-blue-500 transition-all"
+                            style={{ width: `${Math.round(balancePaid.length / participants.length * 100)}%` }} />
+                        </div>
+                      )}
+                      {balanceUnpaid > 0 && (
+                        <div className="mt-1.5 text-[10px] text-slate-400 leading-relaxed">
+                          {participants.filter(p => {
+                            const linked = getLinkedAmt(p.customer_id, "balance");
+                            return (linked > 0 ? linked : (p.balance_amount || 0)) === 0;
+                          }).map(p => p.customer.name).join("、")}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
             {/* ── Type statistics ── */}
             {participants.length > 0 && (() => {
               const priceMap: Record<string, number> = {
@@ -1059,102 +1155,6 @@ export default function GroupDetailPage() {
                       ))}
                     </div>
                   )}
-                </div>
-              );
-            })()}
-
-            {/* ── 收款統計 ── */}
-            {participants.length > 0 && (() => {
-              const getLinkedAmt = (customerId: string, category: "deposit" | "balance") =>
-                tourPayments
-                  .filter(pay => pay.type === "income" && pay.category === category && (pay.customer_ids || []).includes(customerId))
-                  .reduce((s, pay) => s + Math.round(pay.amount / Math.max(1, (pay.customer_ids || []).length)), 0);
-
-              const depositPaid   = participants.filter(p => {
-                const linked = getLinkedAmt(p.customer_id, "deposit");
-                return (linked > 0 ? linked : (p.deposit_amount || 0)) > 0;
-              });
-              const balancePaid   = participants.filter(p => {
-                const linked = getLinkedAmt(p.customer_id, "balance");
-                return (linked > 0 ? linked : (p.balance_amount || 0)) > 0;
-              });
-              const depositUnpaid = participants.length - depositPaid.length;
-              const balanceUnpaid = participants.length - balancePaid.length;
-
-              return (
-                <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 px-4 py-3">
-                  <div className="flex items-center justify-between mb-2.5">
-                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                      💳 收款統計
-                    </span>
-                    <span className="text-xs text-slate-400">{participants.length} 人</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    {/* 訂金 */}
-                    <div className="rounded-lg border border-slate-100 dark:border-slate-700 px-3 py-2.5">
-                      <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">訂金</div>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                          <span className="text-xs text-slate-600 dark:text-slate-300">已收</span>
-                          <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">{depositPaid.length} 人</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
-                          <span className="text-xs text-slate-600 dark:text-slate-300">未收</span>
-                          <span className={`text-sm font-bold ${depositUnpaid > 0 ? "text-amber-500 dark:text-amber-400" : "text-slate-300 dark:text-slate-600"}`}>
-                            {depositUnpaid} 人
-                          </span>
-                        </div>
-                      </div>
-                      {depositPaid.length > 0 && (
-                        <div className="mt-1.5 h-1.5 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
-                          <div className="h-full rounded-full bg-emerald-500 transition-all"
-                            style={{ width: `${Math.round(depositPaid.length / participants.length * 100)}%` }} />
-                        </div>
-                      )}
-                      {depositUnpaid > 0 && (
-                        <div className="mt-1.5 text-[10px] text-slate-400 leading-relaxed">
-                          {participants.filter(p => {
-                            const linked = getLinkedAmt(p.customer_id, "deposit");
-                            return (linked > 0 ? linked : (p.deposit_amount || 0)) === 0;
-                          }).map(p => p.customer.name).join("、")}
-                        </div>
-                      )}
-                    </div>
-                    {/* 尾款 */}
-                    <div className="rounded-lg border border-slate-100 dark:border-slate-700 px-3 py-2.5">
-                      <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide mb-2">尾款</div>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
-                          <span className="text-xs text-slate-600 dark:text-slate-300">已收</span>
-                          <span className="text-sm font-bold text-blue-600 dark:text-blue-400">{balancePaid.length} 人</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-amber-400 shrink-0" />
-                          <span className="text-xs text-slate-600 dark:text-slate-300">未收</span>
-                          <span className={`text-sm font-bold ${balanceUnpaid > 0 ? "text-amber-500 dark:text-amber-400" : "text-slate-300 dark:text-slate-600"}`}>
-                            {balanceUnpaid} 人
-                          </span>
-                        </div>
-                      </div>
-                      {balancePaid.length > 0 && (
-                        <div className="mt-1.5 h-1.5 rounded-full bg-slate-100 dark:bg-slate-700 overflow-hidden">
-                          <div className="h-full rounded-full bg-blue-500 transition-all"
-                            style={{ width: `${Math.round(balancePaid.length / participants.length * 100)}%` }} />
-                        </div>
-                      )}
-                      {balanceUnpaid > 0 && (
-                        <div className="mt-1.5 text-[10px] text-slate-400 leading-relaxed">
-                          {participants.filter(p => {
-                            const linked = getLinkedAmt(p.customer_id, "balance");
-                            return (linked > 0 ? linked : (p.balance_amount || 0)) === 0;
-                          }).map(p => p.customer.name).join("、")}
-                        </div>
-                      )}
-                    </div>
-                  </div>
                 </div>
               );
             })()}
