@@ -697,6 +697,7 @@ export default function GroupDetailPage() {
             (tour.custom_price_tiers || []).reduce((s, ct) => s + ct.pax * ct.price, 0)
           }
           participants={participants}
+          onChanged={loadPayTotals}
         />
       )}
 

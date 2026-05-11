@@ -26,6 +26,8 @@ interface Props {
   revenue: number;   // 預估收入（各類別人數×售價加總，由父層計算傳入）
   /** 本團所有報名旅客（用於款項關聯） */
   participants?: { customer_id: string; customer: { name: string } }[];
+  /** 任何付款紀錄有異動時通知父層（讓旅客 tab 重新計算）*/
+  onChanged?: () => void;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -74,7 +76,7 @@ function SummaryCard({
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function PaymentsTab({ tourId, pax, revenue, participants = [] }: Props) {
+export default function PaymentsTab({ tourId, pax, revenue, participants = [], onChanged }: Props) {
   const [payments,   setPayments]   = useState<TourPayment[]>([]);
   const [tourCosts,  setTourCosts]  = useState<TourCost[]>([]);
   const [filter,     setFilter]     = useState<"all" | "income" | "expense">("all");
@@ -161,12 +163,14 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [] }:
     setForm(emptyForm());
     setFormCustIds([]);
     await loadPayments();
+    onChanged?.();
   };
 
   // ── Update customer_ids on existing record ──
   const updatePaymentCusts = async (payId: string, newIds: string[]) => {
     await supabase.from("tour_payments").update({ customer_ids: newIds }).eq("id", payId);
     setPayments(prev => prev.map(p => p.id === payId ? { ...p, customer_ids: newIds } : p));
+    onChanged?.();
   };
 
   // ── Delete record ──
@@ -175,6 +179,7 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [] }:
     await supabase.from("tour_payments").delete().eq("id", id);
     setExpandedId(null);
     await loadPayments();
+    onChanged?.();
   };
 
   // ── Category label lookup ──
