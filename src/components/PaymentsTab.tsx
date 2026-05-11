@@ -23,7 +23,7 @@ interface TourCost {
 interface Props {
   tourId: string;
   pax: number;
-  sellingPrice: number;
+  revenue: number;   // 預估收入（各類別人數×售價加總，由父層計算傳入）
   /** 本團所有報名旅客（用於款項關聯） */
   participants?: { customer_id: string; customer: { name: string } }[];
 }
@@ -74,7 +74,7 @@ function SummaryCard({
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function PaymentsTab({ tourId, pax, sellingPrice, participants = [] }: Props) {
+export default function PaymentsTab({ tourId, pax, revenue, participants = [] }: Props) {
   const [payments,   setPayments]   = useState<TourPayment[]>([]);
   const [tourCosts,  setTourCosts]  = useState<TourCost[]>([]);
   const [filter,     setFilter]     = useState<"all" | "income" | "expense">("all");
@@ -118,7 +118,7 @@ export default function PaymentsTab({ tourId, pax, sellingPrice, participants = 
 
   // ── Derived numbers ──
   const estimatedCost   = tourCosts.reduce((s, c) => s + c.unit_price * c.quantity, 0);
-  const expectedRevenue = sellingPrice * pax;
+  const expectedRevenue = revenue;
   const actualIncome    = payments.filter(p => p.type === "income").reduce((s, p) => s + p.amount, 0);
   const actualExpense   = payments.filter(p => p.type === "expense").reduce((s, p) => s + p.amount, 0);
   const netBalance      = actualIncome - actualExpense;
