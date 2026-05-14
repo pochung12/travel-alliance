@@ -782,14 +782,14 @@ export default function GroupDetailPage() {
       {/* ── Tab: Participants ── */}
       {activeTab === "participants" && (() => {
         const ROOM_PALETTES = [
-          { bar:"bg-blue-500",   bg:"bg-blue-50 dark:bg-blue-900/20",   badge:"bg-blue-500 text-white",   header:"text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800/60"   },
-          { bar:"bg-emerald-500",bg:"bg-emerald-50 dark:bg-emerald-900/20",badge:"bg-emerald-500 text-white",header:"text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60"},
-          { bar:"bg-violet-500", bg:"bg-violet-50 dark:bg-violet-900/20", badge:"bg-violet-500 text-white", header:"text-violet-700 dark:text-violet-300 border-violet-200 dark:border-violet-800/60" },
-          { bar:"bg-amber-500",  bg:"bg-amber-50 dark:bg-amber-900/20",   badge:"bg-amber-500 text-white",  header:"text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/60"   },
-          { bar:"bg-rose-500",   bg:"bg-rose-50 dark:bg-rose-900/20",     badge:"bg-rose-500 text-white",   header:"text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800/60"     },
-          { bar:"bg-cyan-500",   bg:"bg-cyan-50 dark:bg-cyan-900/20",     badge:"bg-cyan-500 text-white",   header:"text-cyan-700 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800/60"     },
-          { bar:"bg-pink-500",   bg:"bg-pink-50 dark:bg-pink-900/20",     badge:"bg-pink-500 text-white",   header:"text-pink-700 dark:text-pink-300 border-pink-200 dark:border-pink-800/60"     },
-          { bar:"bg-teal-500",   bg:"bg-teal-50 dark:bg-teal-900/20",     badge:"bg-teal-500 text-white",   header:"text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-800/60"     },
+          { bar:"bg-blue-500",   bg:"bg-blue-50 dark:bg-blue-900/20",   badge:"bg-blue-500 text-white",   header:"text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800/60",   outer:"border-blue-300 dark:border-blue-600",   groupBg:"bg-blue-50 dark:bg-blue-900/20"   },
+          { bar:"bg-emerald-500",bg:"bg-emerald-50 dark:bg-emerald-900/20",badge:"bg-emerald-500 text-white",header:"text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60",outer:"border-emerald-300 dark:border-emerald-600",groupBg:"bg-emerald-50 dark:bg-emerald-900/20"},
+          { bar:"bg-violet-500", bg:"bg-violet-50 dark:bg-violet-900/20", badge:"bg-violet-500 text-white", header:"text-violet-700 dark:text-violet-300 border-violet-200 dark:border-violet-800/60", outer:"border-violet-300 dark:border-violet-600", groupBg:"bg-violet-50 dark:bg-violet-900/20" },
+          { bar:"bg-amber-500",  bg:"bg-amber-50 dark:bg-amber-900/20",   badge:"bg-amber-500 text-white",  header:"text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/60",   outer:"border-amber-300 dark:border-amber-600",  groupBg:"bg-amber-50 dark:bg-amber-900/20"   },
+          { bar:"bg-rose-500",   bg:"bg-rose-50 dark:bg-rose-900/20",     badge:"bg-rose-500 text-white",   header:"text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800/60",     outer:"border-rose-300 dark:border-rose-600",    groupBg:"bg-rose-50 dark:bg-rose-900/20"     },
+          { bar:"bg-cyan-500",   bg:"bg-cyan-50 dark:bg-cyan-900/20",     badge:"bg-cyan-500 text-white",   header:"text-cyan-700 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800/60",     outer:"border-cyan-300 dark:border-cyan-600",    groupBg:"bg-cyan-50 dark:bg-cyan-900/20"     },
+          { bar:"bg-pink-500",   bg:"bg-pink-50 dark:bg-pink-900/20",     badge:"bg-pink-500 text-white",   header:"text-pink-700 dark:text-pink-300 border-pink-200 dark:border-pink-800/60",     outer:"border-pink-300 dark:border-pink-600",    groupBg:"bg-pink-50 dark:bg-pink-900/20"     },
+          { bar:"bg-teal-500",   bg:"bg-teal-50 dark:bg-teal-900/20",     badge:"bg-teal-500 text-white",   header:"text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-800/60",     outer:"border-teal-300 dark:border-teal-600",    groupBg:"bg-teal-50 dark:bg-teal-900/20"     },
         ];
 
         // Room palette（依房號上色）
@@ -1340,10 +1340,27 @@ export default function GroupDetailPage() {
                   ↺
                 </button>
               </div>
-              <div className="space-y-1.5 min-w-[540px] md:min-w-0">
-                {orderedParts.map((p, idx) => {
-                  const palette = p.room_number ? paletteMap.get(p.room_number) ?? ROOM_PALETTES[0] : null;
-                  return (
+              {/* 依房號分組渲染 */}
+              {(() => {
+                // 計算相鄰同房號的分組
+                type RoomGroup = { roomNum: string | null; parts: typeof orderedParts };
+                const roomGroups: RoomGroup[] = [];
+                orderedParts.forEach(p => {
+                  const rn = p.room_number || null;
+                  const last = roomGroups[roomGroups.length - 1];
+                  if (last && last.roomNum === rn) last.parts.push(p);
+                  else roomGroups.push({ roomNum: rn, parts: [p] });
+                });
+                return (
+                  <div className="space-y-2.5 min-w-[540px] md:min-w-0">
+                    {roomGroups.map(group => {
+                      const grpPalette = group.roomNum ? paletteMap.get(group.roomNum) ?? ROOM_PALETTES[0] : null;
+                      const inner = (
+                        <div className={grpPalette ? "space-y-0" : "space-y-1.5"}>
+                          {group.parts.map(p => {
+                            const idx = orderedParts.findIndex(op => op.id === p.id);
+                            const palette = grpPalette;
+                            return (
                     <div key={p.id}
                       draggable
                       onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; setDragPartIdx(idx); }}
@@ -1357,10 +1374,12 @@ export default function GroupDetailPage() {
                         setDragPartIdx(null);
                       }}
                       onDragEnd={() => setDragPartIdx(null)}
-                      className={`flex items-center bg-white dark:bg-slate-800 rounded-xl border shadow-sm transition-all select-none ${
-                        dragPartIdx === idx
-                          ? "opacity-40 border-blue-400 dark:border-blue-500 ring-2 ring-blue-200 dark:ring-blue-800"
-                          : "border-slate-100 dark:border-slate-700 hover:border-slate-200 dark:hover:border-slate-600"
+                      className={`flex items-center bg-white dark:bg-slate-800 border-b last:border-b-0 border-slate-100 dark:border-slate-700/60 transition-all select-none ${
+                        grpPalette
+                          ? (dragPartIdx === idx ? "opacity-40" : "")
+                          : `rounded-xl border shadow-sm ${dragPartIdx === idx
+                              ? "opacity-40 border-blue-400 dark:border-blue-500 ring-2 ring-blue-200 dark:ring-blue-800"
+                              : "border-slate-100 dark:border-slate-700 hover:border-slate-200 dark:hover:border-slate-600"}`
                       }`}>
                       {/* drag handle */}
                       <div className="pl-2 pr-1 self-stretch flex items-center text-slate-300 dark:text-slate-600 hover:text-slate-500 dark:hover:text-slate-400 cursor-grab active:cursor-grabbing flex-shrink-0">
@@ -1589,9 +1608,35 @@ export default function GroupDetailPage() {
                         </button>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                      // 有房號：用彩色外框包住
+                      if (grpPalette && group.roomNum) {
+                        return (
+                          <div key={group.roomNum}
+                            className={`rounded-xl border-2 ${grpPalette.outer} overflow-hidden shadow-sm`}>
+                            {/* 房號標題列 */}
+                            <div className={`flex items-center gap-2 px-3 py-1.5 ${grpPalette.groupBg} border-b ${grpPalette.outer}`}>
+                              <BedDouble className="w-3.5 h-3.5 flex-shrink-0" style={{color: "inherit"}} />
+                              <span className="text-xs font-bold">{group.roomNum}</span>
+                              <span className="text-[10px] text-slate-400 dark:text-slate-500">{group.parts.length} 人</span>
+                            </div>
+                            {inner}
+                          </div>
+                        );
+                      }
+                      // 無房號：直接渲染（加 space-y-1.5）
+                      return (
+                        <div key="no-room" className="space-y-1.5">
+                          {inner.props.children}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
               </div>
             )}
           </div>
