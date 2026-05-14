@@ -120,6 +120,8 @@ export default function GroupDetailPage() {
   // 身份類型 picker
   const [typePickerId,   setTypePickerId]   = useState<string|null>(null);
   const [typePickerRect, setTypePickerRect] = useState<DOMRect | null>(null);
+  // 旅客搜尋
+  const [partSearch,    setPartSearch]    = useState("");
   // 欄位設定
   const [partCols,      setPartCols]      = useState<PartCol[]>(PART_COLS_DEFAULT);
   const [showColSettings, setShowColSettings] = useState(false);
@@ -796,12 +798,21 @@ export default function GroupDetailPage() {
 
         // 自訂順序列表
         const orderedParts = (() => {
-          if (rowOrder.length === 0) return participants;
-          const mapped = rowOrder
-            .map(pid => participants.find(p => p.id === pid))
-            .filter((p): p is (CustomerTour & { customer: Customer }) => !!p);
-          const extra = participants.filter(p => !rowOrder.includes(p.id));
-          return [...mapped, ...extra];
+          const base = (() => {
+            if (rowOrder.length === 0) return participants;
+            const mapped = rowOrder
+              .map(pid => participants.find(p => p.id === pid))
+              .filter((p): p is (CustomerTour & { customer: Customer }) => !!p);
+            const extra = participants.filter(p => !rowOrder.includes(p.id));
+            return [...mapped, ...extra];
+          })();
+          if (!partSearch.trim()) return base;
+          const q = partSearch.trim().toLowerCase();
+          return base.filter(p =>
+            p.customer.name.toLowerCase().includes(q) ||
+            (p.customer.name_en || "").toLowerCase().includes(q) ||
+            (p.customer.phone || "").includes(q)
+          );
         })();
 
         return (
@@ -818,6 +829,24 @@ export default function GroupDetailPage() {
                 )}
               </div>
               <div className="flex items-center gap-2 flex-wrap">
+                {/* 旅客搜尋框 */}
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={partSearch}
+                    onChange={e => setPartSearch(e.target.value)}
+                    placeholder="搜尋姓名、電話…"
+                    className="pl-7 pr-7 py-1.5 text-xs border border-slate-200 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400 placeholder:text-slate-400 w-36 sm:w-44 transition-all"
+                  />
+                  {partSearch && (
+                    <button
+                      onClick={() => setPartSearch("")}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500 dark:text-slate-600 dark:hover:text-slate-400 transition-colors">
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
                 {/* 欄位設定 */}
                 <div className="relative">
                   <button
@@ -1255,6 +1284,12 @@ export default function GroupDetailPage() {
             {participants.length===0 ? (
               <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 py-12 text-center text-slate-400 text-sm">
                 還沒有旅客報名此團
+              </div>
+            ) : orderedParts.length === 0 ? (
+              <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 py-10 text-center text-slate-400 text-sm">
+                <Search className="w-6 h-6 mx-auto mb-2 text-slate-200 dark:text-slate-600" />
+                沒有符合「{partSearch}」的旅客
+                <button onClick={() => setPartSearch("")} className="block mx-auto mt-2 text-xs text-blue-500 hover:underline">清除搜尋</button>
               </div>
             ) : (
               <div className="overflow-x-auto -mx-4 md:mx-0 px-4 md:px-0">
