@@ -11,6 +11,7 @@ const STATUS_OPTIONS: { value: TourStatus | "all"; label: string }[] = [
   { value: "ongoing",   label: "進行中" },
   { value: "completed", label: "已完成" },
   { value: "cancelled", label: "已取消" },
+  { value: "settled",   label: "已結團" },
 ];
 
 const STATUS_COLOR: Record<string, string> = {
@@ -19,11 +20,12 @@ const STATUS_COLOR: Record<string, string> = {
   ongoing:   "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300",
   completed: "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300",
   cancelled: "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300",
+  settled:   "bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300",
 };
 
 const STATUS_LABEL: Record<string, string> = {
   planning: "規劃中", confirmed: "已確認", ongoing: "進行中",
-  completed: "已完成", cancelled: "已取消",
+  completed: "已完成", cancelled: "已取消", settled: "已結團",
 };
 
 // ── 可選欄位定義 ───────────────────────────────────────────────
@@ -48,7 +50,7 @@ const COL_WIDTHS_DEFAULT: Record<string, number> = {
   name: 180, destination: 110, start_date: 90, end_date: 90, pax: 60,
   selling_price: 90, revenue: 110, cost: 110,
   profit: 110, realized: 125, income: 110, expense: 110,
-  status: 80,
+  status: 110,
 };
 
 const DEFAULT_EXTRA: ExtraColKey[] = ["revenue", "cost", "profit"];
@@ -181,6 +183,15 @@ export default function GroupsPage() {
     }
     return { revenue, cost, profit: revenue - cost, realized: income - expense, income, expense };
   })();
+
+  const settleGroup = async (tourId: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!confirm("確定要將此團標記為「已結團」？")) return;
+    const { error } = await supabase.from("tours").update({ status: "settled" }).eq("id", tourId);
+    if (error) { alert("更新失敗：" + error.message); return; }
+    setTours(ts => ts.map(t => t.id === tourId ? { ...t, status: "settled" as TourStatus } : t));
+  };
 
   const handleCreate = async () => {
     if (!form.name.trim()) return alert("請填寫團名");
@@ -410,7 +421,7 @@ export default function GroupsPage() {
                     };
 
                     return (
-                      <tr key={tour.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors">
+                      <tr key={tour.id} className="group hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors">
                         <td className="px-3 py-3 overflow-hidden text-ellipsis whitespace-nowrap" style={{ maxWidth: colWidths.name }}>
                           <Link href={`/admin/groups/${tour.id}`} className="font-medium text-blue-600 dark:text-blue-400 hover:underline">
                             {tour.name}
@@ -424,9 +435,20 @@ export default function GroupsPage() {
                           <td key={key} className="px-3 py-3 text-right tabular-nums whitespace-nowrap">{extraVal[key]}</td>
                         ))}
                         <td className="px-3 py-3 text-center">
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[tour.status]}`}>
-                            {STATUS_LABEL[tour.status]}
-                          </span>
+                          <div className="flex items-center justify-center gap-1.5">
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[tour.status]}`}>
+                              {STATUS_LABEL[tour.status]}
+                            </span>
+                            {tour.status !== "settled" && tour.status !== "cancelled" && (
+                              <button
+                                onClick={e => settleGroup(tour.id, e)}
+                                title="標記為已結團"
+                                className="opacity-0 group-hover:opacity-100 text-[10px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 hover:bg-purple-200 dark:bg-purple-900/40 dark:text-purple-300 dark:hover:bg-purple-800/60 transition-all font-medium whitespace-nowrap"
+                              >
+                                結團
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );

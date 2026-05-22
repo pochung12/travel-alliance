@@ -19,7 +19,7 @@ export interface Profile {
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type TourStatus = 'planning' | 'confirmed' | 'ongoing' | 'completed' | 'cancelled';
+export type TourStatus = 'planning' | 'confirmed' | 'ongoing' | 'completed' | 'cancelled' | 'settled';
 
 /** 自訂人數/售價類別（存在 tours.custom_price_tiers JSONB 欄位） */
 export interface CustomPriceTier {

@@ -63,6 +63,7 @@ const STATUS_OPTIONS: { value: TourStatus; label: string }[] = [
   { value: "ongoing",   label: "進行中" },
   { value: "completed", label: "已完成" },
   { value: "cancelled", label: "已取消" },
+  { value: "settled",   label: "已結團" },
 ];
 
 const STATUS_COLOR: Record<string, string> = {
@@ -71,6 +72,7 @@ const STATUS_COLOR: Record<string, string> = {
   ongoing:"bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
   completed:"bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300",
   cancelled:"bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
+  settled:"bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300",
 };
 
 const input = "w-full border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400";
