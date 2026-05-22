@@ -27,17 +27,19 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 // ── 可選欄位定義 ───────────────────────────────────────────────
-type ExtraColKey = "selling_price" | "revenue" | "cost" | "profit" | "income" | "expense";
+type ExtraColKey = "selling_price" | "revenue" | "cost" | "profit" | "realized" | "income" | "expense";
 
 const EXTRA_COLS: { key: ExtraColKey; label: string; header: string }[] = [
-  { key: "selling_price", label: "售價/人",  header: "售價/人"  },
-  { key: "revenue",       label: "預估收入", header: "預估收入" },
-  { key: "cost",          label: "估算成本", header: "估算成本" },
-  { key: "profit",        label: "毛利",     header: "毛利"     },
-  { key: "income",        label: "實收款",   header: "實收款"   },
-  { key: "expense",       label: "已付支出", header: "已付支出" },
+  { key: "selling_price", label: "售價/人",     header: "售價/人"     },
+  { key: "revenue",       label: "預估收入",    header: "預估收入"    },
+  { key: "cost",          label: "估算成本",    header: "估算成本"    },
+  { key: "profit",        label: "毛利",        header: "毛利"        },
+  { key: "realized",      label: "已實現利潤",  header: "已實現利潤"  },
+  { key: "income",        label: "實收款",      header: "實收款"      },
+  { key: "expense",       label: "已付支出",    header: "已付支出"    },
 ];
 
+const LS_KEY = "groups_visible_cols";
 const DEFAULT_EXTRA: ExtraColKey[] = ["revenue", "cost", "profit"];
 
 // ── 財務數字格式 ───────────────────────────────────────────────
@@ -67,8 +69,25 @@ export default function GroupsPage() {
   const [loading, setLoading]     = useState(true);
   // 財務資料
   const [financials, setFinancials] = useState<Record<string, TourFinancial>>({});
-  // 可選欄位
-  const [visibleCols, setVisibleCols] = useState<ExtraColKey[]>(DEFAULT_EXTRA);
+  // 可選欄位（從 localStorage 讀取，變更時自動儲存）
+  const [visibleCols, setVisibleColsRaw] = useState<ExtraColKey[]>(() => {
+    try {
+      const saved = typeof window !== "undefined" ? localStorage.getItem(LS_KEY) : null;
+      if (saved) {
+        const parsed = JSON.parse(saved) as ExtraColKey[];
+        // 過濾掉已廢棄的欄位 key
+        return parsed.filter(k => EXTRA_COLS.some(c => c.key === k));
+      }
+    } catch { /* ignore */ }
+    return DEFAULT_EXTRA;
+  });
+  const setVisibleCols = (cols: ExtraColKey[] | ((prev: ExtraColKey[]) => ExtraColKey[])) => {
+    setVisibleColsRaw(prev => {
+      const next = typeof cols === "function" ? cols(prev) : cols;
+      try { localStorage.setItem(LS_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
   const [showColPicker, setShowColPicker] = useState(false);
 
   const load = async () => {
@@ -135,7 +154,7 @@ export default function GroupsPage() {
       const fin = financials[t.id];
       if (fin) { cost += fin.cost; income += fin.income; expense += fin.expense; }
     }
-    return { revenue, cost, profit: income - expense, income, expense };
+    return { revenue, cost, profit: income - expense, realized: income - cost, income, expense };
   })();
 
   return (
@@ -276,6 +295,7 @@ export default function GroupsPage() {
                     {visibleCols.includes("revenue")       && <th className="text-right px-4 py-3 text-blue-500 dark:text-blue-400">預估收入</th>}
                     {visibleCols.includes("cost")          && <th className="text-right px-4 py-3 text-orange-500 dark:text-orange-400">估算成本</th>}
                     {visibleCols.includes("profit")        && <th className="text-right px-4 py-3 text-emerald-600 dark:text-emerald-400">毛利</th>}
+                    {visibleCols.includes("realized")      && <th className="text-right px-4 py-3 text-teal-600 dark:text-teal-400">已實現利潤</th>}
                     {visibleCols.includes("income")        && <th className="text-right px-4 py-3 text-emerald-500">實收款</th>}
                     {visibleCols.includes("expense")       && <th className="text-right px-4 py-3 text-orange-500">已付支出</th>}
                     <th className="text-center px-4 py-3">狀態</th>
@@ -323,6 +343,19 @@ export default function GroupsPage() {
                             {fin.income === 0 && fin.expense === 0 ? "—" : `${profit >= 0 ? "+" : ""}${fmt(profit)}`}
                           </td>
                         )}
+                        {visibleCols.includes("realized") && (() => {
+                          const realized = fin.income - fin.cost;
+                          const empty = fin.income === 0 && fin.cost === 0;
+                          return (
+                            <td className={`px-4 py-3 text-right font-bold tabular-nums ${
+                              empty ? "text-slate-300 dark:text-slate-600"
+                                : realized >= 0 ? "text-teal-600 dark:text-teal-400"
+                                : "text-red-500 dark:text-red-400"
+                            }`}>
+                              {empty ? "—" : `${realized >= 0 ? "+" : ""}${fmt(realized)}`}
+                            </td>
+                          );
+                        })()}
                         {visibleCols.includes("income") && (
                           <td className="px-4 py-3 text-right tabular-nums text-emerald-600 dark:text-emerald-400">
                             {fin.income > 0 ? fmt(fin.income) : <span className="text-slate-300 dark:text-slate-600">—</span>}
@@ -359,6 +392,11 @@ export default function GroupsPage() {
                       {visibleCols.includes("profit") && (
                         <td className={`px-4 py-2.5 text-right tabular-nums ${totals.profit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-500"}`}>
                           {totals.profit >= 0 ? "+" : ""}{fmt(totals.profit)}
+                        </td>
+                      )}
+                      {visibleCols.includes("realized") && (
+                        <td className={`px-4 py-2.5 text-right tabular-nums ${totals.realized >= 0 ? "text-teal-600 dark:text-teal-400" : "text-red-500"}`}>
+                          {totals.realized >= 0 ? "+" : ""}{fmt(totals.realized)}
                         </td>
                       )}
                       {visibleCols.includes("income") && (
