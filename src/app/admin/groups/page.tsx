@@ -33,7 +33,7 @@ const EXTRA_COLS: { key: ExtraColKey; label: string; header: string }[] = [
   { key: "selling_price", label: "售價/人",     header: "售價/人"     },
   { key: "revenue",       label: "預估收入",    header: "預估收入"    },
   { key: "cost",          label: "估算成本",    header: "估算成本"    },
-  { key: "profit",        label: "毛利",        header: "毛利"        },
+  { key: "profit",        label: "預估毛利",    header: "預估毛利"    },
   { key: "realized",      label: "已實現利潤",  header: "已實現利潤"  },
   { key: "income",        label: "實收款",      header: "實收款"      },
   { key: "expense",       label: "已付支出",    header: "已付支出"    },
@@ -154,7 +154,7 @@ export default function GroupsPage() {
       const fin = financials[t.id];
       if (fin) { cost += fin.cost; income += fin.income; expense += fin.expense; }
     }
-    return { revenue, cost, profit: income - expense, realized: income - cost, income, expense };
+    return { revenue, cost, profit: revenue - cost, realized: income - expense, income, expense };
   })();
 
   return (
@@ -294,7 +294,7 @@ export default function GroupsPage() {
                     {visibleCols.includes("selling_price") && <th className="text-right px-4 py-3">售價/人</th>}
                     {visibleCols.includes("revenue")       && <th className="text-right px-4 py-3 text-blue-500 dark:text-blue-400">預估收入</th>}
                     {visibleCols.includes("cost")          && <th className="text-right px-4 py-3 text-orange-500 dark:text-orange-400">估算成本</th>}
-                    {visibleCols.includes("profit")        && <th className="text-right px-4 py-3 text-emerald-600 dark:text-emerald-400">毛利</th>}
+                    {visibleCols.includes("profit")        && <th className="text-right px-4 py-3 text-emerald-600 dark:text-emerald-400">預估毛利</th>}
                     {visibleCols.includes("realized")      && <th className="text-right px-4 py-3 text-teal-600 dark:text-teal-400">已實現利潤</th>}
                     {visibleCols.includes("income")        && <th className="text-right px-4 py-3 text-emerald-500">實收款</th>}
                     {visibleCols.includes("expense")       && <th className="text-right px-4 py-3 text-orange-500">已付支出</th>}
@@ -305,7 +305,7 @@ export default function GroupsPage() {
                   {filtered.map(tour => {
                     const fin     = financials[tour.id] ?? { cost: 0, income: 0, expense: 0 };
                     const revenue = calcRevenue(tour);
-                    const profit  = fin.income - fin.expense;
+                    const profit  = revenue - fin.cost;
                     return (
                       <tr key={tour.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors">
                         <td className="px-4 py-3">
@@ -334,18 +334,18 @@ export default function GroupsPage() {
                         )}
                         {visibleCols.includes("profit") && (
                           <td className={`px-4 py-3 text-right font-bold tabular-nums ${
-                            fin.income === 0 && fin.expense === 0
+                            revenue === 0 && fin.cost === 0
                               ? "text-slate-300 dark:text-slate-600"
                               : profit >= 0
                                 ? "text-emerald-600 dark:text-emerald-400"
                                 : "text-red-500 dark:text-red-400"
                           }`}>
-                            {fin.income === 0 && fin.expense === 0 ? "—" : `${profit >= 0 ? "+" : ""}${fmt(profit)}`}
+                            {revenue === 0 && fin.cost === 0 ? "—" : `${profit >= 0 ? "+" : ""}${fmt(profit)}`}
                           </td>
                         )}
                         {visibleCols.includes("realized") && (() => {
-                          const realized = fin.income - fin.cost;
-                          const empty = fin.income === 0 && fin.cost === 0;
+                          const realized = fin.income - fin.expense;
+                          const empty = fin.income === 0 && fin.expense === 0;
                           return (
                             <td className={`px-4 py-3 text-right font-bold tabular-nums ${
                               empty ? "text-slate-300 dark:text-slate-600"
