@@ -135,7 +135,7 @@ export default function GroupsPage() {
       const fin = financials[t.id];
       if (fin) { cost += fin.cost; income += fin.income; expense += fin.expense; }
     }
-    return { revenue, cost, profit: revenue - cost, income, expense };
+    return { revenue, cost, profit: income - expense, income, expense };
   })();
 
   return (
@@ -228,7 +228,7 @@ export default function GroupsPage() {
             {filtered.map(tour => {
               const fin = financials[tour.id] ?? { cost: 0, income: 0, expense: 0 };
               const revenue = calcRevenue(tour);
-              const profit  = revenue - fin.cost;
+              const profit  = fin.income - fin.expense;
               return (
                 <Link key={tour.id} href={`/admin/groups/${tour.id}`}
                   className="block bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm p-4 active:bg-slate-50 dark:active:bg-slate-700/50 transition-colors">
@@ -285,7 +285,7 @@ export default function GroupsPage() {
                   {filtered.map(tour => {
                     const fin     = financials[tour.id] ?? { cost: 0, income: 0, expense: 0 };
                     const revenue = calcRevenue(tour);
-                    const profit  = revenue - fin.cost;
+                    const profit  = fin.income - fin.expense;
                     return (
                       <tr key={tour.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors">
                         <td className="px-4 py-3">
@@ -314,13 +314,13 @@ export default function GroupsPage() {
                         )}
                         {visibleCols.includes("profit") && (
                           <td className={`px-4 py-3 text-right font-bold tabular-nums ${
-                            revenue === 0 && fin.cost === 0
+                            fin.income === 0 && fin.expense === 0
                               ? "text-slate-300 dark:text-slate-600"
                               : profit >= 0
                                 ? "text-emerald-600 dark:text-emerald-400"
                                 : "text-red-500 dark:text-red-400"
                           }`}>
-                            {revenue === 0 && fin.cost === 0 ? "—" : `${profit >= 0 ? "+" : ""}${fmt(profit)}`}
+                            {fin.income === 0 && fin.expense === 0 ? "—" : `${profit >= 0 ? "+" : ""}${fmt(profit)}`}
                           </td>
                         )}
                         {visibleCols.includes("income") && (
