@@ -202,6 +202,13 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], o
     onPaymentCustsChanged?.(payId, newIds);
   };
 
+  // ── Mark payable as paid ──
+  const markAsPaid = async (id: string) => {
+    await supabase.from("tour_payments").update({ is_payable: false }).eq("id", id);
+    setPayments(prev => prev.map(p => p.id === id ? { ...p, is_payable: false } : p));
+    onChanged?.();
+  };
+
   // ── Delete record ──
   const deleteRecord = async (id: string) => {
     if (!confirm("確定刪除此紀錄？")) return;
@@ -419,6 +426,21 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], o
                                   </button>
                                 )}
                               </div>
+                            </div>
+                          )}
+                          {/* 已付清（應付項目才顯示）*/}
+                          {p.is_payable && (
+                            <div className="flex items-center gap-3 px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800/60 rounded-xl">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-semibold text-red-700 dark:text-red-300">此筆為應付（未付）紀錄</p>
+                                <p className="text-[11px] text-red-400 dark:text-red-500 mt-0.5">確認付款後點擊右側按鈕標記為已付清</p>
+                              </div>
+                              <button
+                                onClick={() => markAsPaid(p.id)}
+                                className="flex items-center gap-1.5 text-xs font-semibold px-4 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-lg shadow-sm transition-colors whitespace-nowrap flex-shrink-0"
+                              >
+                                ✓ 已付清
+                              </button>
                             </div>
                           )}
                           {/* Note + image + delete */}
