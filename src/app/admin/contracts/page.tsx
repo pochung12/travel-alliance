@@ -116,7 +116,8 @@ export default function ContractsPage() {
   const [viewFields,   setViewFields]   = useState<Record<string, string>>({});
   const [viewNumPages, setViewNumPages] = useState(0);
   const [viewPdfReady, setViewPdfReady] = useState(false);
-  const viewCanvasRefs = useRef<(HTMLCanvasElement | null)[]>([]);
+  const viewCanvasRefs  = useRef<(HTMLCanvasElement | null)[]>([]);
+  const viewPdfDocRef   = useRef<unknown>(null); // 暫存已解析的 PDF doc
 
   // ── 公版列表（from contracts state）──
   const templates = contracts.filter(c => c.is_template);
@@ -252,45 +253,58 @@ export default function ContractsPage() {
     return `https://line.me/R/share?text=${text}`;
   };
 
-  // ── 查看 PDF.js 渲染（zones 模式）──────────────────────────────────────────
-
-  const renderViewPdf = async (pdfDataUrl: string) => {
-    setViewPdfReady(false);
-    const pdfjsLib = await import("pdfjs-dist");
-    pdfjsLib.GlobalWorkerOptions.workerSrc =
-      `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
-    let b64 = pdfDataUrl;
-    const ci = b64.indexOf(","); if (ci !== -1) b64 = b64.slice(ci + 1);
-    const bin = atob(b64); const arr = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const pdf = await (pdfjsLib as any).getDocument({ data: arr }).promise;
-    setViewNumPages(pdf.numPages);
-    for (let p = 1; p <= pdf.numPages; p++) {
-      await new Promise<void>(r => setTimeout(r, 80));
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const page = await (pdf as any).getPage(p);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const vp = (page as any).getViewport({ scale: 1.5 });
-      const canvas = viewCanvasRefs.current[p - 1];
-      if (canvas) {
-        canvas.width  = vp.width;
-        canvas.height = vp.height;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (page as any).render({ canvasContext: canvas.getContext("2d")!, viewport: vp }).promise;
-      }
-    }
-    setViewPdfReady(true);
-  };
-
-  // viewPdfData 設定後（zones 模式）→ 等 React commit canvas 後渲染
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // ── Phase 1：viewPdfData 變動 → 解析 PDF，取得頁數存入 ref ─────────────────
   useEffect(() => {
-    if (!viewPdfData) return;
-    const t = setTimeout(() => { renderViewPdf(viewPdfData); }, 60);
-    return () => clearTimeout(t);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!viewPdfData) { viewPdfDocRef.current = null; return; }
+    let cancelled = false;
+    (async () => {
+      setViewPdfReady(false);
+      const pdfjsLib = await import("pdfjs-dist");
+      if (cancelled) return;
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+      let b64 = viewPdfData;
+      const ci = b64.indexOf(","); if (ci !== -1) b64 = b64.slice(ci + 1);
+      const bin = atob(b64); const arr = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const pdf = await (pdfjsLib as any).getDocument({ data: arr }).promise;
+      if (cancelled) return;
+      viewPdfDocRef.current = pdf;
+      setViewNumPages(pdf.numPages); // 觸發 Phase 2
+    })();
+    return () => { cancelled = true; };
   }, [viewPdfData]);
+
+  // ── Phase 2：viewNumPages 變動 → React 已 commit canvas，開始渲染 ──────────
+  useEffect(() => {
+    if (viewNumPages === 0 || !viewPdfDocRef.current) return;
+    let cancelled = false;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pdf = viewPdfDocRef.current as any;
+    (async () => {
+      // 等兩個 animation frame：讓 React commit canvas DOM，瀏覽器 paint 後再讀 ref
+      await new Promise<void>(r => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+      if (cancelled) return;
+      for (let p = 1; p <= viewNumPages; p++) {
+        if (cancelled) break;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const page = await (pdf as any).getPage(p);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const vp   = (page as any).getViewport({ scale: 1.5 });
+        const canvas = viewCanvasRefs.current[p - 1];
+        if (canvas) {
+          canvas.width  = vp.width;
+          canvas.height = vp.height;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (page as any).render({ canvasContext: canvas.getContext("2d")!, viewport: vp }).promise;
+        }
+      }
+      if (!cancelled) setViewPdfReady(true);
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewNumPages]);
 
   // ── 查看合約 ─────────────────────────────────────────────────────────────
 
@@ -345,6 +359,7 @@ export default function ContractsPage() {
     setViewItem(null); setViewSig(null); setViewPdfData(null);
     setViewZones([]); setViewSigsA({}); setViewSigsB({}); setViewFields({});
     setViewNumPages(0); setViewPdfReady(false);
+    viewPdfDocRef.current = null;
   };
 
   // ── 刪除 ─────────────────────────────────────────────────────────────────
