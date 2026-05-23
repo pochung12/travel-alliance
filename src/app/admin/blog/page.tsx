@@ -143,7 +143,7 @@ export default function AdminBlogPage() {
   const [showAI,     setShowAI]     = useState(false);
   const [deleting,   setDeleting]   = useState<string | null>(null);
   const [cronRunning, setCronRunning] = useState(false);
-  const [cronResult,  setCronResult]  = useState<{ generated: number; total: number; used_tavily: boolean; used_pexels: boolean } | null>(null);
+  const [cronResult,  setCronResult]  = useState<{ generated: number; total: number; used_tavily: boolean; used_pexels: boolean; errors?: string[] } | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -187,13 +187,15 @@ export default function AdminBlogPage() {
     setCronRunning(true); setCronResult(null);
     try {
       const res = await fetch("/api/blog/trigger", { method: "POST" });
-      const json = await res.json() as { generated?: number; total?: number; used_tavily?: boolean; used_pexels?: boolean; error?: string };
+      const json = await res.json() as { generated?: number; total?: number; used_tavily?: boolean; used_pexels?: boolean; error?: string; results?: Array<{ success: boolean; title: string; error?: string }> };
       if (!res.ok) throw new Error(json.error || "觸發失敗");
+      const errors = (json.results || []).filter(r => !r.success).map(r => `${r.title}: ${r.error || "未知錯誤"}`);
       setCronResult({
         generated:   json.generated ?? 0,
         total:       json.total ?? 3,
         used_tavily: json.used_tavily ?? false,
         used_pexels: json.used_pexels ?? false,
+        errors:      errors.length > 0 ? errors : undefined,
       });
       await load();
     } catch (e: unknown) {
@@ -216,14 +218,21 @@ export default function AdminBlogPage() {
 
       {/* Cron result notification */}
       {cronResult && (
-        <div className="flex items-center gap-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700 rounded-xl px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300">
-          <Bot className="w-4 h-4 shrink-0" />
-          <span>
-            自動生成完成！成功 <strong>{cronResult.generated}</strong> / {cronResult.total} 篇
-            {cronResult.used_tavily && " · 🌐 Tavily 熱門話題"}
-            {cronResult.used_pexels && " · 🖼️ Pexels 封面圖片"}
-          </span>
-          <button onClick={() => setCronResult(null)} className="ml-auto text-emerald-500 hover:text-emerald-700">✕</button>
+        <div className={`border rounded-xl px-4 py-3 text-sm ${cronResult.generated > 0 ? "bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300" : "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-700 text-red-700 dark:text-red-300"}`}>
+          <div className="flex items-center gap-3">
+            <Bot className="w-4 h-4 shrink-0" />
+            <span>
+              自動生成完成！成功 <strong>{cronResult.generated}</strong> / {cronResult.total} 篇
+              {cronResult.used_tavily && " · 🌐 Tavily 熱門話題"}
+              {cronResult.used_pexels && " · 🖼️ Pexels 封面圖片"}
+            </span>
+            <button onClick={() => setCronResult(null)} className="ml-auto opacity-60 hover:opacity-100">✕</button>
+          </div>
+          {cronResult.errors && cronResult.errors.length > 0 && (
+            <ul className="mt-2 ml-7 space-y-0.5 text-xs opacity-80">
+              {cronResult.errors.map((e, i) => <li key={i}>❌ {e}</li>)}
+            </ul>
+          )}
         </div>
       )}
 
