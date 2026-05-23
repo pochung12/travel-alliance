@@ -62,20 +62,108 @@ function compressImg(file: File, maxW = 500): Promise<string> {
 
 // ── 區塊 Overlay ──────────────────────────────────────────────────────────────
 
+type DragState = {
+  kind: "move" | "resize";
+  dir: string;
+  startX: number; startY: number;
+  pRect: DOMRect;
+  ox: number; oy: number; ow: number; oh: number;
+  moved: boolean;
+};
+
+const RESIZE_HANDLES: Array<{ dir: string; style: React.CSSProperties }> = [
+  { dir: "nw", style: { top: -5, left:  -5, cursor: "nw-resize", width: 10, height: 10 } },
+  { dir: "ne", style: { top: -5, right: -5, cursor: "ne-resize", width: 10, height: 10 } },
+  { dir: "sw", style: { bottom: -5, left:  -5, cursor: "sw-resize", width: 10, height: 10 } },
+  { dir: "se", style: { bottom: -5, right: -5, cursor: "se-resize", width: 10, height: 10 } },
+  { dir: "n",  style: { top: -4,    left: "50%", transform: "translateX(-50%)", cursor: "n-resize", width: 20, height: 8 } },
+  { dir: "s",  style: { bottom: -4, left: "50%", transform: "translateX(-50%)", cursor: "s-resize", width: 20, height: 8 } },
+  { dir: "e",  style: { right: -4,  top:  "50%", transform: "translateY(-50%)", cursor: "e-resize", width:  8, height: 20 } },
+  { dir: "w",  style: { left:  -4,  top:  "50%", transform: "translateY(-50%)", cursor: "w-resize", width:  8, height: 20 } },
+];
+
 function ZoneBox({
-  zone, selected, onClick, onDelete,
+  zone, selected, onClick, onDelete, onPatch,
 }: {
   zone: Zone; selected: boolean;
-  onClick: () => void; onDelete: () => void;
+  onClick: () => void;
+  onDelete: () => void;
+  onPatch: (patch: Partial<Zone>) => void;
 }) {
-  const meta = ZONE_META[zone.type];
+  const boxRef  = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<DragState | null>(null);
+  const meta    = ZONE_META[zone.type];
+
+  const startDrag = (
+    e: React.PointerEvent,
+    kind: "move" | "resize",
+    dir = "",
+  ) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const parent = boxRef.current?.parentElement;
+    if (!parent) return;
+
+    dragRef.current = {
+      kind, dir,
+      startX: e.clientX, startY: e.clientY,
+      pRect: parent.getBoundingClientRect(),
+      ox: zone.x, oy: zone.y, ow: zone.w, oh: zone.h,
+      moved: false,
+    };
+
+    const onMove = (ev: PointerEvent) => {
+      const d = dragRef.current;
+      if (!d) return;
+      const { pRect, ox, oy, ow, oh } = d;
+      const dx = (ev.clientX - d.startX) / pRect.width  * 100;
+      const dy = (ev.clientY - d.startY) / pRect.height * 100;
+      if (Math.abs(dx) + Math.abs(dy) > 0.3) d.moved = true;
+
+      if (d.kind === "move") {
+        onPatch({
+          x: Math.max(0, Math.min(100 - ow, ox + dx)),
+          y: Math.max(0, Math.min(100 - oh, oy + dy)),
+        });
+      } else {
+        let nx = ox, ny = oy, nw = ow, nh = oh;
+        if (d.dir.includes("e")) nw = Math.max(3, ow + dx);
+        if (d.dir.includes("s")) nh = Math.max(2, oh + dy);
+        if (d.dir.includes("w")) { nx = ox + dx; nw = Math.max(3, ow - dx); if (nx < 0) { nw += nx; nx = 0; } }
+        if (d.dir.includes("n")) { ny = oy + dy; nh = Math.max(2, oh - dy); if (ny < 0) { nh += ny; ny = 0; } }
+        nw = Math.min(nw, 100 - nx);
+        nh = Math.min(nh, 100 - ny);
+        onPatch({ x: nx, y: ny, w: nw, h: nh });
+      }
+    };
+
+    const onUp = () => {
+      const d = dragRef.current;
+      dragRef.current = null;
+      document.removeEventListener("pointermove", onMove);
+      document.removeEventListener("pointerup",   onUp);
+      if (d && !d.moved && d.kind === "move") onClick();
+    };
+
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup",   onUp);
+  };
+
   return (
     <div
-      onClick={e => { e.stopPropagation(); onClick(); }}
-      className={`absolute border-2 ${meta.border} ${meta.bg} rounded cursor-pointer transition-all ${
+      ref={boxRef}
+      onPointerDown={e => startDrag(e, "move")}
+      onClick={e => e.stopPropagation()}
+      className={`absolute border-2 ${meta.border} ${meta.bg} rounded ${
         selected ? "ring-2 ring-offset-1 ring-slate-700 shadow-lg" : "hover:shadow-md"
       }`}
-      style={{ left: `${zone.x}%`, top: `${zone.y}%`, width: `${zone.w}%`, height: `${zone.h}%` }}
+      style={{
+        left: `${zone.x}%`, top: `${zone.y}%`,
+        width: `${zone.w}%`, height: `${zone.h}%`,
+        cursor: selected ? "move" : "pointer",
+        touchAction: "none",
+      }}
     >
       {/* 圖片（甲方） */}
       {zone.preset_image && (
@@ -84,22 +172,37 @@ function ZoneBox({
       )}
       {/* 標籤 */}
       {!zone.preset_image && (
-        <div className={`flex items-center justify-center h-full text-[11px] font-medium ${meta.text} pointer-events-none leading-tight px-1`}>
+        <div className={`flex items-center justify-center h-full text-[11px] font-medium ${meta.text} pointer-events-none leading-tight px-1 select-none`}>
           {zone.label}
         </div>
       )}
       {/* 標籤 chip */}
-      <div className={`absolute -top-5 left-0 text-[10px] px-1.5 py-0.5 rounded ${meta.border} ${meta.bg} ${meta.text} font-semibold whitespace-nowrap shadow-sm`}>
+      <div className={`absolute -top-5 left-0 text-[10px] px-1.5 py-0.5 rounded ${meta.border} ${meta.bg} ${meta.text} font-semibold whitespace-nowrap shadow-sm pointer-events-none select-none`}>
         {zone.label}
       </div>
-      {/* 刪除 */}
+
       {selected && (
-        <button
-          onClick={e => { e.stopPropagation(); onDelete(); }}
-          className="absolute -top-3 -right-3 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center shadow hover:bg-red-600 z-10"
-        >
-          <X className="w-3 h-3" />
-        </button>
+        <>
+          {/* 刪除按鈕 */}
+          <button
+            onPointerDown={e => e.stopPropagation()}
+            onClick={e => { e.stopPropagation(); onDelete(); }}
+            className="absolute -top-3 -right-3 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center shadow hover:bg-red-600 z-20"
+          >
+            <X className="w-3 h-3" />
+          </button>
+
+          {/* Resize handles（8 方向）*/}
+          {RESIZE_HANDLES.map(({ dir, style }) => (
+            <div
+              key={dir}
+              onPointerDown={e => startDrag(e, "resize", dir)}
+              onClick={e => e.stopPropagation()}
+              className="absolute bg-white border-2 border-slate-600 rounded-sm z-20 shadow-sm"
+              style={{ position: "absolute", ...style }}
+            />
+          ))}
+        </>
       )}
     </div>
   );
@@ -351,6 +454,7 @@ export default function ContractZoneEditor() {
                       setZones(prev => prev.filter(x => x.id !== z.id));
                       setSelectedId(null);
                     }}
+                    onPatch={patch => setZones(prev => prev.map(x => x.id === z.id ? { ...x, ...patch } : x))}
                   />
                 ))}
               </div>
@@ -493,6 +597,27 @@ export default function ContractZoneEditor() {
                     value={selected.label}
                     onChange={e => setZones(prev => prev.map(z => z.id === selectedId ? { ...z, label: e.target.value } : z))}
                   />
+                </div>
+                {/* 寬度 / 高度 */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-[10px] text-slate-400 font-medium block mb-1">寬度 (%)</label>
+                    <input
+                      type="number" min={2} max={100} step={0.5}
+                      className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      value={+selected.w.toFixed(1)}
+                      onChange={e => setZones(prev => prev.map(z => z.id === selectedId ? { ...z, w: Math.max(2, +e.target.value) } : z))}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-slate-400 font-medium block mb-1">高度 (%)</label>
+                    <input
+                      type="number" min={1} max={100} step={0.5}
+                      className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-blue-400"
+                      value={+selected.h.toFixed(1)}
+                      onChange={e => setZones(prev => prev.map(z => z.id === selectedId ? { ...z, h: Math.max(1, +e.target.value) } : z))}
+                    />
+                  </div>
                 </div>
                 {(selected.type === "stamp_a" || selected.type === "sig_a") && (
                   <div>
