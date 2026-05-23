@@ -299,46 +299,65 @@ export default function SignPage() {
     if (!sigModal) return;
     const canvas = modalCanvasRef.current;
     if (!canvas) return;
-    canvas.width = 600; canvas.height = 240;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.strokeStyle = "#1e293b"; ctx.lineWidth = 2.8;
-    ctx.lineCap = "round"; ctx.lineJoin = "round";
     modalHasDrawn.current = false;
     setModalSigTemp(null);
 
-    const getPos = (e: TouchEvent | MouseEvent) => {
+    // 用來儲存事件清除函式（rAF 內設定）
+    let removeFns: (() => void) | null = null;
+
+    // 等 rAF 讓 flex layout 穩定後再量測實際像素大小
+    const rafId = requestAnimationFrame(() => {
       const rect = canvas.getBoundingClientRect();
-      const t = (e as TouchEvent).touches?.[0];
-      return {
-        x: ((t ? t.clientX : (e as MouseEvent).clientX) - rect.left) * (canvas.width  / rect.width),
-        y: ((t ? t.clientY : (e as MouseEvent).clientY) - rect.top)  * (canvas.height / rect.height),
+      const dpr = Math.min(window.devicePixelRatio || 1, 3);
+      // 用高解析度像素，讓 Retina / 手機螢幕筆跡清晰
+      canvas.width  = Math.round(rect.width  * dpr) || 1200;
+      canvas.height = Math.round(rect.height * dpr) || 800;
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      ctx.scale(dpr, dpr); // 縮放後，座標系統與 CSS px 一致
+      ctx.strokeStyle = "#1e293b"; ctx.lineWidth = 3;
+      ctx.lineCap = "round"; ctx.lineJoin = "round";
+
+      // getPos：直接取 CSS px 座標（已由 ctx.scale 處理 dpr）
+      const getPos = (e: TouchEvent | MouseEvent) => {
+        const r = canvas.getBoundingClientRect();
+        const t = (e as TouchEvent).touches?.[0];
+        return {
+          x: (t ? t.clientX : (e as MouseEvent).clientX) - r.left,
+          y: (t ? t.clientY : (e as MouseEvent).clientY) - r.top,
+        };
       };
-    };
-    const start = (e: TouchEvent | MouseEvent) => { e.preventDefault(); modalDrawing.current = true; modalLastPos.current = getPos(e); };
-    const move  = (e: TouchEvent | MouseEvent) => {
-      e.preventDefault();
-      if (!modalDrawing.current || !modalLastPos.current) return;
-      const pos = getPos(e);
-      ctx.beginPath(); ctx.moveTo(modalLastPos.current.x, modalLastPos.current.y);
-      ctx.lineTo(pos.x, pos.y); ctx.stroke();
-      modalLastPos.current = pos; modalHasDrawn.current = true;
-    };
-    const end = (e: TouchEvent | MouseEvent) => {
-      e.preventDefault(); modalDrawing.current = false; modalLastPos.current = null;
-      if (modalHasDrawn.current) setModalSigTemp(canvas.toDataURL("image/png"));
-    };
-    canvas.addEventListener("mousedown", start); canvas.addEventListener("mousemove", move);
-    canvas.addEventListener("mouseup", end); canvas.addEventListener("mouseleave", end);
-    canvas.addEventListener("touchstart", start, { passive: false });
-    canvas.addEventListener("touchmove",  move,  { passive: false });
-    canvas.addEventListener("touchend",   end,   { passive: false });
-    canvas.addEventListener("touchcancel",end,   { passive: false });
+      const start = (e: TouchEvent | MouseEvent) => { e.preventDefault(); modalDrawing.current = true; modalLastPos.current = getPos(e); };
+      const move  = (e: TouchEvent | MouseEvent) => {
+        e.preventDefault();
+        if (!modalDrawing.current || !modalLastPos.current) return;
+        const pos = getPos(e);
+        ctx.beginPath(); ctx.moveTo(modalLastPos.current.x, modalLastPos.current.y);
+        ctx.lineTo(pos.x, pos.y); ctx.stroke();
+        modalLastPos.current = pos; modalHasDrawn.current = true;
+      };
+      const end = (e: TouchEvent | MouseEvent) => {
+        e.preventDefault(); modalDrawing.current = false; modalLastPos.current = null;
+        if (modalHasDrawn.current) setModalSigTemp(canvas.toDataURL("image/png"));
+      };
+      canvas.addEventListener("mousedown", start); canvas.addEventListener("mousemove", move);
+      canvas.addEventListener("mouseup", end); canvas.addEventListener("mouseleave", end);
+      canvas.addEventListener("touchstart", start, { passive: false });
+      canvas.addEventListener("touchmove",  move,  { passive: false });
+      canvas.addEventListener("touchend",   end,   { passive: false });
+      canvas.addEventListener("touchcancel",end,   { passive: false });
+      removeFns = () => {
+        canvas.removeEventListener("mousedown", start); canvas.removeEventListener("mousemove", move);
+        canvas.removeEventListener("mouseup", end); canvas.removeEventListener("mouseleave", end);
+        canvas.removeEventListener("touchstart", start); canvas.removeEventListener("touchmove", move);
+        canvas.removeEventListener("touchend", end); canvas.removeEventListener("touchcancel", end);
+      };
+    });
+
     return () => {
-      canvas.removeEventListener("mousedown", start); canvas.removeEventListener("mousemove", move);
-      canvas.removeEventListener("mouseup", end); canvas.removeEventListener("mouseleave", end);
-      canvas.removeEventListener("touchstart", start); canvas.removeEventListener("touchmove", move);
-      canvas.removeEventListener("touchend", end); canvas.removeEventListener("touchcancel", end);
+      cancelAnimationFrame(rafId);
+      removeFns?.();
     };
   }, [sigModal]);
 
@@ -835,40 +854,74 @@ export default function SignPage() {
         )}
       </div>
 
-      {/* ── 簽名彈出 Modal（僅 pending 狀態） ── */}
+      {/* ── 簽名全螢幕 Modal（僅 pending 狀態） ── */}
       {!isSigned && sigModal && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex flex-col items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-              <h3 className="font-bold text-slate-800">
-                ✍️ {(contract?.zones ?? []).find((z: Zone) => z.id === sigModal)?.label || "簽名"}
-                <span className={`ml-2 text-xs font-normal px-1.5 py-0.5 rounded-full ${
-                  party === "a" ? "bg-indigo-100 text-indigo-700" : "bg-blue-100 text-blue-700"
-                }`}>{partyLabel}</span>
-              </h3>
-              <button onClick={() => setSigModal(null)}
-                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 transition-colors">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="p-4 space-y-3">
-              <div className={`rounded-2xl overflow-hidden border-2 transition-colors ${modalSigTemp ? "border-emerald-300" : "border-dashed border-slate-200 bg-slate-50"}`}>
-                <canvas ref={modalCanvasRef} width={600} height={240} className="w-full bg-white"
-                  style={{ touchAction: "none", display: "block", cursor: "crosshair" }} />
-              </div>
-              <div className="flex gap-2">
-                <button onClick={clearModalSig}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm text-slate-500 hover:bg-slate-100 transition-colors">
-                  <RotateCcw className="w-4 h-4" /> 清除
-                </button>
-                <button onClick={confirmModalSig} disabled={!modalSigTemp}
-                  className={`flex-1 disabled:bg-slate-200 disabled:text-slate-400 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors flex items-center justify-center gap-2 ${
-                    party === "a" ? "bg-indigo-600 hover:bg-indigo-700" : "bg-blue-600 hover:bg-blue-700"
-                  }`}>
-                  <CheckCircle2 className="w-4 h-4" /> 確認此簽名
-                </button>
+        <div className="fixed inset-0 z-50 flex flex-col bg-white">
+
+          {/* 彩色 Header */}
+          <div className={`shrink-0 flex items-center justify-between px-4 py-3 ${
+            party === "a" ? "bg-indigo-600" : "bg-blue-600"
+          }`}>
+            <div className="flex items-center gap-2 min-w-0">
+              <Pen className="w-5 h-5 text-white shrink-0" />
+              <div className="min-w-0">
+                <p className="font-bold text-white text-sm leading-tight truncate">
+                  {(contract?.zones ?? []).find((z: Zone) => z.id === sigModal)?.label || "手寫簽名"}
+                </p>
+                <p className="text-xs text-white/70">{partyLabel} · 用手指在下方簽名</p>
               </div>
             </div>
+            <button onClick={() => setSigModal(null)}
+              className="shrink-0 p-2 rounded-xl bg-white/15 hover:bg-white/25 text-white transition-colors">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* 簽名畫布（flex-1 填滿剩餘高度） */}
+          <div className="flex-1 min-h-0 flex flex-col p-3 gap-2">
+            <div className={`flex-1 min-h-0 relative rounded-2xl overflow-hidden border-2 transition-colors ${
+              modalSigTemp
+                ? "border-emerald-400 bg-white"
+                : "border-dashed border-slate-300 bg-slate-50"
+            }`}>
+              {/* Canvas 填滿容器，座標由 getPos 換算 */}
+              <canvas
+                ref={modalCanvasRef}
+                className="absolute inset-0 w-full h-full"
+                style={{ touchAction: "none", cursor: "crosshair", display: "block" }}
+              />
+              {/* 未簽時的引導提示 */}
+              {!modalSigTemp && (
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none">
+                  <div className="text-center space-y-2">
+                    <Pen className="w-10 h-10 text-slate-200 mx-auto" />
+                    <p className="text-slate-300 text-base font-medium">在此簽名</p>
+                  </div>
+                </div>
+              )}
+            </div>
+            {/* 已有簽名時顯示提示 */}
+            {modalSigTemp && (
+              <p className="text-center text-xs text-emerald-500 shrink-0">
+                ✅ 已完成簽名，可點「確認此簽名」送出，或「清除重簽」重新簽
+              </p>
+            )}
+          </div>
+
+          {/* 底部按鈕列（含 safe-area padding） */}
+          <div className="shrink-0 flex gap-3 px-4 pt-3 pb-8 border-t border-slate-100 bg-white">
+            <button onClick={clearModalSig}
+              className="flex items-center gap-1.5 px-4 py-4 rounded-2xl text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 transition-colors">
+              <RotateCcw className="w-4 h-4" /> 清除重簽
+            </button>
+            <button onClick={confirmModalSig} disabled={!modalSigTemp}
+              className={`flex-1 disabled:bg-slate-200 disabled:text-slate-400 text-white font-bold py-4 rounded-2xl text-base transition-colors flex items-center justify-center gap-2 active:opacity-80 ${
+                party === "a"
+                  ? "bg-indigo-600 hover:bg-indigo-700"
+                  : "bg-blue-600 hover:bg-blue-700"
+              }`}>
+              <CheckCircle2 className="w-5 h-5" /> 確認此簽名
+            </button>
           </div>
         </div>
       )}
