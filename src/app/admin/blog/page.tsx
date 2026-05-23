@@ -186,11 +186,7 @@ export default function AdminBlogPage() {
     if (!confirm("確定要立即觸發今日自動生成3篇旅遊文章嗎？約需1-2分鐘。")) return;
     setCronRunning(true); setCronResult(null);
     try {
-      const secret = process.env.NEXT_PUBLIC_BLOG_CRON_SECRET || "";
-      const res = await fetch("/api/blog/cron", {
-        method: "POST",
-        headers: { "x-cron-secret": secret },
-      });
+      const res = await fetch("/api/blog/trigger", { method: "POST" });
       const json = await res.json() as { generated?: number; total?: number; used_tavily?: boolean; used_pexels?: boolean; error?: string };
       if (!res.ok) throw new Error(json.error || "觸發失敗");
       setCronResult({
