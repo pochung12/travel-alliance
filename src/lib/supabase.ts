@@ -177,3 +177,26 @@ export interface TourPayment {
   is_payable?: boolean;   // 應付（未付）標記，僅支出使用
   created_at: string;
 }
+
+// ─── Contracts ────────────────────────────────────────────────────────────────
+
+export type ContractStatus = 'pending' | 'signed';
+
+export interface Contract {
+  id: string;
+  title: string;
+  pdf_data?: string;         // base64 data URL（大欄位，只在簽署頁取用）
+  pdf_name: string;
+  tour_id: string | null;
+  customer_id: string | null;
+  status: ContractStatus;
+  sign_token: string;
+  signed_at: string | null;
+  signature_image?: string | null; // base64 PNG
+  signer_name: string;
+  notes: string;
+  created_at: string;
+  // joined
+  tour?: { name: string; destination?: string } | null;
+  customer?: { name: string } | null;
+}
