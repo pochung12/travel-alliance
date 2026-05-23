@@ -34,6 +34,16 @@ interface SignContract {
 type PageState = "loading" | "pending" | "signed" | "error";
 type Party = "a" | "b";
 
+// ── 工具函式 ──────────────────────────────────────────────────────────────────
+
+function fmtDate(s: string | null | undefined) {
+  if (!s) return "—";
+  return new Date(s).toLocaleString("zh-TW", {
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit",
+  });
+}
+
 // ── 主頁面 ────────────────────────────────────────────────────────────────────
 
 export default function SignPage() {
@@ -52,7 +62,7 @@ export default function SignPage() {
   const canvasRefs   = useRef<(HTMLCanvasElement | null)[]>([]);
   const pdfDocRef    = useRef<unknown>(null);
 
-  // 簽名 canvas (for zones-less mode)
+  // 舊版簽名 canvas (無 zones 時使用)
   const sigCanvasRef = useRef<HTMLCanvasElement>(null);
   const drawing      = useRef(false);
   const lastPos      = useRef<{x: number; y: number} | null>(null);
@@ -60,10 +70,10 @@ export default function SignPage() {
   const onDrawRef    = useRef<(d: string | null) => void>(() => {});
   const [mainSig,    setMainSig]     = useState<string | null>(null);
 
-  // Zone 簽名：per-zone 狀態
+  // Zone 簽名狀態
   const [zoneSigs,    setZoneSigs]   = useState<Record<string, string>>({}); // zoneId → base64
   const [zoneFields,  setZoneFields] = useState<Record<string, string>>({}); // zoneId → text
-  // 彈出 sig canvas（點擊 sign_a / sig_b zone）
+  // 簽名彈出 Modal
   const [sigModal,    setSigModal]   = useState<string | null>(null); // zoneId
   const modalCanvasRef = useRef<HTMLCanvasElement>(null);
   const modalDrawing   = useRef(false);
@@ -71,22 +81,19 @@ export default function SignPage() {
   const modalHasDrawn  = useRef(false);
   const [modalSigTemp, setModalSigTemp] = useState<string | null>(null);
 
-  // 計算衍生值
+  // 衍生值
   const hasZones    = (contract?.zones?.length ?? 0) > 0;
-  // 甲方 sign_a zones / 乙方 sig_b zones
   const signAZones  = (contract?.zones ?? []).filter(z => z.type === "sign_a");
   const sigBZones   = (contract?.zones ?? []).filter(z => z.type === "sig_b");
   const myZones     = party === "a" ? signAZones : sigBZones;
-  // 對方已簽的 sigs（顯示用）
+
+  // 對方已存在 DB 的簽名（顯示在 PDF 上）
   const otherPartySigs: Record<string, string> = useMemo(() => {
-    if (party === "b") {
-      return contract?.zone_responses_a?.sigs ?? {};
-    }
+    if (party === "b") return contract?.zone_responses_a?.sigs ?? {};
     return contract?.zone_responses?.sigs ?? {};
   }, [party, contract]);
 
-  // ── 舊版 PDF blob URL (iframe，無 zones 時使用) ───────────────────────────
-
+  // 舊版 PDF blob URL（無 zones 時）
   const pdfBlobUrl = useMemo(() => {
     if (!contract?.pdf_data || hasZones) return null;
     try {
@@ -104,62 +111,10 @@ export default function SignPage() {
     return () => { if (pdfBlobUrl) URL.revokeObjectURL(pdfBlobUrl); };
   }, [pdfBlobUrl]);
 
-  // ── 載入合約 ───────────────────────────────────────────────────────────────
-
-  useEffect(() => {
-    (async () => {
-      // 同時嘗試用乙方 token 或甲方 token 查詢
-      const { data, error } = await supabase
-        .from("contracts")
-        .select("id,title,pdf_data,pdf_name,status,signed_at,signer_name,signed_at_a,signer_name_a,notes,zones,sign_token,sign_token_a,zone_responses,zone_responses_a,tour:tours(name,destination),customer:customers(name)")
-        .or(`sign_token.eq.${token},sign_token_a.eq.${token}`)
-        .single();
-
-      if (error || !data) {
-        setPageState("error");
-        setErrMsg("找不到此合約，連結可能已失效");
-        return;
-      }
-
-      const c = data as unknown as SignContract;
-      setContract(c);
-
-      // 判斷是甲方還是乙方連結
-      const detectedParty: Party = c.sign_token_a === token ? "a" : "b";
-      setParty(detectedParty);
-
-      // 預填簽名人姓名
-      if (detectedParty === "a" && c.signer_name_a) setSignerName(c.signer_name_a);
-      if (detectedParty === "b" && c.signer_name)   setSignerName(c.signer_name);
-
-      // 已簽署狀態
-      if (detectedParty === "a" && c.signed_at_a) { setPageState("signed"); return; }
-      if (detectedParty === "b" && c.status === "signed") { setPageState("signed"); return; }
-
-      setPageState("pending");
-
-      // Pre-fill 欄位：date_b 自動帶入今日日期、field 帶入 preset_text
-      if (Array.isArray(c.zones)) {
-        const fv: Record<string, string> = {};
-        const today = new Date();
-        const rocYear = today.getFullYear() - 1911;
-        const mm = String(today.getMonth() + 1).padStart(2, "0");
-        const dd = String(today.getDate()).padStart(2, "0");
-        const todayStr = `民國 ${rocYear} 年 ${mm} 月 ${dd} 日`;
-        c.zones.forEach((z: Zone) => {
-          if (z.type === "date_b") fv[z.id] = todayStr;
-          if (z.type === "field" && z.preset_text) fv[z.id] = z.preset_text;
-        });
-        setZoneFields(fv);
-      }
-
-      if ((c.zones?.length ?? 0) > 0) {
-        await renderPdfWithPdfjs(c.pdf_data);
-      }
-    })();
-  }, [token]);
+  // ── 渲染 PDF ─────────────────────────────────────────────────────────────────
 
   const renderPdfWithPdfjs = async (pdfDataUrl: string) => {
+    setPdfReady(false);
     const pdfjsLib = await import("pdfjs-dist");
     pdfjsLib.GlobalWorkerOptions.workerSrc =
       `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
@@ -192,7 +147,78 @@ export default function SignPage() {
     setPdfReady(true);
   };
 
-  // ── 舊版簽名 Canvas 設定（無 zones 時） ────────────────────────────────────
+  // ── 載入合約 ─────────────────────────────────────────────────────────────────
+
+  useEffect(() => {
+    (async () => {
+      const { data, error } = await supabase
+        .from("contracts")
+        .select("id,title,pdf_data,pdf_name,status,signed_at,signer_name,signed_at_a,signer_name_a,notes,zones,sign_token,sign_token_a,zone_responses,zone_responses_a,tour:tours(name,destination),customer:customers(name)")
+        .or(`sign_token.eq.${token},sign_token_a.eq.${token}`)
+        .single();
+
+      if (error || !data) {
+        setPageState("error");
+        setErrMsg("找不到此合約，連結可能已失效");
+        return;
+      }
+
+      const c = data as unknown as SignContract;
+      setContract(c);
+
+      const detectedParty: Party = c.sign_token_a === token ? "a" : "b";
+      setParty(detectedParty);
+
+      // 已簽署：預填歷史簽名，仍渲染 PDF（讓使用者看到帶簽名的合約）
+      const alreadySigned =
+        (detectedParty === "a" && !!c.signed_at_a) ||
+        (detectedParty === "b" && c.status === "signed");
+
+      if (alreadySigned) {
+        if (detectedParty === "a" && c.signer_name_a) setSignerName(c.signer_name_a);
+        if (detectedParty === "b" && c.signer_name)   setSignerName(c.signer_name);
+        // 載入當前方的簽名圖到 zoneSigs
+        setZoneSigs(
+          detectedParty === "a"
+            ? (c.zone_responses_a?.sigs ?? {})
+            : (c.zone_responses?.sigs ?? {})
+        );
+        // 合併雙方欄位（date_b / field）
+        setZoneFields({
+          ...(c.zone_responses?.fields   ?? {}),
+          ...(c.zone_responses_a?.fields ?? {}),
+        });
+        setPageState("signed");
+        if ((c.zones?.length ?? 0) > 0) await renderPdfWithPdfjs(c.pdf_data);
+        return;
+      }
+
+      // 待簽署
+      if (detectedParty === "a" && c.signer_name_a) setSignerName(c.signer_name_a);
+      if (detectedParty === "b" && c.signer_name)   setSignerName(c.signer_name);
+      setPageState("pending");
+
+      // 預填 date_b / field preset_text
+      if (Array.isArray(c.zones)) {
+        const fv: Record<string, string> = {};
+        const today = new Date();
+        const rocYear = today.getFullYear() - 1911;
+        const mm = String(today.getMonth() + 1).padStart(2, "0");
+        const dd = String(today.getDate()).padStart(2, "0");
+        const todayStr = `民國 ${rocYear} 年 ${mm} 月 ${dd} 日`;
+        c.zones.forEach((z: Zone) => {
+          if (z.type === "date_b") fv[z.id] = todayStr;
+          if (z.type === "field" && z.preset_text) fv[z.id] = z.preset_text;
+        });
+        setZoneFields(fv);
+      }
+
+      if ((c.zones?.length ?? 0) > 0) await renderPdfWithPdfjs(c.pdf_data);
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  // ── 舊版簽名 Canvas（無 zones） ───────────────────────────────────────────────
 
   const setupSigCanvas = useCallback(() => {
     const canvas = sigCanvasRef.current;
@@ -247,7 +273,7 @@ export default function SignPage() {
     hasDrawn.current = false; setMainSig(null);
   };
 
-  // ── Modal 簽名 Canvas ─────────────────────────────────────────────────────
+  // ── Modal 簽名 Canvas ─────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (!sigModal) return;
@@ -311,7 +337,7 @@ export default function SignPage() {
     setModalSigTemp(null);
   };
 
-  // ── 提交 ───────────────────────────────────────────────────────────────────
+  // ── 提交 ─────────────────────────────────────────────────────────────────────
 
   const handleSubmit = async () => {
     if (!signerName.trim()) { alert("請輸入您的姓名"); return; }
@@ -341,6 +367,12 @@ export default function SignPage() {
       });
       const json = await res.json();
       if (!res.ok) { alert("簽署失敗：" + (json.error || "請稍後再試")); return; }
+      // 更新 contract 狀態以反映剛完成的簽署（讓 signed view 顯示正確資訊）
+      setContract(prev => {
+        if (!prev) return prev;
+        if (party === "a") return { ...prev, signed_at_a: new Date().toISOString(), signer_name_a: signerName.trim() };
+        return { ...prev, status: "signed", signed_at: new Date().toISOString(), signer_name: signerName.trim() };
+      });
       setPageState("signed");
     } finally {
       setSubmitting(false);
@@ -353,6 +385,7 @@ export default function SignPage() {
 
   const partyLabel = party === "a" ? "甲方" : "乙方";
   const partyColor = party === "a" ? "indigo" : "blue";
+  const isSigned   = pageState === "signed";
 
   if (pageState === "loading") return (
     <div className="min-h-screen flex items-center justify-center bg-slate-50">
@@ -374,34 +407,12 @@ export default function SignPage() {
     </div>
   );
 
-  if (pageState === "signed") return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-emerald-50 to-slate-50 p-6">
-      <div className="text-center space-y-5 max-w-sm w-full">
-        <div className="w-20 h-20 bg-emerald-100 rounded-full flex items-center justify-center mx-auto">
-          <CheckCircle2 className="w-10 h-10 text-emerald-500" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">{partyLabel}簽署完成！</h1>
-          <p className="text-slate-500 text-sm mt-1">感謝您的電子簽名，已成功送出。</p>
-        </div>
-        <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 text-left space-y-2.5">
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide">合約資訊</p>
-          <p className="font-semibold text-slate-700">{contract?.title}</p>
-          <p className="text-sm text-slate-500">
-            {partyLabel}：{party === "a" ? (contract?.signer_name_a || signerName) : (contract?.signer_name || signerName)}
-          </p>
-          {contract?.tour && (
-            <p className="text-sm text-slate-500">✈️ {(contract.tour as {name:string}).name}</p>
-          )}
-        </div>
-        <p className="text-xs text-slate-400">如有疑問請聯繫旅行社</p>
-      </div>
-    </div>
-  );
+  // ── 主畫面（pending + signed 共用，避免 canvas unmount） ──────────────────────
 
-  // ── Pending ────────────────────────────────────────────────────────────────
+  const headerBg = isSigned
+    ? "bg-emerald-600"
+    : partyColor === "indigo" ? "bg-indigo-600" : "bg-blue-600";
 
-  const headerBg   = partyColor === "indigo" ? "bg-indigo-600" : "bg-blue-600";
   const myZonesMeta = myZones.length > 0
     ? `需完成 ${myZones.length} 處簽名`
     : "閱讀合約後填寫姓名確認";
@@ -412,10 +423,14 @@ export default function SignPage() {
       {/* Header */}
       <div className={`${headerBg} sticky top-0 z-20`}>
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center gap-2">
-          <Globe className="w-5 h-5 text-white/80 shrink-0" />
+          {isSigned
+            ? <CheckCircle2 className="w-5 h-5 text-white shrink-0" />
+            : <Globe className="w-5 h-5 text-white/80 shrink-0" />}
           <div className="flex-1">
-            <span className="font-semibold text-white text-sm">暖心旅行社 — 線上合約簽署</span>
-            <span className="ml-2 text-xs text-white/70">（{partyLabel}）</span>
+            <span className="font-semibold text-white text-sm">
+              暖心旅行社 — {isSigned ? `${partyLabel}簽署完成` : "線上合約簽署"}
+            </span>
+            {!isSigned && <span className="ml-2 text-xs text-white/70">（{partyLabel}）</span>}
           </div>
         </div>
       </div>
@@ -425,10 +440,18 @@ export default function SignPage() {
         {/* 合約資訊 */}
         <div className="bg-white rounded-2xl border border-slate-200 px-5 py-4 space-y-2">
           <div className="flex items-center gap-2">
-            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
-              party === "a" ? "bg-indigo-100 text-indigo-700" : "bg-blue-100 text-blue-700"
-            }`}>{partyLabel}簽署</span>
-            <span className="text-xs text-slate-400">{myZonesMeta}</span>
+            {isSigned ? (
+              <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">
+                ✅ 已完成簽署
+              </span>
+            ) : (
+              <>
+                <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                  party === "a" ? "bg-indigo-100 text-indigo-700" : "bg-blue-100 text-blue-700"
+                }`}>{partyLabel}簽署</span>
+                <span className="text-xs text-slate-400">{myZonesMeta}</span>
+              </>
+            )}
           </div>
           <h1 className="font-bold text-lg text-slate-800 leading-snug">{contract?.title}</h1>
           {contract?.tour && (
@@ -443,6 +466,25 @@ export default function SignPage() {
           {contract?.notes && (
             <p className="text-sm text-slate-500 bg-slate-50 rounded-xl px-3 py-2 mt-1">{contract.notes}</p>
           )}
+          {/* 簽署人資訊（已簽署時顯示） */}
+          {isSigned && (contract?.signer_name_a || contract?.signer_name) && (
+            <div className="pt-2 mt-1 border-t border-slate-100 space-y-1">
+              {contract?.signer_name_a && (
+                <p className="text-xs text-indigo-700 flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" />
+                  甲方：{contract.signer_name_a}
+                  <span className="text-slate-400 ml-1">{fmtDate(contract.signed_at_a)}</span>
+                </p>
+              )}
+              {contract?.signer_name && (
+                <p className="text-xs text-blue-700 flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" />
+                  乙方：{contract.signer_name}
+                  <span className="text-slate-400 ml-1">{fmtDate(contract.signed_at)}</span>
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         {/* ── 有 zones：PDF.js 渲染 + 區塊疊加 ── */}
@@ -450,7 +492,9 @@ export default function SignPage() {
           <div className="space-y-4">
             <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
               <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
-                <h2 className="font-semibold text-slate-700 text-sm">📄 合約內容</h2>
+                <h2 className="font-semibold text-slate-700 text-sm">
+                  📄 合約內容{isSigned ? "（含簽名）" : ""}
+                </h2>
                 <p className="text-xs text-slate-400">
                   {!pdfReady ? "PDF 載入中…" : `共 ${numPages} 頁`}
                 </p>
@@ -464,6 +508,7 @@ export default function SignPage() {
                 )}
                 {Array.from({ length: numPages }, (_, i) => i + 1).map(pageNum => (
                   <div key={pageNum} className="relative rounded-xl overflow-hidden shadow-sm">
+                    {/* ⚠️ canvas 不隨 pageState 切換而 unmount，維持渲染內容 */}
                     <canvas
                       ref={el => { canvasRefs.current[pageNum - 1] = el; }}
                       className="w-full"
@@ -472,27 +517,37 @@ export default function SignPage() {
                     {/* Zone overlays */}
                     {pdfReady && (contract?.zones ?? []).filter((z: Zone) => z.page === pageNum).map((zone: Zone) => {
                       const meta      = ZONE_META[zone.type];
-                      // 甲方互動簽名區 (sign_a)
                       const isSignA   = zone.type === "sign_a";
-                      // 乙方互動簽名區 (sig_b)
                       const isSigB    = zone.type === "sig_b";
-                      // 當前方的互動簽名區
                       const isMySig   = (party === "a" && isSignA) || (party === "b" && isSigB);
-                      const mySigned  = isMySig && zoneSigs[zone.id];
-                      // 對方已簽
+                      const mySigned  = isMySig ? zoneSigs[zone.id] : undefined;
+                      // 對方已存 DB 的簽名
                       const otherSig  = (isSignA && party === "b") ? otherPartySigs[zone.id] : undefined;
                       const otherSigB = (isSigB  && party === "a") ? otherPartySigs[zone.id] : undefined;
+
+                      // 已簽署狀態：取得各方最終簽名
+                      const finalSignA = isSigned
+                        ? (party === "a" ? zoneSigs[zone.id] : otherPartySigs[zone.id])
+                        : undefined;
+                      const finalSigB = isSigned
+                        ? (party === "b" ? zoneSigs[zone.id] : otherPartySigs[zone.id])
+                        : undefined;
+
+                      // 是否可互動（僅 pending 狀態 + 我方 + 尚未簽）
+                      const canClick = !isSigned && isMySig && !mySigned;
 
                       return (
                         <div
                           key={zone.id}
                           className={`absolute border-2 rounded overflow-hidden ${
-                            mySigned ? "border-emerald-400" : meta.border
-                          } ${isMySig && !mySigned ? "cursor-pointer hover:shadow-lg transition-shadow" : ""} ${
-                            mySigned ? "" : meta.bg
+                            mySigned || (isSigned && (finalSignA || finalSigB))
+                              ? "border-emerald-400"
+                              : meta.border
+                          } ${canClick ? "cursor-pointer hover:shadow-lg transition-shadow" : ""} ${
+                            (mySigned || (isSigned && (finalSignA || finalSigB))) ? "" : meta.bg
                           }`}
                           style={{ left: `${zone.x}%`, top: `${zone.y}%`, width: `${zone.w}%`, height: `${zone.h}%` }}
-                          onClick={isMySig && !mySigned ? () => setSigModal(zone.id) : undefined}
+                          onClick={canClick ? () => setSigModal(zone.id) : undefined}
                         >
                           {/* 甲方靜態印章/簽名 */}
                           {(zone.type === "stamp_a" || zone.type === "sig_a") && zone.preset_image && (
@@ -502,7 +557,12 @@ export default function SignPage() {
 
                           {/* 甲方互動簽署區 (sign_a) */}
                           {isSignA && (
-                            mySigned ? (
+                            isSigned ? (
+                              finalSignA
+                                // eslint-disable-next-line @next/next/no-img-element
+                                ? <img src={finalSignA} alt="甲方簽名" className="w-full h-full object-contain pointer-events-none" />
+                                : <div className={`flex items-center justify-center h-full text-[10px] ${meta.text} opacity-50`}>甲方待簽</div>
+                            ) : mySigned ? (
                               // eslint-disable-next-line @next/next/no-img-element
                               <img src={mySigned} alt="" className="w-full h-full object-contain pointer-events-none" />
                             ) : otherSig ? (
@@ -516,15 +576,18 @@ export default function SignPage() {
                                 </span>
                               </div>
                             ) : (
-                              <div className={`flex items-center justify-center h-full text-[10px] ${meta.text} opacity-50`}>
-                                甲方待簽
-                              </div>
+                              <div className={`flex items-center justify-center h-full text-[10px] ${meta.text} opacity-50`}>甲方待簽</div>
                             )
                           )}
 
                           {/* 乙方互動簽署區 (sig_b) */}
                           {isSigB && (
-                            mySigned ? (
+                            isSigned ? (
+                              finalSigB
+                                // eslint-disable-next-line @next/next/no-img-element
+                                ? <img src={finalSigB} alt="乙方簽名" className="w-full h-full object-contain pointer-events-none" />
+                                : <div className={`flex items-center justify-center h-full text-[10px] ${meta.text} opacity-50`}>乙方待簽</div>
+                            ) : mySigned ? (
                               // eslint-disable-next-line @next/next/no-img-element
                               <img src={mySigned} alt="" className="w-full h-full object-contain pointer-events-none" />
                             ) : otherSigB ? (
@@ -538,9 +601,7 @@ export default function SignPage() {
                                 </span>
                               </div>
                             ) : (
-                              <div className={`flex items-center justify-center h-full text-[10px] ${meta.text} opacity-50`}>
-                                乙方待簽
-                              </div>
+                              <div className={`flex items-center justify-center h-full text-[10px] ${meta.text} opacity-50`}>乙方待簽</div>
                             )
                           )}
 
@@ -551,16 +612,16 @@ export default function SignPage() {
                             </div>
                           )}
 
-                          {/* 自訂欄位（甲方預填）→ 唯讀顯示 */}
+                          {/* 自訂欄位（甲方預填）→ 唯讀 */}
                           {zone.type === "field" && (zone.signer ?? "b") === "a" && (
                             <div className="flex items-center h-full text-xs text-slate-700 px-1 select-none pointer-events-none leading-tight">
                               {zoneFields[zone.id] || zone.preset_text || zone.label}
                             </div>
                           )}
 
-                          {/* 自訂欄位（乙方填寫）→ 乙方可編輯、甲方唯讀 */}
+                          {/* 自訂欄位（乙方填寫）→ pending 可編輯 / signed 唯讀 */}
                           {zone.type === "field" && (zone.signer ?? "b") !== "a" && (
-                            party === "b" ? (
+                            (!isSigned && party === "b") ? (
                               <input
                                 className="w-full h-full bg-transparent text-xs text-slate-700 px-1 py-0.5 border-none focus:outline-none"
                                 placeholder={zone.label}
@@ -569,7 +630,7 @@ export default function SignPage() {
                                 onClick={e => e.stopPropagation()}
                               />
                             ) : (
-                              <div className="flex items-center h-full text-xs text-slate-500 px-1 pointer-events-none">
+                              <div className="flex items-center h-full text-xs text-slate-700 px-1 pointer-events-none leading-tight">
                                 {zoneFields[zone.id] || zone.label}
                               </div>
                             )
@@ -582,8 +643,8 @@ export default function SignPage() {
               </div>
             </div>
 
-            {/* 進度指示 */}
-            {myZones.length > 0 && (
+            {/* 簽名進度（僅 pending 狀態顯示） */}
+            {!isSigned && myZones.length > 0 && (
               <div className="bg-white rounded-2xl border border-slate-200 px-5 py-4">
                 <p className="text-sm font-semibold text-slate-700 mb-3">✍️ {partyLabel}簽名進度</p>
                 <div className="space-y-2">
@@ -608,7 +669,7 @@ export default function SignPage() {
             )}
           </div>
         ) : (
-          /* ── 無 zones：舊版 iframe + 底部 canvas ── */
+          /* ── 無 zones：舊版 iframe ── */
           <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
             <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
               <h2 className="font-semibold text-slate-700 text-sm">📄 合約內容</h2>
@@ -631,86 +692,125 @@ export default function SignPage() {
           </div>
         )}
 
-        {/* ── 簽名表單（共用） ── */}
-        <div className="bg-white rounded-2xl border border-slate-200 px-5 py-5 space-y-5">
-          <h2 className="font-bold text-slate-800 flex items-center gap-2">
-            <Pen className={`w-4 h-4 ${party === "a" ? "text-indigo-500" : "text-blue-500"}`} />
-            {partyLabel}確認簽署
-          </h2>
-
-          {/* 姓名 */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 mb-1.5">
-              {partyLabel}姓名 <span className="text-red-400">*</span>
-            </label>
-            <input
-              className="w-full border border-slate-200 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
-              placeholder={`請輸入${partyLabel}姓名`}
-              value={signerName}
-              onChange={e => setSignerName(e.target.value)}
-              autoComplete="name"
-            />
-          </div>
-
-          {/* 無 zones：顯示主簽名 canvas */}
-          {!hasZones && (
+        {/* ── 底部：簽署表單 (pending) 或 完成摘要 (signed) ── */}
+        {isSigned ? (
+          /* 已簽署完成摘要 */
+          <div className="bg-emerald-50 border border-emerald-200 rounded-2xl px-5 py-5 text-center space-y-4">
+            <div className="w-16 h-16 bg-emerald-100 rounded-full flex items-center justify-center mx-auto">
+              <CheckCircle2 className="w-8 h-8 text-emerald-500" />
+            </div>
             <div>
-              <div className="flex items-center justify-between mb-2">
-                <label className="text-xs font-semibold text-slate-500">
-                  手寫簽名 <span className="text-red-400">*</span>
-                  <span className="ml-1 font-normal text-slate-400 text-[11px]">用手指在下方空白處簽名</span>
-                </label>
-                <button onClick={clearMainSig}
-                  className="flex items-center gap-1 text-xs text-slate-400 hover:text-red-500 transition-colors py-1 px-2 rounded-lg hover:bg-red-50">
-                  <RotateCcw className="w-3.5 h-3.5" /> 清除
-                </button>
-              </div>
-              <div className={`rounded-2xl overflow-hidden border-2 transition-colors ${mainSig ? "border-emerald-300" : "border-dashed border-slate-200 bg-slate-50"}`}>
-                <canvas ref={sigCanvasRef} width={720} height={240} className="w-full bg-white"
-                  style={{ touchAction: "none", display: "block", cursor: "crosshair" }} />
-              </div>
-              {!mainSig && (
-                <p className="text-center text-xs text-slate-400 mt-2 flex items-center justify-center gap-1.5">
-                  <Pen className="w-3 h-3" /> 在上方框框內用手指簽下您的姓名
-                </p>
-              )}
+              <h2 className="font-bold text-slate-800 text-lg">{partyLabel}簽署完成！</h2>
+              <p className="text-sm text-slate-500 mt-1">感謝您的電子簽名，已成功送出。</p>
             </div>
-          )}
+            {(contract?.signer_name_a || contract?.signer_name) && (
+              <div className="bg-white rounded-xl border border-emerald-100 px-4 py-3 text-left space-y-1.5">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wide mb-1">簽署紀錄</p>
+                {contract?.signer_name_a && (
+                  <p className="text-sm text-indigo-700 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                    <span>甲方：<strong>{contract.signer_name_a}</strong></span>
+                    <span className="text-slate-400 text-xs">{fmtDate(contract.signed_at_a)}</span>
+                  </p>
+                )}
+                {contract?.signer_name ? (
+                  <p className="text-sm text-blue-700 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                    <span>乙方：<strong>{contract.signer_name}</strong></span>
+                    <span className="text-slate-400 text-xs">{fmtDate(contract.signed_at)}</span>
+                  </p>
+                ) : (
+                  <p className="text-sm text-slate-400 flex items-center gap-1.5">
+                    <div className="w-3.5 h-3.5 rounded-full border-2 border-slate-300 shrink-0" />
+                    乙方：待簽署
+                  </p>
+                )}
+              </div>
+            )}
+            <p className="text-xs text-slate-400">如有疑問請聯繫旅行社</p>
+          </div>
+        ) : (
+          /* 待簽署：表單 */
+          <div className="bg-white rounded-2xl border border-slate-200 px-5 py-5 space-y-5">
+            <h2 className="font-bold text-slate-800 flex items-center gap-2">
+              <Pen className={`w-4 h-4 ${party === "a" ? "text-indigo-500" : "text-blue-500"}`} />
+              {partyLabel}確認簽署
+            </h2>
 
-          {/* 有 zones：確認所有簽名已完成 */}
-          {hasZones && myZones.length > 0 && (
-            <div className={`text-sm px-4 py-3 rounded-xl ${
-              myZones.every(z => zoneSigs[z.id])
-                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                : "bg-amber-50 text-amber-700 border border-amber-200"
-            }`}>
-              {myZones.every(z => zoneSigs[z.id])
-                ? `✅ ${partyLabel}所有簽名區塊已完成`
-                : `⚠️ 請在合約 PDF 上點擊簽名區塊完成${partyLabel}簽名（${myZones.filter(z => !zoneSigs[z.id]).length} 處尚未簽）`}
+            {/* 姓名 */}
+            <div>
+              <label className="block text-xs font-semibold text-slate-500 mb-1.5">
+                {partyLabel}姓名 <span className="text-red-400">*</span>
+              </label>
+              <input
+                className="w-full border border-slate-200 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-blue-400"
+                placeholder={`請輸入${partyLabel}姓名`}
+                value={signerName}
+                onChange={e => setSignerName(e.target.value)}
+                autoComplete="name"
+              />
             </div>
-          )}
 
-          {/* 提交 */}
-          <button
-            onClick={handleSubmit}
-            disabled={submitting || (!hasZones && !mainSig) || (hasZones && myZones.length > 0 && !myZones.every(z => zoneSigs[z.id]))}
-            className={`w-full hover:opacity-90 active:opacity-80 disabled:bg-slate-200 disabled:text-slate-400 text-white font-semibold py-4 rounded-2xl text-base transition-colors flex items-center justify-center gap-2 ${
-              party === "a" ? "bg-indigo-600" : "bg-blue-600"
-            }`}
-          >
-            {submitting
-              ? <><Loader2 className="w-5 h-5 animate-spin" /> 送出中…</>
-              : <><CheckCircle2 className="w-5 h-5" /> {partyLabel}確認簽署</>}
-          </button>
+            {/* 無 zones：手寫簽名 canvas */}
+            {!hasZones && (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-semibold text-slate-500">
+                    手寫簽名 <span className="text-red-400">*</span>
+                    <span className="ml-1 font-normal text-slate-400 text-[11px]">用手指在下方空白處簽名</span>
+                  </label>
+                  <button onClick={clearMainSig}
+                    className="flex items-center gap-1 text-xs text-slate-400 hover:text-red-500 transition-colors py-1 px-2 rounded-lg hover:bg-red-50">
+                    <RotateCcw className="w-3.5 h-3.5" /> 清除
+                  </button>
+                </div>
+                <div className={`rounded-2xl overflow-hidden border-2 transition-colors ${mainSig ? "border-emerald-300" : "border-dashed border-slate-200 bg-slate-50"}`}>
+                  <canvas ref={sigCanvasRef} width={720} height={240} className="w-full bg-white"
+                    style={{ touchAction: "none", display: "block", cursor: "crosshair" }} />
+                </div>
+                {!mainSig && (
+                  <p className="text-center text-xs text-slate-400 mt-2 flex items-center justify-center gap-1.5">
+                    <Pen className="w-3 h-3" /> 在上方框框內用手指簽下您的姓名
+                  </p>
+                )}
+              </div>
+            )}
 
-          <p className="text-[11px] text-slate-400 text-center leading-relaxed">
-            點擊「{partyLabel}確認簽署」即表示本人確認已閱讀並同意以上合約全部條款，此電子簽名具有法律效力。
-          </p>
-        </div>
+            {/* 有 zones：簽名完成確認狀態 */}
+            {hasZones && myZones.length > 0 && (
+              <div className={`text-sm px-4 py-3 rounded-xl ${
+                myZones.every(z => zoneSigs[z.id])
+                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                  : "bg-amber-50 text-amber-700 border border-amber-200"
+              }`}>
+                {myZones.every(z => zoneSigs[z.id])
+                  ? `✅ ${partyLabel}所有簽名區塊已完成`
+                  : `⚠️ 請在合約 PDF 上點擊簽名區塊完成${partyLabel}簽名（${myZones.filter(z => !zoneSigs[z.id]).length} 處尚未簽）`}
+              </div>
+            )}
+
+            {/* 提交 */}
+            <button
+              onClick={handleSubmit}
+              disabled={submitting || (!hasZones && !mainSig) || (hasZones && myZones.length > 0 && !myZones.every(z => zoneSigs[z.id]))}
+              className={`w-full hover:opacity-90 active:opacity-80 disabled:bg-slate-200 disabled:text-slate-400 text-white font-semibold py-4 rounded-2xl text-base transition-colors flex items-center justify-center gap-2 ${
+                party === "a" ? "bg-indigo-600" : "bg-blue-600"
+              }`}
+            >
+              {submitting
+                ? <><Loader2 className="w-5 h-5 animate-spin" /> 送出中…</>
+                : <><CheckCircle2 className="w-5 h-5" /> {partyLabel}確認簽署</>}
+            </button>
+
+            <p className="text-[11px] text-slate-400 text-center leading-relaxed">
+              點擊「{partyLabel}確認簽署」即表示本人確認已閱讀並同意以上合約全部條款，此電子簽名具有法律效力。
+            </p>
+          </div>
+        )}
       </div>
 
-      {/* ── 簽名彈出 Modal ── */}
-      {sigModal && (
+      {/* ── 簽名彈出 Modal（僅 pending 狀態） ── */}
+      {!isSigned && sigModal && (
         <div className="fixed inset-0 bg-black/70 z-50 flex flex-col items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
