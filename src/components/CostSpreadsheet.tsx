@@ -87,18 +87,22 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
     const { data } = await supabase
       .from("tour_costs").select("*").eq("tour_id", tourId).order("created_at");
 
-    if (data && data.length > 0) {
-      setRows(data.map((d: TourCost & { custom_data?: Record<string, string | number> }) => ({
-        id: d.id,
-        category: d.category as CostCategory,
-        description: d.description,
-        unit_price: d.unit_price,
-        quantity: d.quantity,
-        notes: d.notes,
-        custom_data: d.custom_data || {},
-      })));
-    } else {
-      setRows(COST_CATEGORIES.map(c => ({
+    // 從 DB 載入已存的費用列
+    const dbRows: Row[] = (data || []).map((d: TourCost & { custom_data?: Record<string, string | number> }) => ({
+      id: d.id,
+      category: d.category as CostCategory,
+      description: d.description,
+      unit_price: d.unit_price,
+      quantity: d.quantity,
+      notes: d.notes,
+      custom_data: d.custom_data || {},
+    }));
+
+    // 確保每個費用類別至少有一列：缺少的補預設空白列
+    const existingCats = new Set(dbRows.map(r => r.category));
+    const defaultRows: Row[] = COST_CATEGORIES
+      .filter(c => !existingCats.has(c.key))
+      .map(c => ({
         category: c.key,
         description: "",
         unit_price: 0,
@@ -107,8 +111,9 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
         custom_data: {},
         isNew: true,
         dirty: false,
-      })));
-    }
+      }));
+
+    setRows([...dbRows, ...defaultRows]);
 
     // Images
     const { data: imgData } = await supabase
@@ -151,9 +156,10 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
     setSaving(true);
     const failedCount = { n: 0 };
 
+    // 同時存 dirty（已修改）與 isNew（新列，包含空白預設列）
     const indexed = rows
       .map((r, idx) => ({ r, idx }))
-      .filter(({ r }) => r.dirty);
+      .filter(({ r }) => r.dirty || r.isNew);
 
     for (const { r: row, idx } of indexed) {
       const payload = {
@@ -388,7 +394,8 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
                     ))}
                     <td className="px-1 py-1 text-center">
                       <button onClick={() => removeRow(idx)}
-                        className="p-1 text-slate-300 hover:text-red-500 transition-colors rounded">
+                        title="刪除此列"
+                        className="p-1.5 text-slate-400 hover:text-white hover:bg-red-500 transition-colors rounded-lg">
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </td>
@@ -441,7 +448,8 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
                     ))}
                     <td className="px-1 py-1 text-center">
                       <button onClick={() => removeRow(idx)}
-                        className="p-1 text-slate-300 hover:text-red-500 transition-colors rounded">
+                        title="刪除此列"
+                        className="p-1.5 text-slate-400 hover:text-white hover:bg-red-500 transition-colors rounded-lg">
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </td>
