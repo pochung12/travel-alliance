@@ -185,18 +185,24 @@ export type ContractStatus = 'pending' | 'signed';
 export interface Contract {
   id: string;
   title: string;
-  pdf_data?: string;         // base64 data URL（大欄位，只在簽署頁取用）
+  pdf_data?: string;              // base64 data URL（大欄位，只在簽署頁取用）
   pdf_name: string;
   tour_id: string | null;
   customer_id: string | null;
   status: ContractStatus;
+  // 乙方（客戶）簽署
   sign_token: string;
   signed_at: string | null;
-  signature_image?: string | null; // base64 PNG
+  signature_image?: string | null;
   signer_name: string;
+  zone_responses?: unknown | null;  // {sigs, fields}
+  // 甲方（我方）簽署
+  sign_token_a: string;
+  signed_at_a: string | null;
+  signer_name_a: string;
+  zone_responses_a?: unknown | null; // {sigs, fields}
   notes: string;
-  zones?: unknown[];              // Zone[] — 定義在 admin/contracts/[id]/page.tsx
-  zone_responses?: unknown | null; // {sigs, fields}
+  zones?: unknown[];               // Zone[] — 定義在 admin/contracts/[id]/page.tsx
   created_at: string;
   // joined
   tour?: { name: string; destination?: string } | null;

@@ -5,13 +5,13 @@ import { supabase } from "@/lib/supabase";
 import {
   ArrowLeft, Save, Stamp, PenLine, Pencil, FileText,
   Trash2, CheckCircle2, Upload, X, AlertCircle, Move, Star,
-  Calendar, Send, Mail, MessageCircle, Copy,
+  Calendar, Send, Mail, MessageCircle, Copy, Pen,
 } from "lucide-react";
 import Link from "next/link";
 
 // ── 型別 ─────────────────────────────────────────────────────────────────────
 
-export type ZoneType = "stamp_a" | "sig_a" | "sig_b" | "date_b" | "field";
+export type ZoneType = "stamp_a" | "sig_a" | "sign_a" | "sig_b" | "date_b" | "field";
 
 export interface Zone {
   id: string;
@@ -34,11 +34,12 @@ export const ZONE_META: Record<ZoneType, {
   border: string; bg: string; text: string;
   w: number; h: number;
 }> = {
-  stamp_a: { label: "甲方印章", icon: Stamp,    border: "border-red-500",    bg: "bg-red-50/80",    text: "text-red-600",    w: 14, h: 14 },
-  sig_a:   { label: "甲方簽名", icon: PenLine,  border: "border-orange-500", bg: "bg-orange-50/80", text: "text-orange-600", w: 22, h: 10 },
-  sig_b:   { label: "乙方簽名", icon: Pencil,   border: "border-blue-500",   bg: "bg-blue-50/80",   text: "text-blue-600",   w: 26, h: 12 },
-  date_b:  { label: "簽署日期", icon: Calendar, border: "border-violet-500", bg: "bg-violet-50/80", text: "text-violet-600", w: 24, h:  7 },
-  field:   { label: "自訂欄位", icon: FileText, border: "border-green-500",  bg: "bg-green-50/80",  text: "text-green-600",  w: 30, h:  7 },
+  stamp_a: { label: "甲方印章",   icon: Stamp,    border: "border-red-500",    bg: "bg-red-50/80",    text: "text-red-600",    w: 14, h: 14 },
+  sig_a:   { label: "甲方靜態簽名", icon: PenLine,  border: "border-orange-500", bg: "bg-orange-50/80", text: "text-orange-600", w: 22, h: 10 },
+  sign_a:  { label: "甲方簽署",   icon: Pen,      border: "border-indigo-500", bg: "bg-indigo-50/80", text: "text-indigo-600", w: 26, h: 12 },
+  sig_b:   { label: "乙方簽署",   icon: Pencil,   border: "border-blue-500",   bg: "bg-blue-50/80",   text: "text-blue-600",   w: 26, h: 12 },
+  date_b:  { label: "簽署日期",   icon: Calendar, border: "border-violet-500", bg: "bg-violet-50/80", text: "text-violet-600", w: 24, h:  7 },
+  field:   { label: "自訂欄位",   icon: FileText, border: "border-green-500",  bg: "bg-green-50/80",  text: "text-green-600",  w: 30, h:  7 },
 };
 
 // ── 工具函式 ─────────────────────────────────────────────────────────────────
@@ -219,6 +220,7 @@ export default function ContractZoneEditor() {
 
   const [title,       setTitle]       = useState("");
   const [signToken,   setSignToken]   = useState("");
+  const [signTokenA,  setSignTokenA]  = useState("");
   const [zones,       setZones]       = useState<Zone[]>([]);
   const [numPages,    setNumPages]    = useState(0);
   const [loading,     setLoading]     = useState(true);
@@ -249,13 +251,15 @@ export default function ContractZoneEditor() {
     (async () => {
       const { data } = await supabase
         .from("contracts")
-        .select("title, pdf_data, zones, is_template, sign_token")
+        .select("title, pdf_data, zones, is_template, sign_token, sign_token_a")
         .eq("id", id)
         .single();
       if (!data) { router.push("/admin/contracts"); return; }
       setTitle(data.title as string);
-      setSignToken((data as { sign_token?: string }).sign_token ?? "");
-      setIsTemplate(!!(data as { is_template?: boolean }).is_template);
+      const d = data as { sign_token?: string; sign_token_a?: string; is_template?: boolean };
+      setSignToken(d.sign_token ?? "");
+      setSignTokenA(d.sign_token_a ?? "");
+      setIsTemplate(!!d.is_template);
       const rawZones = data.zones;
       setZones(Array.isArray(rawZones) ? rawZones as Zone[] : []);
       setLoading(false);
@@ -483,7 +487,7 @@ export default function ContractZoneEditor() {
           <div className="p-4 border-b border-slate-100">
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-3">新增區塊</p>
             <div className="space-y-2">
-              {(["stamp_a", "sig_a", "sig_b", "date_b", "field"] as ZoneType[]).map(type => {
+              {(["stamp_a", "sig_a", "sign_a", "sig_b", "date_b", "field"] as ZoneType[]).map(type => {
                 const meta   = ZONE_META[type];
                 const Icon   = meta.icon;
                 const active = addType === type;
@@ -712,10 +716,11 @@ export default function ContractZoneEditor() {
           {/* 說明 */}
           <div className="px-4 pb-4 pt-2 border-t border-slate-100">
             <div className="text-[10px] text-slate-400 space-y-1 leading-relaxed">
-              <p>🔴 <b>甲方印章</b>：預先蓋好印章，客戶看到時已有印章</p>
-              <p>✒️ <b>甲方簽名</b>：預先放入您的簽名圖</p>
-              <p>✍️ <b>乙方簽名</b>：客戶在手機上觸控簽名的位置</p>
-              <p>🗓️ <b>簽署日期</b>：自動帶入客戶簽署當天日期</p>
+              <p>🔴 <b>甲方印章</b>：預先蓋好印章（靜態圖片）</p>
+              <p>✒️ <b>甲方靜態簽名</b>：預先放入您的簽名圖</p>
+              <p>🔵 <b>甲方簽署</b>：甲方透過專屬連結互動簽名</p>
+              <p>🟢 <b>乙方簽署</b>：客戶透過專屬連結互動簽名</p>
+              <p>🗓️ <b>簽署日期</b>：自動帶入簽署當天日期</p>
               <p>📝 <b>自訂欄位</b>：可設定甲方預填或乙方填寫</p>
             </div>
           </div>
@@ -723,88 +728,94 @@ export default function ContractZoneEditor() {
       </div>
 
       {/* ══ 發送合約 Modal ══════════════════════════════════════════════════ */}
-      {showSend && signToken && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-              <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                <Send className="w-5 h-5 text-emerald-500" /> 發送合約
-              </h2>
-              <button onClick={() => setShowSend(false)}
-                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 transition-colors">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            <div className="px-6 py-5 space-y-5">
-              {/* 合約名稱 */}
-              <p className="text-sm font-medium text-slate-700">📋 {title}</p>
-
-              {/* 簽署連結 */}
-              <div>
-                <label className="text-xs text-slate-500 font-semibold block mb-1.5">簽署連結</label>
-                <div className="flex gap-2">
-                  <input readOnly
-                    value={`${typeof window !== "undefined" ? window.location.origin : ""}/sign/${signToken}`}
-                    className="flex-1 border border-slate-200 rounded-lg px-3 py-2 text-xs text-slate-600 bg-slate-50 focus:outline-none truncate"
-                  />
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(`${window.location.origin}/sign/${signToken}`);
-                      setSendCopied(true);
-                      setTimeout(() => setSendCopied(false), 2000);
-                    }}
-                    className={`px-3 py-2 rounded-lg text-xs font-medium flex items-center gap-1 shrink-0 transition-colors ${
-                      sendCopied
-                        ? "bg-emerald-100 text-emerald-700"
-                        : "bg-blue-50 text-blue-600 hover:bg-blue-100"
-                    }`}>
-                    <Copy className="w-3.5 h-3.5" />
-                    {sendCopied ? "已複製" : "複製"}
-                  </button>
-                </div>
+      {showSend && (signToken || signTokenA) && (() => {
+        const origin = typeof window !== "undefined" ? window.location.origin : "";
+        const urlB = `${origin}/sign/${signToken}`;
+        const urlA = `${origin}/sign/${signTokenA}`;
+        const buildEmail = (url: string, party: "甲方" | "乙方") => {
+          const sub = encodeURIComponent(`【暖心旅行社】合約簽署通知 ─《${title}》（${party}）`);
+          const body = encodeURIComponent(`您好！\n\n暖心旅行社已為您準備好合約，請點擊以下連結，使用手機即可完成線上電子簽名：\n\n🔗 ${party}簽署連結：\n${url}\n\n操作說明：\n1. 點擊上方連結\n2. 閱讀合約內容\n3. 在指定位置用手指完成簽名\n4. 點擊「確認簽署」送出\n\n如有任何問題，歡迎與我們聯繫。\n\n暖心旅行社 敬上`);
+          return `mailto:?subject=${sub}&body=${body}`;
+        };
+        const buildLine = (url: string, party: "甲方" | "乙方") => {
+          const text = encodeURIComponent(`您好！📋\n\n暖心旅行社的合約《${title}》已準備好，請點擊連結在手機上完成${party}電子簽名 ✍️\n\n${url}\n\n操作很簡單，點進去用手指畫一畫就完成了！\n有問題歡迎告知 🙏`);
+          return `https://line.me/R/share?text=${text}`;
+        };
+        return (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 overflow-y-auto">
+            <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg my-4">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                  <Send className="w-5 h-5 text-emerald-500" /> 發送合約
+                </h2>
+                <button onClick={() => setShowSend(false)}
+                  className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
               </div>
+              <div className="px-6 py-5 space-y-5">
+                <p className="text-sm font-medium text-slate-700">📋 {title}</p>
 
-              {/* 預設文案 */}
-              <div>
-                <label className="text-xs text-slate-500 font-semibold block mb-1.5">📝 預設文案</label>
-                <div className="bg-slate-50 rounded-xl p-3 text-xs text-slate-600 whitespace-pre-wrap leading-relaxed max-h-32 overflow-y-auto border border-slate-100">
-                  {`您好！\n\n暖心旅行社已為您準備好合約，請點擊連結，用手機即可完成線上電子簽名 ✍️\n\n${typeof window !== "undefined" ? window.location.origin : ""}/sign/${signToken}\n\n操作簡單：開啟連結 → 閱讀合約 → 手指簽名 → 送出\n\n如有疑問歡迎聯繫，謝謝！\n\n暖心旅行社`}
-                </div>
-              </div>
+                {/* 甲方連結 */}
+                {signTokenA && (
+                  <div className="border border-indigo-200 bg-indigo-50/50 rounded-xl p-4 space-y-3">
+                    <p className="text-xs font-bold text-indigo-700">🔵 甲方簽署連結（我方）</p>
+                    <div className="flex gap-2">
+                      <input readOnly value={urlA}
+                        className="flex-1 border border-indigo-200 rounded-lg px-3 py-2 text-xs text-slate-600 bg-white focus:outline-none truncate" />
+                      <button
+                        onClick={() => { navigator.clipboard.writeText(urlA); setSendCopied(true); setTimeout(() => setSendCopied(false), 2000); }}
+                        className="px-3 py-2 rounded-lg text-xs font-medium flex items-center gap-1 shrink-0 bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition-colors">
+                        <Copy className="w-3.5 h-3.5" /> 複製
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      <a href={buildEmail(urlA, "甲方")} target="_blank" rel="noopener"
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs transition-colors">
+                        <Mail className="w-3.5 h-3.5" /> Email 發送
+                      </a>
+                      <a href={buildLine(urlA, "甲方")} target="_blank" rel="noopener"
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#06C755] hover:bg-green-600 text-white font-medium text-xs transition-colors">
+                        <MessageCircle className="w-3.5 h-3.5" /> LINE 發送
+                      </a>
+                    </div>
+                  </div>
+                )}
 
-              {/* 發送按鈕 */}
-              <div className="space-y-2.5">
-                <a
-                  href={(() => {
-                    const signUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/sign/${signToken}`;
-                    const subject = encodeURIComponent(`【暖心旅行社】合約簽署通知 ─《${title}》`);
-                    const body = encodeURIComponent(`您好！\n\n暖心旅行社已為您準備好合約，請點擊以下連結，使用手機即可完成線上電子簽名：\n\n🔗 簽署連結：\n${signUrl}\n\n操作說明：\n1. 點擊上方連結\n2. 閱讀合約內容\n3. 在指定位置用手指完成簽名\n4. 點擊「確認簽署」送出\n\n如有任何問題，歡迎與我們聯繫。\n\n暖心旅行社 敬上`);
-                    return `mailto:?subject=${subject}&body=${body}`;
-                  })()}
-                  target="_blank" rel="noopener"
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm transition-colors"
-                >
-                  <Mail className="w-4 h-4" /> 發送合約信件（Email）
-                </a>
-                <a
-                  href={(() => {
-                    const signUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/sign/${signToken}`;
-                    const text = encodeURIComponent(`您好！📋\n\n暖心旅行社的合約《${title}》已準備好，請點擊連結在手機上完成電子簽名 ✍️\n\n${signUrl}\n\n操作很簡單，點進去用手指畫一畫就完成了！\n有問題歡迎告知 🙏`);
-                    return `https://line.me/R/share?text=${text}`;
-                  })()}
-                  target="_blank" rel="noopener"
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-green-500 hover:bg-green-600 text-white font-semibold text-sm transition-colors"
-                >
-                  <MessageCircle className="w-4 h-4" /> 用 LINE 發送
-                </a>
+                {/* 乙方連結 */}
+                {signToken && (
+                  <div className="border border-blue-200 bg-blue-50/50 rounded-xl p-4 space-y-3">
+                    <p className="text-xs font-bold text-blue-700">🟢 乙方簽署連結（客戶）</p>
+                    <div className="flex gap-2">
+                      <input readOnly value={urlB}
+                        className="flex-1 border border-blue-200 rounded-lg px-3 py-2 text-xs text-slate-600 bg-white focus:outline-none truncate" />
+                      <button
+                        onClick={() => { navigator.clipboard.writeText(urlB); setSendCopied(true); setTimeout(() => setSendCopied(false), 2000); }}
+                        className="px-3 py-2 rounded-lg text-xs font-medium flex items-center gap-1 shrink-0 bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors">
+                        <Copy className="w-3.5 h-3.5" /> 複製
+                      </button>
+                    </div>
+                    <div className="flex gap-2">
+                      <a href={buildEmail(urlB, "乙方")} target="_blank" rel="noopener"
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs transition-colors">
+                        <Mail className="w-3.5 h-3.5" /> Email 發送
+                      </a>
+                      <a href={buildLine(urlB, "乙方")} target="_blank" rel="noopener"
+                        className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[#06C755] hover:bg-green-600 text-white font-medium text-xs transition-colors">
+                        <MessageCircle className="w-3.5 h-3.5" /> LINE 發送
+                      </a>
+                    </div>
+                  </div>
+                )}
+
+                <p className="text-[11px] text-slate-400 text-center">
+                  甲方連結供我方人員簽署；乙方連結發送給客戶。各方只能簽署自己的區塊。
+                </p>
               </div>
-              <p className="text-[11px] text-slate-400 text-center">
-                已簽署的合約仍可分享連結查看，但客戶無法重新簽署
-              </p>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
