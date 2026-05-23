@@ -73,6 +73,10 @@ export default function SignPage() {
   // Zone 簽名狀態
   const [zoneSigs,    setZoneSigs]   = useState<Record<string, string>>({}); // zoneId → base64
   const [zoneFields,  setZoneFields] = useState<Record<string, string>>({}); // zoneId → text
+  // 簽名 ref 快照（在 submit / load 時捕捉，避免 async state stale closure 問題）
+  const sigsSnapshotRef = useRef<Record<string, string>>({});
+  // 追蹤是否曾進入 pending 狀態（用來區分 revisit vs fresh submit）
+  const wasPendingRef = useRef(false);
   // 簽名彈出 Modal
   const [sigModal,    setSigModal]   = useState<string | null>(null); // zoneId
   const modalCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -110,6 +114,17 @@ export default function SignPage() {
   useEffect(() => {
     return () => { if (pdfBlobUrl) URL.revokeObjectURL(pdfBlobUrl); };
   }, [pdfBlobUrl]);
+
+  // Fresh submit（pending → signed）時重新渲染 PDF，確保 canvas 內容不丟失
+  useEffect(() => {
+    if (pageState === "signed" && wasPendingRef.current && hasZones && contract?.pdf_data) {
+      wasPendingRef.current = false;
+      // 短暫延遲讓 React commit canvas DOM 後再渲染
+      const t = setTimeout(() => { renderPdfWithPdfjs(contract.pdf_data); }, 60);
+      return () => clearTimeout(t);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageState]);
 
   // ── 渲染 PDF ─────────────────────────────────────────────────────────────────
 
@@ -177,25 +192,30 @@ export default function SignPage() {
       if (alreadySigned) {
         if (detectedParty === "a" && c.signer_name_a) setSignerName(c.signer_name_a);
         if (detectedParty === "b" && c.signer_name)   setSignerName(c.signer_name);
-        // 載入當前方的簽名圖到 zoneSigs
-        setZoneSigs(
-          detectedParty === "a"
-            ? (c.zone_responses_a?.sigs ?? {})
-            : (c.zone_responses?.sigs ?? {})
-        );
+        // 載入當前方的簽名圖到 zoneSigs + 快照 ref
+        const loadedSigs = detectedParty === "a"
+          ? (c.zone_responses_a?.sigs ?? {})
+          : (c.zone_responses?.sigs ?? {});
+        sigsSnapshotRef.current = loadedSigs;
+        setZoneSigs(loadedSigs);
         // 合併雙方欄位（date_b / field）
         setZoneFields({
           ...(c.zone_responses?.fields   ?? {}),
           ...(c.zone_responses_a?.fields ?? {}),
         });
         setPageState("signed");
-        if ((c.zones?.length ?? 0) > 0) await renderPdfWithPdfjs(c.pdf_data);
+        // Revisit 情境：直接在此渲染 PDF（wasPendingRef = false，不走 useEffect）
+        if ((c.zones?.length ?? 0) > 0) {
+          // 等 React commit signed 畫面（含 canvas）後再渲染
+          setTimeout(() => { renderPdfWithPdfjs(c.pdf_data); }, 60);
+        }
         return;
       }
 
       // 待簽署
       if (detectedParty === "a" && c.signer_name_a) setSignerName(c.signer_name_a);
       if (detectedParty === "b" && c.signer_name)   setSignerName(c.signer_name);
+      wasPendingRef.current = true; // 標記曾進入 pending，fresh submit 時觸發 PDF re-render
       setPageState("pending");
 
       // 預填 date_b / field preset_text
@@ -367,13 +387,15 @@ export default function SignPage() {
       });
       const json = await res.json();
       if (!res.ok) { alert("簽署失敗：" + (json.error || "請稍後再試")); return; }
+      // 簽名快照：在 setPageState 前捕捉（避免 async state stale closure）
+      sigsSnapshotRef.current = { ...zoneSigs };
       // 更新 contract 狀態以反映剛完成的簽署（讓 signed view 顯示正確資訊）
       setContract(prev => {
         if (!prev) return prev;
         if (party === "a") return { ...prev, signed_at_a: new Date().toISOString(), signer_name_a: signerName.trim() };
         return { ...prev, status: "signed", signed_at: new Date().toISOString(), signer_name: signerName.trim() };
       });
-      setPageState("signed");
+      setPageState("signed"); // 觸發 useEffect → PDF re-render（wasPendingRef = true）
     } finally {
       setSubmitting(false);
     }
@@ -525,12 +547,14 @@ export default function SignPage() {
                       const otherSig  = (isSignA && party === "b") ? otherPartySigs[zone.id] : undefined;
                       const otherSigB = (isSigB  && party === "a") ? otherPartySigs[zone.id] : undefined;
 
-                      // 已簽署狀態：取得各方最終簽名
-                      const finalSignA = isSigned
-                        ? (party === "a" ? zoneSigs[zone.id] : otherPartySigs[zone.id])
+                      // 已簽署狀態：從快照 ref 取我方簽名（比 state 更可靠）
+                      // 對方簽名從 DB zone_responses 取（contract 載入時已有）
+                      const signedMySig = isSigned ? sigsSnapshotRef.current[zone.id] : undefined;
+                      const signedOtherSig = isSigned
+                        ? (isSignA && party === "b" ? (contract?.zone_responses_a?.sigs?.[zone.id] ?? otherPartySigs[zone.id]) : undefined)
                         : undefined;
-                      const finalSigB = isSigned
-                        ? (party === "b" ? zoneSigs[zone.id] : otherPartySigs[zone.id])
+                      const signedOtherSigB = isSigned
+                        ? (isSigB && party === "a" ? (contract?.zone_responses?.sigs?.[zone.id] ?? otherPartySigs[zone.id]) : undefined)
                         : undefined;
 
                       // 是否可互動（僅 pending 狀態 + 我方 + 尚未簽）
@@ -539,12 +563,12 @@ export default function SignPage() {
                       return (
                         <div
                           key={zone.id}
-                          className={`absolute border-2 rounded overflow-hidden ${
-                            mySigned || (isSigned && (finalSignA || finalSigB))
+                          className={`absolute border-2 rounded overflow-hidden z-10 ${
+                            mySigned || (isSigned && (signedMySig || signedOtherSig || signedOtherSigB))
                               ? "border-emerald-400"
                               : meta.border
                           } ${canClick ? "cursor-pointer hover:shadow-lg transition-shadow" : ""} ${
-                            (mySigned || (isSigned && (finalSignA || finalSigB))) ? "" : meta.bg
+                            (mySigned || (isSigned && (signedMySig || signedOtherSig || signedOtherSigB))) ? "" : meta.bg
                           }`}
                           style={{ left: `${zone.x}%`, top: `${zone.y}%`, width: `${zone.w}%`, height: `${zone.h}%` }}
                           onClick={canClick ? () => setSigModal(zone.id) : undefined}
@@ -558,9 +582,10 @@ export default function SignPage() {
                           {/* 甲方互動簽署區 (sign_a) */}
                           {isSignA && (
                             isSigned ? (
-                              finalSignA
+                              // 已簽署：優先用 ref 快照（我方），其次對方 DB 資料
+                              (isMySig ? signedMySig : signedOtherSig)
                                 // eslint-disable-next-line @next/next/no-img-element
-                                ? <img src={finalSignA} alt="甲方簽名" className="w-full h-full object-contain pointer-events-none" />
+                                ? <img src={(isMySig ? signedMySig : signedOtherSig)!} alt="甲方簽名" className="w-full h-full object-contain pointer-events-none" />
                                 : <div className={`flex items-center justify-center h-full text-[10px] ${meta.text} opacity-50`}>甲方待簽</div>
                             ) : mySigned ? (
                               // eslint-disable-next-line @next/next/no-img-element
@@ -583,9 +608,10 @@ export default function SignPage() {
                           {/* 乙方互動簽署區 (sig_b) */}
                           {isSigB && (
                             isSigned ? (
-                              finalSigB
+                              // 已簽署：優先用 ref 快照（我方），其次對方 DB 資料
+                              (isMySig ? signedMySig : signedOtherSigB)
                                 // eslint-disable-next-line @next/next/no-img-element
-                                ? <img src={finalSigB} alt="乙方簽名" className="w-full h-full object-contain pointer-events-none" />
+                                ? <img src={(isMySig ? signedMySig : signedOtherSigB)!} alt="乙方簽名" className="w-full h-full object-contain pointer-events-none" />
                                 : <div className={`flex items-center justify-center h-full text-[10px] ${meta.text} opacity-50`}>乙方待簽</div>
                             ) : mySigned ? (
                               // eslint-disable-next-line @next/next/no-img-element
