@@ -4,13 +4,15 @@ import { supabase, Tour, Customer, Contract, ContractStatus } from "@/lib/supaba
 import {
   Plus, Search, FilePen, Copy, Eye, Trash2,
   CheckCircle2, Clock, X, Upload, ExternalLink,
-  Download, AlertCircle, Settings2,
+  Download, AlertCircle, Settings2, Star,
 } from "lucide-react";
 import Link from "next/link";
+import type { Zone } from "@/app/admin/contracts/[id]/page";
 
-// ── 類型 ────────────────────────────────────────────────────────────────────
+// ── 類型 ─────────────────────────────────────────────────────────────────────
 
 type ContractListItem = Omit<Contract, "pdf_data"> & {
+  is_template: boolean;
   tour: { name: string } | null;
   customer: { name: string } | null;
 };
@@ -28,7 +30,7 @@ const STATUS_ICON: Record<ContractStatus, React.ElementType> = {
   signed:  CheckCircle2,
 };
 
-// ── 工具函式 ─────────────────────────────────────────────────────────────────
+// ── 工具函式 ──────────────────────────────────────────────────────────────────
 
 function fmtDate(s: string | null) {
   if (!s) return "—";
@@ -49,8 +51,6 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   );
 }
 
-// ── SQL 提示 ─────────────────────────────────────────────────────────────────
-
 const CREATE_SQL = `CREATE TABLE IF NOT EXISTS contracts (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   title TEXT NOT NULL DEFAULT '',
@@ -64,21 +64,26 @@ const CREATE_SQL = `CREATE TABLE IF NOT EXISTS contracts (
   signature_image TEXT,
   signer_name TEXT NOT NULL DEFAULT '',
   notes TEXT NOT NULL DEFAULT '',
+  zones JSONB NOT NULL DEFAULT '[]',
+  zone_responses JSONB,
+  is_template BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ DEFAULT now()
 );`;
 
 // ── 主元件 ───────────────────────────────────────────────────────────────────
 
+type FilterType = ContractStatus | "all" | "template";
+
 export default function ContractsPage() {
-  const [contracts, setContracts] = useState<ContractListItem[]>([]);
-  const [tours,     setTours]     = useState<Pick<Tour, "id" | "name">[]>([]);
-  const [customers, setCustomers] = useState<Pick<Customer, "id" | "name">[]>([]);
-  const [filter,    setFilter]    = useState<ContractStatus | "all">("all");
-  const [search,    setSearch]    = useState("");
-  const [loading,   setLoading]   = useState(true);
-  const [tableErr,  setTableErr]  = useState(false);
-  const [showSQL,   setShowSQL]   = useState(false);
-  const [copied,    setCopied]    = useState<string | null>(null);
+  const [contracts,  setContracts]  = useState<ContractListItem[]>([]);
+  const [tours,      setTours]      = useState<Pick<Tour, "id" | "name">[]>([]);
+  const [customers,  setCustomers]  = useState<Pick<Customer, "id" | "name">[]>([]);
+  const [filter,     setFilter]     = useState<FilterType>("all");
+  const [search,     setSearch]     = useState("");
+  const [loading,    setLoading]    = useState(true);
+  const [tableErr,   setTableErr]   = useState(false);
+  const [showSQL,    setShowSQL]    = useState(false);
+  const [copied,     setCopied]     = useState<string | null>(null);
 
   // ── 建立 Modal ──
   const [showCreate,  setShowCreate]  = useState(false);
@@ -87,14 +92,21 @@ export default function ContractsPage() {
   const [form, setForm] = useState({
     title: "", pdf_data: "", pdf_name: "", tour_id: "", customer_id: "", notes: "",
   });
+  const [formZones,   setFormZones]   = useState<Zone[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // ── 公版選擇 ──
+  const [selectedTplId, setSelectedTplId] = useState<string | null>(null);
+  const [tplLoading,    setTplLoading]    = useState(false);
+
   // ── 查看 Modal ──
-  const [showView,    setShowView]    = useState(false);
-  const [viewItem,    setViewItem]    = useState<ContractListItem | null>(null);
-  const [viewSig,     setViewSig]     = useState<string | null>(null);
-  const [viewPdfUrl,  setViewPdfUrl]  = useState<string | null>(null);
-  const [viewPdfLoading, setViewPdfLoading] = useState(false);
+  const [showView,     setShowView]     = useState(false);
+  const [viewItem,     setViewItem]     = useState<ContractListItem | null>(null);
+  const [viewSig,      setViewSig]      = useState<string | null>(null);
+  const [viewPdfUrl,   setViewPdfUrl]   = useState<string | null>(null);
+
+  // ── 公版列表（from contracts state）──
+  const templates = contracts.filter(c => c.is_template);
 
   // ── 載入 ─────────────────────────────────────────────────────────────────
 
@@ -102,15 +114,14 @@ export default function ContractsPage() {
     setLoading(true);
     const [{ data: cData, error: cErr }, { data: tData }, { data: cuData }] = await Promise.all([
       supabase.from("contracts")
-        .select("id,title,pdf_name,status,sign_token,signed_at,signer_name,notes,created_at,tour_id,customer_id,tour:tours(name),customer:customers(name)")
+        .select("id,title,pdf_name,status,sign_token,signed_at,signer_name,notes,created_at,is_template,tour_id,customer_id,tour:tours(name),customer:customers(name)")
+        .order("is_template", { ascending: false })  // 公版排最前
         .order("created_at", { ascending: false }),
       supabase.from("tours").select("id,name").order("start_date", { ascending: false }),
       supabase.from("customers").select("id,name").order("name"),
     ]);
     if (cErr) {
-      if (cErr.message?.includes("does not exist") || cErr.message?.includes("relation")) {
-        setTableErr(true);
-      }
+      if (cErr.message?.includes("does not exist") || cErr.message?.includes("relation")) setTableErr(true);
     }
     setContracts((cData || []) as unknown as ContractListItem[]);
     setTours(tData || []);
@@ -120,33 +131,71 @@ export default function ContractsPage() {
 
   useEffect(() => { load(); }, []);
 
-  // ── PDF 上傳 ────────────────────────────────────────────────────────────
+  // ── 切換公版 ────────────────────────────────────────────────────────────
+
+  const toggleTemplate = async (id: string, toTemplate: boolean) => {
+    const { error } = await supabase.from("contracts").update({ is_template: toTemplate }).eq("id", id);
+    if (error) { alert("更新失敗：" + error.message); return; }
+    setContracts(cs => cs.map(c => c.id === id ? { ...c, is_template: toTemplate } : c));
+  };
+
+  // ── 從公版建立：載入 pdf_data + zones ──────────────────────────────────
+
+  const applyTemplate = async (tplId: string) => {
+    if (tplId === selectedTplId) {
+      // 取消選擇
+      setSelectedTplId(null);
+      setForm(f => ({ ...f, pdf_data: "", pdf_name: "" }));
+      setFormZones([]);
+      return;
+    }
+    setTplLoading(true);
+    setSelectedTplId(tplId);
+    const { data } = await supabase.from("contracts")
+      .select("pdf_data, pdf_name, zones, title")
+      .eq("id", tplId).single();
+    setTplLoading(false);
+    if (!data) return;
+    setForm(f => ({
+      ...f,
+      pdf_data: data.pdf_data as string,
+      pdf_name: data.pdf_name as string,
+      // pre-fill title only if current title is empty
+      ...(f.title ? {} : { title: data.title as string }),
+    }));
+    setFormZones(Array.isArray(data.zones) ? data.zones as Zone[] : []);
+  };
+
+  // ── PDF 上傳 ─────────────────────────────────────────────────────────────
 
   const handlePdfChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.type !== "application/pdf") { alert("請選擇 PDF 檔案"); return; }
-    if (file.size > 10 * 1024 * 1024) { alert("PDF 檔案不可超過 10MB"); return; }
+    if (file.size > 10 * 1024 * 1024) { alert("PDF 不可超過 10MB"); return; }
     setPdfLoading(true);
     const reader = new FileReader();
     reader.onload = () => {
       setForm(f => ({ ...f, pdf_data: reader.result as string, pdf_name: file.name }));
       setPdfLoading(false);
+      // 上傳新 PDF 後，取消公版關聯
+      setSelectedTplId(null);
     };
     reader.readAsDataURL(file);
   };
 
-  // ── 建立合約 ────────────────────────────────────────────────────────────
+  // ── 建立合約 ─────────────────────────────────────────────────────────────
 
   const handleCreate = async () => {
     if (!form.title.trim()) { alert("請填寫合約標題"); return; }
-    if (!form.pdf_data)     { alert("請上傳 PDF 檔案"); return; }
+    if (!form.pdf_data)     { alert("請上傳 PDF 或選擇公版"); return; }
     setSaving(true);
     const payload: Record<string, unknown> = {
-      title: form.title.trim(),
+      title:    form.title.trim(),
       pdf_data: form.pdf_data,
       pdf_name: form.pdf_name,
-      notes: form.notes,
+      notes:    form.notes,
+      zones:    formZones,
     };
     if (form.tour_id)     payload.tour_id     = form.tour_id;
     if (form.customer_id) payload.customer_id = form.customer_id;
@@ -155,11 +204,13 @@ export default function ContractsPage() {
     if (error) { alert("建立失敗：" + error.message); return; }
     setShowCreate(false);
     setForm({ title: "", pdf_data: "", pdf_name: "", tour_id: "", customer_id: "", notes: "" });
+    setFormZones([]);
+    setSelectedTplId(null);
     if (fileRef.current) fileRef.current.value = "";
     load();
   };
 
-  // ── 複製連結 ────────────────────────────────────────────────────────────
+  // ── 複製連結 ─────────────────────────────────────────────────────────────
 
   const copyLink = (token: string) => {
     const url = `${window.location.origin}/sign/${token}`;
@@ -169,30 +220,22 @@ export default function ContractsPage() {
     });
   };
 
-  // ── 查看合約 ────────────────────────────────────────────────────────────
+  // ── 查看合約 ─────────────────────────────────────────────────────────────
 
   const openView = async (c: ContractListItem) => {
     setViewItem(c);
     setViewSig(null);
     setViewPdfUrl(null);
     setShowView(true);
-    // Fetch signature + pdf_data
-    const { data } = await supabase
-      .from("contracts")
-      .select("signature_image, pdf_data, pdf_name")
-      .eq("id", c.id)
-      .single();
-    if (data?.signature_image) setViewSig(data.signature_image);
+    const { data } = await supabase.from("contracts").select("signature_image,pdf_data,pdf_name").eq("id", c.id).single();
+    if (data?.signature_image) setViewSig(data.signature_image as string);
     if (data?.pdf_data) {
       try {
         let b64 = data.pdf_data as string;
-        const ci = b64.indexOf(",");
-        if (ci !== -1) b64 = b64.slice(ci + 1);
-        const bin = atob(b64);
-        const arr = new Uint8Array(bin.length);
+        const ci = b64.indexOf(","); if (ci !== -1) b64 = b64.slice(ci + 1);
+        const bin = atob(b64); const arr = new Uint8Array(bin.length);
         for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-        const url = URL.createObjectURL(new Blob([arr], { type: "application/pdf" }));
-        setViewPdfUrl(url);
+        setViewPdfUrl(URL.createObjectURL(new Blob([arr], { type: "application/pdf" })));
       } catch { /* ignore */ }
     }
   };
@@ -200,11 +243,10 @@ export default function ContractsPage() {
   const closeView = () => {
     setShowView(false);
     if (viewPdfUrl) { URL.revokeObjectURL(viewPdfUrl); setViewPdfUrl(null); }
-    setViewItem(null);
-    setViewSig(null);
+    setViewItem(null); setViewSig(null);
   };
 
-  // ── 刪除 ────────────────────────────────────────────────────────────────
+  // ── 刪除 ─────────────────────────────────────────────────────────────────
 
   const handleDelete = async (id: string) => {
     if (!confirm("確定刪除此合約？此操作無法復原。")) return;
@@ -213,7 +255,7 @@ export default function ContractsPage() {
     setContracts(cs => cs.filter(c => c.id !== id));
   };
 
-  // ── 篩選 ────────────────────────────────────────────────────────────────
+  // ── 篩選 ─────────────────────────────────────────────────────────────────
 
   const filtered = contracts.filter(c => {
     const q = search.toLowerCase();
@@ -221,10 +263,13 @@ export default function ContractsPage() {
       || (c.tour?.name || "").toLowerCase().includes(q)
       || (c.customer?.name || "").toLowerCase().includes(q)
       || c.signer_name.toLowerCase().includes(q);
-    return ok && (filter === "all" || c.status === filter);
+    if (!ok) return false;
+    if (filter === "template") return c.is_template;
+    if (filter === "all")      return true;
+    return c.status === filter;
   });
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  // ── Render ───────────────────────────────────────────────────────────────
 
   return (
     <div className="p-4 md:p-6 space-y-4">
@@ -234,7 +279,7 @@ export default function ContractsPage() {
         <h1 className="text-xl md:text-2xl font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
           <FilePen className="w-5 h-5 md:w-6 md:h-6 text-blue-600" /> 線上簽約
         </h1>
-        <button onClick={() => setShowCreate(true)}
+        <button onClick={() => { setSelectedTplId(null); setFormZones([]); setForm({ title:"",pdf_data:"",pdf_name:"",tour_id:"",customer_id:"",notes:"" }); setShowCreate(true); }}
           className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm px-3 md:px-4 py-2 rounded-lg transition-colors">
           <Plus className="w-4 h-4" />
           <span className="hidden sm:inline">新增合約</span><span className="sm:hidden">新增</span>
@@ -247,9 +292,8 @@ export default function ContractsPage() {
           <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300 font-semibold text-sm">
             <AlertCircle className="w-4 h-4" /> 尚未建立 contracts 資料表
           </div>
-          <p className="text-xs text-amber-600 dark:text-amber-400">請到 Supabase → SQL Editor 執行以下 SQL：</p>
-          <button onClick={() => setShowSQL(s => !s)}
-            className="text-xs text-amber-700 dark:text-amber-300 underline">
+          <p className="text-xs text-amber-600 dark:text-amber-400">請到 Supabase → SQL Editor 執行：</p>
+          <button onClick={() => setShowSQL(s => !s)} className="text-xs text-amber-700 dark:text-amber-300 underline">
             {showSQL ? "收起" : "顯示 SQL"}
           </button>
           {showSQL && (
@@ -270,14 +314,21 @@ export default function ContractsPage() {
             value={search} onChange={e => setSearch(e.target.value)}
           />
         </div>
-        {(["all", "pending", "signed"] as const).map(v => (
-          <button key={v} onClick={() => setFilter(v)}
+        {([
+          ["all",      "全部"],
+          ["pending",  "待簽署"],
+          ["signed",   "已簽署"],
+          ["template", "⭐ 公版"],
+        ] as const).map(([v, l]) => (
+          <button key={v} onClick={() => setFilter(v as FilterType)}
             className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
               filter === v
-                ? "bg-blue-600 text-white"
+                ? v === "template"
+                  ? "bg-amber-500 text-white"
+                  : "bg-blue-600 text-white"
                 : "bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
             }`}>
-            {v === "all" ? "全部" : STATUS_LABEL[v]}
+            {l}
           </button>
         ))}
         <span className="text-xs text-slate-400 ml-auto">{filtered.length} 份</span>
@@ -300,9 +351,16 @@ export default function ContractsPage() {
               const SIcon = STATUS_ICON[c.status as ContractStatus];
               return (
                 <div key={c.id}
-                  className="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm p-4 space-y-2">
+                  className={`bg-white dark:bg-slate-800 rounded-xl border shadow-sm p-4 space-y-2 ${
+                    c.is_template
+                      ? "border-amber-200 dark:border-amber-700"
+                      : "border-slate-100 dark:border-slate-700"
+                  }`}>
                   <div className="flex items-start justify-between gap-2">
-                    <p className="font-semibold text-slate-800 dark:text-slate-100 leading-snug">{c.title}</p>
+                    <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                      {c.is_template && <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 shrink-0" />}
+                      <p className="font-semibold text-slate-800 dark:text-slate-100 leading-snug truncate">{c.title}</p>
+                    </div>
                     <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0 flex items-center gap-1 ${STATUS_COLOR[c.status as ContractStatus]}`}>
                       <SIcon className="w-2.5 h-2.5" /> {STATUS_LABEL[c.status as ContractStatus]}
                     </span>
@@ -313,23 +371,33 @@ export default function ContractsPage() {
                     {c.status === "signed" && c.signed_at && (
                       <p className="text-emerald-600 dark:text-emerald-400">✓ {c.signer_name} · {fmtDate(c.signed_at)}</p>
                     )}
-                    <p className="text-slate-400 dark:text-slate-500">建立 {fmtDate(c.created_at)}</p>
                   </div>
-                  <div className="flex gap-2 pt-1 flex-wrap">
+                  <div className="flex gap-1.5 pt-1 flex-wrap">
+                    <button
+                      onClick={() => toggleTemplate(c.id, !c.is_template)}
+                      title={c.is_template ? "取消公版" : "設為公版"}
+                      className={`flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg transition-colors ${
+                        c.is_template
+                          ? "bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400 hover:bg-amber-200"
+                          : "bg-slate-100 dark:bg-slate-700 text-slate-500 hover:bg-amber-50 hover:text-amber-500"
+                      }`}>
+                      <Star className={`w-3 h-3 ${c.is_template ? "fill-amber-400" : ""}`} />
+                      {c.is_template ? "公版" : "設為公版"}
+                    </button>
                     <Link href={`/admin/contracts/${c.id}`}
-                      className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-800/40 transition-colors">
-                      <Settings2 className="w-3 h-3" /> 設定欄位
+                      className="flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 hover:bg-purple-100 transition-colors">
+                      <Settings2 className="w-3 h-3" /> 設定
                     </Link>
                     <button onClick={() => copyLink(c.sign_token)}
-                      className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-800/40 transition-colors">
-                      {copied === c.sign_token ? <><CheckCircle2 className="w-3 h-3" /> 已複製</> : <><Copy className="w-3 h-3" /> 複製連結</>}
+                      className="flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 transition-colors">
+                      {copied === c.sign_token ? <><CheckCircle2 className="w-3 h-3" /> 已複製</> : <><Copy className="w-3 h-3" /> 連結</>}
                     </button>
                     <button onClick={() => openView(c)}
-                      className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors">
+                      className="flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-700 text-slate-600 hover:bg-slate-200 transition-colors">
                       <Eye className="w-3 h-3" /> 查看
                     </button>
                     <button onClick={() => handleDelete(c.id)}
-                      className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-red-50 dark:bg-red-900/30 text-red-500 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-800/40 transition-colors ml-auto">
+                      className="flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg bg-red-50 dark:bg-red-900/30 text-red-500 hover:bg-red-100 transition-colors ml-auto">
                       <Trash2 className="w-3 h-3" />
                     </button>
                   </div>
@@ -349,7 +417,6 @@ export default function ContractsPage() {
                     <th className="px-4 py-3 text-left">對應旅客</th>
                     <th className="px-4 py-3 text-left">狀態</th>
                     <th className="px-4 py-3 text-left">簽署人 / 時間</th>
-                    <th className="px-4 py-3 text-left">建立時間</th>
                     <th className="px-4 py-3 text-center">操作</th>
                   </tr>
                 </thead>
@@ -357,9 +424,19 @@ export default function ContractsPage() {
                   {filtered.map(c => {
                     const SIcon = STATUS_ICON[c.status as ContractStatus];
                     return (
-                      <tr key={c.id} className="hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
-                        <td className="px-4 py-3 font-medium text-slate-800 dark:text-slate-100 max-w-[200px] truncate">
-                          {c.title}
+                      <tr key={c.id} className={`hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors ${
+                        c.is_template ? "bg-amber-50/40 dark:bg-amber-900/10" : ""
+                      }`}>
+                        <td className="px-4 py-3 max-w-[200px]">
+                          <div className="flex items-center gap-1.5">
+                            {c.is_template && (
+                              <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400 shrink-0" />
+                            )}
+                            <span className="font-medium text-slate-800 dark:text-slate-100 truncate">{c.title}</span>
+                          </div>
+                          {c.is_template && (
+                            <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold">公版</span>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-slate-500 dark:text-slate-400 whitespace-nowrap">
                           {c.tour?.name || <span className="text-slate-300 dark:text-slate-600">—</span>}
@@ -373,42 +450,50 @@ export default function ContractsPage() {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
-                          {c.status === "signed" ? (
-                            <span className="text-emerald-600 dark:text-emerald-400">
-                              {c.signer_name || "（未填）"}<br/>
-                              <span className="text-slate-400 dark:text-slate-500">{fmtDate(c.signed_at)}</span>
-                            </span>
-                          ) : <span className="text-slate-300 dark:text-slate-600">尚未簽署</span>}
-                        </td>
-                        <td className="px-4 py-3 text-xs text-slate-400 dark:text-slate-500 whitespace-nowrap">
-                          {fmtDate(c.created_at)}
+                          {c.status === "signed"
+                            ? <span className="text-emerald-600 dark:text-emerald-400">{c.signer_name || "（未填）"}<br/><span className="text-slate-400">{fmtDate(c.signed_at)}</span></span>
+                            : <span className="text-slate-300 dark:text-slate-600">尚未簽署</span>}
                         </td>
                         <td className="px-4 py-3">
-                          <div className="flex items-center justify-center gap-1.5">
+                          <div className="flex items-center justify-center gap-1">
+                            {/* 公版 toggle */}
+                            <button
+                              onClick={() => toggleTemplate(c.id, !c.is_template)}
+                              title={c.is_template ? "取消公版" : "設為公版"}
+                              className={`p-1.5 rounded-lg transition-colors ${
+                                c.is_template
+                                  ? "bg-amber-100 text-amber-500 hover:bg-amber-200 dark:bg-amber-900/40 dark:text-amber-400"
+                                  : "bg-slate-100 text-slate-400 hover:bg-amber-50 hover:text-amber-400 dark:bg-slate-700 dark:text-slate-500"
+                              }`}>
+                              <Star className={`w-4 h-4 ${c.is_template ? "fill-amber-400" : ""}`} />
+                            </button>
+                            {/* 設定欄位 */}
                             <Link href={`/admin/contracts/${c.id}`} title="設定簽名欄位"
                               className="p-1.5 rounded-lg bg-purple-50 text-purple-600 hover:bg-purple-100 dark:bg-purple-900/30 dark:text-purple-400 dark:hover:bg-purple-800/40 transition-colors">
                               <Settings2 className="w-4 h-4" />
                             </Link>
+                            {/* 複製連結 */}
                             <button onClick={() => copyLink(c.sign_token)} title="複製簽署連結"
                               className={`p-1.5 rounded-lg transition-colors ${
                                 copied === c.sign_token
                                   ? "bg-emerald-100 text-emerald-600 dark:bg-emerald-900/40 dark:text-emerald-400"
-                                  : "bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-800/40"
+                                  : "bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400"
                               }`}>
-                              {copied === c.sign_token
-                                ? <CheckCircle2 className="w-4 h-4" />
-                                : <Copy className="w-4 h-4" />}
+                              {copied === c.sign_token ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                             </button>
+                            {/* 查看 */}
                             <button onClick={() => openView(c)} title="查看合約"
                               className="p-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 transition-colors">
                               <Eye className="w-4 h-4" />
                             </button>
+                            {/* 另開 */}
                             <a href={`/sign/${c.sign_token}`} target="_blank" rel="noopener" title="開啟簽署頁"
                               className="p-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 transition-colors">
                               <ExternalLink className="w-4 h-4" />
                             </a>
+                            {/* 刪除 */}
                             <button onClick={() => handleDelete(c.id)} title="刪除合約"
-                              className="p-1.5 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-800/40 transition-colors">
+                              className="p-1.5 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 transition-colors">
                               <Trash2 className="w-4 h-4" />
                             </button>
                           </div>
@@ -423,7 +508,7 @@ export default function ContractsPage() {
         </>
       )}
 
-      {/* ── 新增合約 Modal ─────────────────────────────────────────────────── */}
+      {/* ══ 新增合約 Modal ══════════════════════════════════════════════════ */}
       {showCreate && (
         <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-lg my-8">
@@ -434,20 +519,64 @@ export default function ContractsPage() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <div className="px-6 py-5 space-y-4">
+            <div className="px-6 py-5 space-y-5">
+
+              {/* ── 公版選擇 ── */}
+              {templates.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+                    <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" /> 從公版建立
+                    <span className="font-normal text-slate-400 normal-case tracking-normal">（自動帶入 PDF 及簽名區塊設定）</span>
+                  </p>
+                  <div className="flex gap-2 flex-wrap">
+                    {templates.map(t => (
+                      <button
+                        key={t.id}
+                        onClick={() => applyTemplate(t.id)}
+                        disabled={tplLoading}
+                        className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm border transition-all ${
+                          selectedTplId === t.id
+                            ? "border-amber-400 bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 shadow-sm"
+                            : "border-slate-200 dark:border-slate-600 hover:border-amber-300 hover:bg-amber-50/50 dark:hover:bg-amber-900/20 text-slate-600 dark:text-slate-300"
+                        }`}>
+                        <Star className={`w-3.5 h-3.5 ${selectedTplId === t.id ? "fill-amber-400 text-amber-400" : "text-slate-300"}`} />
+                        <span className="max-w-[120px] truncate">{t.title}</span>
+                        {selectedTplId === t.id && <CheckCircle2 className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
+                      </button>
+                    ))}
+                  </div>
+                  {tplLoading && (
+                    <p className="text-xs text-slate-400 mt-1.5 flex items-center gap-1">
+                      <span className="w-3 h-3 border-2 border-amber-400 border-t-transparent rounded-full animate-spin inline-block" />
+                      載入公版中…
+                    </p>
+                  )}
+                  {selectedTplId && !tplLoading && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1.5 flex items-center gap-1">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      已套用公版 PDF 及 {formZones.length} 個簽名區塊設定
+                    </p>
+                  )}
+                  <div className="border-t border-slate-100 dark:border-slate-700 mt-3" />
+                </div>
+              )}
+
+              {/* ── 基本資料 ── */}
               <Field label="合約標題 *">
                 <input className={inp} value={form.title}
                   onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
                   placeholder="例：2025 日本 9 天出團同意書" />
               </Field>
 
-              {/* PDF Upload */}
-              <Field label="PDF 檔案 *">
+              {/* PDF 上傳 */}
+              <Field label={selectedTplId ? "PDF 檔案（已從公版帶入，可重新上傳覆蓋）" : "PDF 檔案 *"}>
                 <div
                   onClick={() => fileRef.current?.click()}
-                  className={`border-2 border-dashed rounded-xl px-4 py-5 text-center cursor-pointer transition-colors ${
+                  className={`border-2 border-dashed rounded-xl px-4 py-4 text-center cursor-pointer transition-colors ${
                     form.pdf_data
-                      ? "border-emerald-300 bg-emerald-50 dark:border-emerald-700 dark:bg-emerald-900/20"
+                      ? selectedTplId
+                        ? "border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-900/20"
+                        : "border-emerald-300 bg-emerald-50 dark:border-emerald-700 dark:bg-emerald-900/20"
                       : "border-slate-200 dark:border-slate-600 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20"
                   }`}>
                   {pdfLoading ? (
@@ -456,20 +585,20 @@ export default function ContractsPage() {
                       <span className="text-sm">讀取中…</span>
                     </div>
                   ) : form.pdf_data ? (
-                    <div className="flex items-center justify-center gap-2 text-emerald-600 dark:text-emerald-400">
-                      <CheckCircle2 className="w-5 h-5" />
-                      <span className="text-sm font-medium">{form.pdf_name}</span>
+                    <div className="flex items-center justify-center gap-2">
+                      {selectedTplId
+                        ? <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
+                        : <CheckCircle2 className="w-4 h-4 text-emerald-600" />}
+                      <span className="text-sm font-medium text-slate-700 dark:text-slate-300 truncate">{form.pdf_name}</span>
                     </div>
                   ) : (
                     <div className="space-y-1">
-                      <Upload className="w-8 h-8 text-slate-300 dark:text-slate-600 mx-auto" />
-                      <p className="text-sm text-slate-500 dark:text-slate-400">點此上傳 PDF</p>
-                      <p className="text-xs text-slate-400 dark:text-slate-500">最大 10MB</p>
+                      <Upload className="w-7 h-7 text-slate-300 dark:text-slate-600 mx-auto" />
+                      <p className="text-sm text-slate-500 dark:text-slate-400">點此上傳 PDF（最大 10MB）</p>
                     </div>
                   )}
                 </div>
-                <input ref={fileRef} type="file" accept="application/pdf"
-                  onChange={handlePdfChange} className="hidden" />
+                <input ref={fileRef} type="file" accept="application/pdf" onChange={handlePdfChange} className="hidden" />
               </Field>
 
               <div className="grid grid-cols-2 gap-3">
@@ -509,12 +638,13 @@ export default function ContractsPage() {
         </div>
       )}
 
-      {/* ── 查看 Modal ─────────────────────────────────────────────────────── */}
+      {/* ══ 查看 Modal ══════════════════════════════════════════════════════ */}
       {showView && viewItem && (
         <div className="fixed inset-0 bg-black/60 flex items-start justify-center z-50 p-4 overflow-y-auto">
           <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-2xl my-8">
             <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-700">
-              <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100 truncate pr-4">
+              <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100 truncate pr-4 flex items-center gap-2">
+                {viewItem.is_template && <Star className="w-4 h-4 text-amber-400 fill-amber-400 shrink-0" />}
                 {viewItem.title}
               </h2>
               <button onClick={closeView}
@@ -522,15 +652,18 @@ export default function ContractsPage() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-
             <div className="px-6 py-5 space-y-5">
-              {/* Info */}
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
                   <p className="text-xs text-slate-400 mb-0.5">狀態</p>
                   <span className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[viewItem.status as ContractStatus]}`}>
                     {STATUS_LABEL[viewItem.status as ContractStatus]}
                   </span>
+                  {viewItem.is_template && (
+                    <span className="ml-2 inline-flex items-center gap-0.5 text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-600 dark:bg-amber-900/40 dark:text-amber-400 font-medium">
+                      <Star className="w-2.5 h-2.5 fill-amber-400" /> 公版
+                    </span>
+                  )}
                 </div>
                 {viewItem.tour && <div>
                   <p className="text-xs text-slate-400 mb-0.5">出發團</p>
@@ -542,14 +675,8 @@ export default function ContractsPage() {
                 </div>}
                 {viewItem.status === "signed" && (
                   <>
-                    <div>
-                      <p className="text-xs text-slate-400 mb-0.5">簽署人</p>
-                      <p className="text-slate-700 dark:text-slate-200 font-semibold">{viewItem.signer_name || "（未填）"}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-slate-400 mb-0.5">簽署時間</p>
-                      <p className="text-emerald-600 dark:text-emerald-400">{fmtDate(viewItem.signed_at)}</p>
-                    </div>
+                    <div><p className="text-xs text-slate-400 mb-0.5">簽署人</p><p className="text-slate-700 dark:text-slate-200 font-semibold">{viewItem.signer_name || "（未填）"}</p></div>
+                    <div><p className="text-xs text-slate-400 mb-0.5">簽署時間</p><p className="text-emerald-600 dark:text-emerald-400">{fmtDate(viewItem.signed_at)}</p></div>
                   </>
                 )}
                 <div className="col-span-2">
@@ -559,46 +686,39 @@ export default function ContractsPage() {
                       {typeof window !== "undefined" ? window.location.origin : ""}/sign/{viewItem.sign_token}
                     </code>
                     <button onClick={() => copyLink(viewItem.sign_token)}
-                      className="shrink-0 p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-800/40 transition-colors">
+                      className="shrink-0 p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 transition-colors">
                       {copied === viewItem.sign_token ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                     </button>
                     <a href={`/sign/${viewItem.sign_token}`} target="_blank" rel="noopener"
-                      className="shrink-0 p-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600 transition-colors">
+                      className="shrink-0 p-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-300 transition-colors">
                       <ExternalLink className="w-4 h-4" />
                     </a>
                   </div>
                 </div>
               </div>
-
-              {/* PDF Viewer */}
               {viewPdfUrl && (
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">合約 PDF</p>
                     <a href={viewPdfUrl} download={viewItem.pdf_name || "合約.pdf"}
                       className="text-xs text-blue-600 hover:underline flex items-center gap-1">
-                      <Download className="w-3 h-3" /> 下載 PDF
+                      <Download className="w-3 h-3" /> 下載
                     </a>
                   </div>
-                  <iframe src={viewPdfUrl} className="w-full rounded-xl border border-slate-200 dark:border-slate-600"
-                    style={{ height: 420 }} title="合約 PDF" />
+                  <iframe src={viewPdfUrl} className="w-full rounded-xl border border-slate-200 dark:border-slate-600" style={{ height: 400 }} title="合約 PDF" />
                 </div>
               )}
-
-              {/* Signature */}
               {viewItem.status === "signed" && (
                 <div>
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">手寫簽名</p>
-                  {viewSig ? (
-                    <div className="border border-slate-200 dark:border-slate-600 rounded-xl overflow-hidden bg-white">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={viewSig} alt="簽名" className="w-full max-h-48 object-contain" />
-                    </div>
-                  ) : (
-                    <div className="flex justify-center py-6 text-slate-400 text-sm">
-                      <div className="w-5 h-5 border-2 border-slate-300 border-t-transparent rounded-full animate-spin" />
-                    </div>
-                  )}
+                  {viewSig
+                    ? <div className="border border-slate-200 dark:border-slate-600 rounded-xl overflow-hidden bg-white">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={viewSig} alt="簽名" className="w-full max-h-48 object-contain" />
+                      </div>
+                    : <div className="flex justify-center py-6 text-slate-400 text-sm">
+                        <div className="w-5 h-5 border-2 border-slate-300 border-t-transparent rounded-full animate-spin" />
+                      </div>}
                 </div>
               )}
             </div>

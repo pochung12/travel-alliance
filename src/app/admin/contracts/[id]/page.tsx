@@ -4,7 +4,7 @@ import { useParams, useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import {
   ArrowLeft, Save, Stamp, PenLine, Pencil, FileText,
-  Trash2, CheckCircle2, Upload, X, AlertCircle, Move,
+  Trash2, CheckCircle2, Upload, X, AlertCircle, Move, Star,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -111,12 +111,14 @@ export default function ContractZoneEditor() {
   const { id } = useParams<{ id: string }>();
   const router  = useRouter();
 
-  const [title,     setTitle]     = useState("");
-  const [zones,     setZones]     = useState<Zone[]>([]);
-  const [numPages,  setNumPages]  = useState(0);
-  const [loading,   setLoading]   = useState(true);
-  const [saving,    setSaving]    = useState(false);
-  const [saved,     setSaved]     = useState(false);
+  const [title,      setTitle]      = useState("");
+  const [zones,      setZones]      = useState<Zone[]>([]);
+  const [numPages,   setNumPages]   = useState(0);
+  const [loading,    setLoading]    = useState(true);
+  const [saving,     setSaving]     = useState(false);
+  const [saved,      setSaved]      = useState(false);
+  const [isTemplate, setIsTemplate] = useState(false);
+  const [tplToggling, setTplToggling] = useState(false);
 
   // PDF rendering
   const canvasRefs  = useRef<(HTMLCanvasElement | null)[]>([]);
@@ -138,11 +140,12 @@ export default function ContractZoneEditor() {
     (async () => {
       const { data } = await supabase
         .from("contracts")
-        .select("title, pdf_data, zones")
+        .select("title, pdf_data, zones, is_template")
         .eq("id", id)
         .single();
       if (!data) { router.push("/admin/contracts"); return; }
       setTitle(data.title as string);
+      setIsTemplate(!!(data as { is_template?: boolean }).is_template);
       const rawZones = data.zones;
       setZones(Array.isArray(rawZones) ? rawZones as Zone[] : []);
       setLoading(false);
@@ -236,6 +239,17 @@ export default function ContractZoneEditor() {
     setTimeout(() => setSaved(false), 2000);
   };
 
+  // ── 設為公版 ───────────────────────────────────────────────────────────────
+
+  const toggleTemplate = async () => {
+    setTplToggling(true);
+    const next = !isTemplate;
+    const { error } = await supabase.from("contracts").update({ is_template: next }).eq("id", id);
+    setTplToggling(false);
+    if (error) { alert("更新失敗：" + error.message); return; }
+    setIsTemplate(next);
+  };
+
   // ═══════════════════════════════════════════════════════════════════════════
   // Render
   // ═══════════════════════════════════════════════════════════════════════════
@@ -262,6 +276,19 @@ export default function ContractZoneEditor() {
           className="text-xs text-blue-600 hover:underline hidden sm:block">
           預覽簽署頁 ↗
         </a>
+        {/* 設為公版 */}
+        <button
+          onClick={toggleTemplate}
+          disabled={tplToggling}
+          title={isTemplate ? "取消公版" : "設為公版"}
+          className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+            isTemplate
+              ? "bg-amber-400 hover:bg-amber-500 text-white"
+              : "bg-slate-100 hover:bg-slate-200 text-slate-600"
+          }`}>
+          <Star className={`w-4 h-4 ${isTemplate ? "fill-white" : ""}`} />
+          <span className="hidden sm:inline">{isTemplate ? "公版" : "設為公版"}</span>
+        </button>
         <button onClick={saveZones} disabled={saving}
           className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
             saved
