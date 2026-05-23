@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   Plus, Pencil, Trash2, Sparkles, Eye, EyeOff,
   Newspaper, Search, RefreshCw, Star, StarOff,
-  Calendar, Filter, ExternalLink,
+  Calendar, Filter, ExternalLink, Bot,
 } from "lucide-react";
 
 type Post = {
@@ -64,7 +64,7 @@ function AIGenerateDialog({ onClose, onSuccess }: { onClose: () => void; onSucce
         category:     json.category || category,
         tags:         json.tags || [],
         reading_time: json.reading_time || 5,
-        cover_image:  "",
+        cover_image:  json.cover_image || "",
         status:       "published",
         published_at: new Date().toISOString(),
         ai_generated: true,
@@ -142,6 +142,8 @@ export default function AdminBlogPage() {
   const [search,     setSearch]     = useState("");
   const [showAI,     setShowAI]     = useState(false);
   const [deleting,   setDeleting]   = useState<string | null>(null);
+  const [cronRunning, setCronRunning] = useState(false);
+  const [cronResult,  setCronResult]  = useState<{ generated: number; total: number; used_tavily: boolean; used_pexels: boolean } | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -180,6 +182,31 @@ export default function AdminBlogPage() {
     setDeleting(null);
   };
 
+  const triggerCron = async () => {
+    if (!confirm("確定要立即觸發今日自動生成3篇旅遊文章嗎？約需1-2分鐘。")) return;
+    setCronRunning(true); setCronResult(null);
+    try {
+      const secret = process.env.NEXT_PUBLIC_BLOG_CRON_SECRET || "";
+      const res = await fetch("/api/blog/cron", {
+        method: "POST",
+        headers: { "x-cron-secret": secret },
+      });
+      const json = await res.json() as { generated?: number; total?: number; used_tavily?: boolean; used_pexels?: boolean; error?: string };
+      if (!res.ok) throw new Error(json.error || "觸發失敗");
+      setCronResult({
+        generated:   json.generated ?? 0,
+        total:       json.total ?? 3,
+        used_tavily: json.used_tavily ?? false,
+        used_pexels: json.used_pexels ?? false,
+      });
+      await load();
+    } catch (e: unknown) {
+      alert(e instanceof Error ? e.message : "觸發失敗，請確認 BLOG_CRON_SECRET 設定");
+    } finally {
+      setCronRunning(false);
+    }
+  };
+
   const counts = {
     all:       posts.length,
     published: posts.filter(p => p.status === "published").length,
@@ -191,16 +218,35 @@ export default function AdminBlogPage() {
     <div className="p-4 md:p-6 space-y-5">
       {showAI && <AIGenerateDialog onClose={() => setShowAI(false)} onSuccess={load} />}
 
+      {/* Cron result notification */}
+      {cronResult && (
+        <div className="flex items-center gap-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-700 rounded-xl px-4 py-3 text-sm text-emerald-700 dark:text-emerald-300">
+          <Bot className="w-4 h-4 shrink-0" />
+          <span>
+            自動生成完成！成功 <strong>{cronResult.generated}</strong> / {cronResult.total} 篇
+            {cronResult.used_tavily && " · 🌐 Tavily 熱門話題"}
+            {cronResult.used_pexels && " · 🖼️ Pexels 封面圖片"}
+          </span>
+          <button onClick={() => setCronResult(null)} className="ml-auto text-emerald-500 hover:text-emerald-700">✕</button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center gap-3">
           <Newspaper className="w-6 h-6 text-amber-500 shrink-0" />
           <div>
             <h1 className="text-xl font-bold text-slate-900 dark:text-white">旅遊誌管理</h1>
-            <p className="text-xs text-slate-400 mt-0.5">發布旅遊文章 · AI 自動生文</p>
+            <p className="text-xs text-slate-400 mt-0.5">發布旅遊文章 · AI 自動生文 · 每日 09:00 自動產出</p>
           </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <button onClick={triggerCron} disabled={cronRunning}
+            className="flex items-center gap-1.5 bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white px-3.5 py-2 rounded-xl text-sm font-medium transition-colors">
+            {cronRunning ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Bot className="w-4 h-4" />}
+            <span className="hidden sm:inline">{cronRunning ? "生成中..." : "觸發今日3篇"}</span>
+            <span className="sm:hidden">{cronRunning ? "生成中" : "3篇"}</span>
+          </button>
           <button onClick={() => setShowAI(true)}
             className="flex items-center gap-1.5 bg-amber-500 hover:bg-amber-600 text-white px-3.5 py-2 rounded-xl text-sm font-medium transition-colors">
             <Sparkles className="w-4 h-4" />

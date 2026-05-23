@@ -19,17 +19,35 @@ JSON 欄位：
 - title: 吸引人的文章標題（20-40字）
 - slug: 英文網址（全小寫、連字符、無空格，長度10-40字元）
 - excerpt: 精彩摘要（50-100字）
-- content: 文章正文（至少600字，支援 ## 段落標題、> 引言、- 列表）
+- content: 文章正文（至少700字，支援 ## 段落標題、> 引言、- 列表）
+- cover_keywords: 3-5個英文關鍵字，用於搜尋封面圖片（例：tokyo autumn leaves temple japan）
 - category: 分類（japan / asia / europe / southeast_asia / china / tips / food / travel 擇一）
-- tags: 標籤陣列（3-6個字串）
-- reading_time: 預估閱讀分鐘數（整數）
+- tags: 標籤陣列（4-7個繁體中文字串）
+- reading_time: 預估閱讀分鐘數（整數，通常5-10）
 
 內容要求：
-1. 文章分4-6個段落，每段有 ## 標題
-2. 包含實用資訊（交通/住宿/美食/行程建議）
-3. 加入2-3個 > 引言句，引言要有畫面感
-4. 語氣親切，像在和朋友分享旅行故事
-5. 最後一段是「暖心旅行小叮嚀」`;
+1. 文章分5-7個段落，每段有 ## 標題
+2. 包含實用資訊（交通、住宿、美食、行程建議、預算參考）
+3. 加入3-4個 > 引言句，引言要有強烈畫面感
+4. 至少一個 - 列表（例如必吃清單、行程安排）
+5. 語氣親切，像在和朋友分享旅行故事
+6. 最後一段是「暖心旅行小叮嚀」，給旅客實用建議`;
+
+// ── Pexels：取得封面圖片 URL ─────────────────────────────────────────────────
+async function getPexelsImage(keywords: string, pexelsKey: string): Promise<string> {
+  const res = await fetch(
+    `https://api.pexels.com/v1/search?query=${encodeURIComponent(keywords)}&per_page=15&orientation=landscape&page=1`,
+    { headers: { Authorization: pexelsKey } }
+  );
+  if (!res.ok) return "";
+  const data = await res.json() as {
+    photos?: Array<{ src?: { large2x?: string; large?: string; original?: string } }>;
+  };
+  const photos = data.photos || [];
+  if (photos.length === 0) return "";
+  const pick = photos[Math.floor(Math.random() * Math.min(photos.length, 10))];
+  return pick.src?.large2x || pick.src?.large || pick.src?.original || "";
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -38,8 +56,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "請提供文章主題" }, { status: 400 });
     }
 
-    const apiKey  = process.env.OPENAI_API_KEY;
-    const baseUrl = process.env.OPENAI_BASE_URL || "https://openrouter.ai/api/v1";
+    const apiKey    = process.env.OPENAI_API_KEY;
+    const baseUrl   = process.env.OPENAI_BASE_URL || "https://openrouter.ai/api/v1";
+    const pexelsKey = process.env.PEXELS_API_KEY || "";
     if (!apiKey) {
       return NextResponse.json({ error: "未設定 OPENAI_API_KEY" }, { status: 500 });
     }
@@ -96,6 +115,18 @@ export async function POST(req: NextRequest) {
     }
     // Append timestamp to avoid slug collision
     article.slug = `${article.slug}-${Date.now().toString(36)}`;
+
+    // Fetch cover image from Pexels if available
+    let coverImage = "";
+    if (pexelsKey) {
+      const coverKeywords = (article.cover_keywords as string) || `${topic} travel`;
+      try {
+        coverImage = await getPexelsImage(coverKeywords, pexelsKey);
+      } catch (e) {
+        console.warn("[blog/generate] Pexels image failed:", e);
+      }
+    }
+    article.cover_image = coverImage;
 
     return NextResponse.json(article);
   } catch (e) {
