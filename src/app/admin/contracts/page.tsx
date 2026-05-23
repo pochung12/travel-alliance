@@ -108,6 +108,15 @@ export default function ContractsPage() {
   const [viewItem,     setViewItem]     = useState<ContractListItem | null>(null);
   const [viewSig,      setViewSig]      = useState<string | null>(null);
   const [viewPdfUrl,   setViewPdfUrl]   = useState<string | null>(null);
+  // zones 模式：PDF.js 渲染 + 簽名疊加
+  const [viewPdfData,  setViewPdfData]  = useState<string | null>(null);
+  const [viewZones,    setViewZones]    = useState<Zone[]>([]);
+  const [viewSigsA,    setViewSigsA]    = useState<Record<string, string>>({});
+  const [viewSigsB,    setViewSigsB]    = useState<Record<string, string>>({});
+  const [viewFields,   setViewFields]   = useState<Record<string, string>>({});
+  const [viewNumPages, setViewNumPages] = useState(0);
+  const [viewPdfReady, setViewPdfReady] = useState(false);
+  const viewCanvasRefs = useRef<(HTMLCanvasElement | null)[]>([]);
 
   // ── 公版列表（from contracts state）──
   const templates = contracts.filter(c => c.is_template);
@@ -243,18 +252,85 @@ export default function ContractsPage() {
     return `https://line.me/R/share?text=${text}`;
   };
 
+  // ── 查看 PDF.js 渲染（zones 模式）──────────────────────────────────────────
+
+  const renderViewPdf = async (pdfDataUrl: string) => {
+    setViewPdfReady(false);
+    const pdfjsLib = await import("pdfjs-dist");
+    pdfjsLib.GlobalWorkerOptions.workerSrc =
+      `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+    let b64 = pdfDataUrl;
+    const ci = b64.indexOf(","); if (ci !== -1) b64 = b64.slice(ci + 1);
+    const bin = atob(b64); const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const pdf = await (pdfjsLib as any).getDocument({ data: arr }).promise;
+    setViewNumPages(pdf.numPages);
+    for (let p = 1; p <= pdf.numPages; p++) {
+      await new Promise<void>(r => setTimeout(r, 80));
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const page = await (pdf as any).getPage(p);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const vp = (page as any).getViewport({ scale: 1.5 });
+      const canvas = viewCanvasRefs.current[p - 1];
+      if (canvas) {
+        canvas.width  = vp.width;
+        canvas.height = vp.height;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (page as any).render({ canvasContext: canvas.getContext("2d")!, viewport: vp }).promise;
+      }
+    }
+    setViewPdfReady(true);
+  };
+
+  // viewPdfData 設定後（zones 模式）→ 等 React commit canvas 後渲染
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!viewPdfData) return;
+    const t = setTimeout(() => { renderViewPdf(viewPdfData); }, 60);
+    return () => clearTimeout(t);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewPdfData]);
+
   // ── 查看合約 ─────────────────────────────────────────────────────────────
 
   const openView = async (c: ContractListItem) => {
     setViewItem(c);
     setViewSig(null);
     setViewPdfUrl(null);
+    setViewPdfData(null);
+    setViewZones([]);
+    setViewSigsA({});
+    setViewSigsB({});
+    setViewFields({});
+    setViewNumPages(0);
+    setViewPdfReady(false);
     setShowView(true);
-    const { data } = await supabase.from("contracts").select("signature_image,pdf_data,pdf_name").eq("id", c.id).single();
-    if (data?.signature_image) setViewSig(data.signature_image as string);
-    if (data?.pdf_data) {
+
+    const { data } = await supabase.from("contracts")
+      .select("signature_image,pdf_data,pdf_name,zones,zone_responses,zone_responses_a")
+      .eq("id", c.id).single();
+    if (!data) return;
+
+    const zones = Array.isArray(data.zones) ? data.zones as Zone[] : [];
+    const zrA = (data.zone_responses_a ?? null) as { sigs?: Record<string, string>; fields?: Record<string, string> } | null;
+    const zrB = (data.zone_responses ?? null)   as { sigs?: Record<string, string>; fields?: Record<string, string> } | null;
+    setViewZones(zones);
+    setViewSigsA(zrA?.sigs ?? {});
+    setViewSigsB(zrB?.sigs ?? {});
+    setViewFields({ ...(zrB?.fields ?? {}), ...(zrA?.fields ?? {}) });
+
+    if (data.signature_image) setViewSig(data.signature_image as string);
+    if (!data.pdf_data) return;
+
+    const pdfDataUrl = data.pdf_data as string;
+    if (zones.length > 0) {
+      // zones 模式：設定後 useEffect 會在 60ms 後呼叫 renderViewPdf
+      setViewPdfData(pdfDataUrl);
+    } else {
+      // 舊版（無 zones）：用 iframe
       try {
-        let b64 = data.pdf_data as string;
+        let b64 = pdfDataUrl;
         const ci = b64.indexOf(","); if (ci !== -1) b64 = b64.slice(ci + 1);
         const bin = atob(b64); const arr = new Uint8Array(bin.length);
         for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
@@ -266,7 +342,9 @@ export default function ContractsPage() {
   const closeView = () => {
     setShowView(false);
     if (viewPdfUrl) { URL.revokeObjectURL(viewPdfUrl); setViewPdfUrl(null); }
-    setViewItem(null); setViewSig(null);
+    setViewItem(null); setViewSig(null); setViewPdfData(null);
+    setViewZones([]); setViewSigsA({}); setViewSigsB({}); setViewFields({});
+    setViewNumPages(0); setViewPdfReady(false);
   };
 
   // ── 刪除 ─────────────────────────────────────────────────────────────────
@@ -746,7 +824,92 @@ export default function ContractsPage() {
                   </div>
                 </div>
               </div>
-              {viewPdfUrl && (
+              {/* ── zones 模式：PDF.js + 簽名疊加 ── */}
+              {viewPdfData && viewZones.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                      合約 PDF{(viewItem.signed_at_a || viewItem.status === "signed") ? "（含簽名）" : ""}
+                    </p>
+                    {!viewPdfReady
+                      ? <span className="text-xs text-slate-400 flex items-center gap-1">
+                          <span className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin inline-block" /> 渲染中…
+                        </span>
+                      : <span className="text-xs text-slate-400">共 {viewNumPages} 頁</span>}
+                  </div>
+                  <div className="space-y-2">
+                    {Array.from({ length: viewNumPages }, (_, i) => i + 1).map(pageNum => (
+                      <div key={pageNum} className="relative rounded-xl overflow-hidden shadow-sm border border-slate-200 dark:border-slate-600">
+                        <canvas
+                          ref={el => { viewCanvasRefs.current[pageNum - 1] = el; }}
+                          className="w-full"
+                          style={{ display: "block" }}
+                        />
+                        {/* Zone overlays（全唯讀，甲乙雙方簽名一起顯示） */}
+                        {viewPdfReady && viewZones.filter(z => z.page === pageNum).map(zone => {
+                          const isSignA  = zone.type === "sign_a";
+                          const isSigB   = zone.type === "sig_b";
+                          const isStatic = zone.type === "stamp_a" || zone.type === "sig_a";
+                          const sigA     = viewSigsA[zone.id];
+                          const sigB     = viewSigsB[zone.id];
+                          const fieldVal = viewFields[zone.id];
+                          const hasSig   = isStatic ? !!zone.preset_image
+                            : isSignA ? !!sigA : isSigB ? !!sigB : !!fieldVal;
+                          return (
+                            <div
+                              key={zone.id}
+                              className={`absolute border-2 rounded overflow-hidden ${
+                                hasSig ? "border-emerald-400" : "border-dashed border-slate-300 bg-slate-50/60"
+                              }`}
+                              style={{ left: `${zone.x}%`, top: `${zone.y}%`, width: `${zone.w}%`, height: `${zone.h}%` }}
+                            >
+                              {/* 靜態印章 / 甲方預設簽名 */}
+                              {isStatic && zone.preset_image && (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={zone.preset_image} alt="" className="w-full h-full object-contain pointer-events-none" />
+                              )}
+                              {/* 甲方手寫簽名 (sign_a) */}
+                              {isSignA && (
+                                sigA
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  ? <img src={sigA} alt="甲方簽名" className="w-full h-full object-contain pointer-events-none" />
+                                  : <div className="flex items-center justify-center h-full text-[10px] text-indigo-400 opacity-60">甲方待簽</div>
+                              )}
+                              {/* 乙方手寫簽名 (sig_b) */}
+                              {isSigB && (
+                                sigB
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  ? <img src={sigB} alt="乙方簽名" className="w-full h-full object-contain pointer-events-none" />
+                                  : <div className="flex items-center justify-center h-full text-[10px] text-blue-400 opacity-60">乙方待簽</div>
+                              )}
+                              {/* 簽署日期 */}
+                              {zone.type === "date_b" && (
+                                <div className="flex items-center justify-center h-full text-[11px] text-violet-700 font-medium px-1 pointer-events-none">
+                                  {fieldVal || ""}
+                                </div>
+                              )}
+                              {/* 自訂欄位 */}
+                              {zone.type === "field" && (
+                                <div className="flex items-center h-full text-xs text-slate-700 px-1 pointer-events-none leading-tight">
+                                  {fieldVal || zone.preset_text || zone.label}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
+                    {/* 若 viewNumPages = 0（尚未渲染完）顯示 loading placeholder */}
+                    {viewNumPages === 0 && (
+                      <div className="flex items-center justify-center py-16 text-slate-400 text-sm gap-2 border border-slate-200 dark:border-slate-600 rounded-xl">
+                        <span className="w-5 h-5 border-2 border-blue-400 border-t-transparent rounded-full animate-spin inline-block" /> PDF 載入中…
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+              {/* ── 舊版（無 zones）：iframe ── */}
+              {viewPdfUrl && viewZones.length === 0 && (
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">合約 PDF</p>
@@ -758,7 +921,8 @@ export default function ContractsPage() {
                   <iframe src={viewPdfUrl} className="w-full rounded-xl border border-slate-200 dark:border-slate-600" style={{ height: 400 }} title="合約 PDF" />
                 </div>
               )}
-              {viewItem.status === "signed" && (
+              {/* 舊版手寫簽名（無 zones 且已簽署） */}
+              {viewZones.length === 0 && viewItem.status === "signed" && (
                 <div>
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">手寫簽名</p>
                   {viewSig
