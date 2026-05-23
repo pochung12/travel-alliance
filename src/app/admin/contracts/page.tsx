@@ -4,8 +4,9 @@ import { supabase, Tour, Customer, Contract, ContractStatus } from "@/lib/supaba
 import {
   Plus, Search, FilePen, Copy, Eye, Trash2,
   CheckCircle2, Clock, X, Upload, ExternalLink,
-  Download, AlertCircle,
+  Download, AlertCircle, Settings2,
 } from "lucide-react";
+import Link from "next/link";
 
 // ── 類型 ────────────────────────────────────────────────────────────────────
 
@@ -314,7 +315,11 @@ export default function ContractsPage() {
                     )}
                     <p className="text-slate-400 dark:text-slate-500">建立 {fmtDate(c.created_at)}</p>
                   </div>
-                  <div className="flex gap-2 pt-1">
+                  <div className="flex gap-2 pt-1 flex-wrap">
+                    <Link href={`/admin/contracts/${c.id}`}
+                      className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 hover:bg-purple-100 dark:hover:bg-purple-800/40 transition-colors">
+                      <Settings2 className="w-3 h-3" /> 設定欄位
+                    </Link>
                     <button onClick={() => copyLink(c.sign_token)}
                       className="flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-800/40 transition-colors">
                       {copied === c.sign_token ? <><CheckCircle2 className="w-3 h-3" /> 已複製</> : <><Copy className="w-3 h-3" /> 複製連結</>}
@@ -380,6 +385,10 @@ export default function ContractsPage() {
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center justify-center gap-1.5">
+                            <Link href={`/admin/contracts/${c.id}`} title="設定簽名欄位"
+                              className="p-1.5 rounded-lg bg-purple-50 text-purple-600 hover:bg-purple-100 dark:bg-purple-900/30 dark:text-purple-400 dark:hover:bg-purple-800/40 transition-colors">
+                              <Settings2 className="w-4 h-4" />
+                            </Link>
                             <button onClick={() => copyLink(c.sign_token)} title="複製簽署連結"
                               className={`p-1.5 rounded-lg transition-colors ${
                                 copied === c.sign_token

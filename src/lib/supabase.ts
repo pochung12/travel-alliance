@@ -195,6 +195,8 @@ export interface Contract {
   signature_image?: string | null; // base64 PNG
   signer_name: string;
   notes: string;
+  zones?: unknown[];              // Zone[] — 定義在 admin/contracts/[id]/page.tsx
+  zone_responses?: unknown | null; // {sigs, fields}
   created_at: string;
   // joined
   tour?: { name: string; destination?: string } | null;

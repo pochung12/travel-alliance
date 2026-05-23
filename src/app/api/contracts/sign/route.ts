@@ -3,10 +3,9 @@ import { supabase } from "@/lib/supabase";
 
 export async function POST(req: NextRequest) {
   try {
-    const { token, signer_name, signature_image } = await req.json();
+    const { token, signer_name, signature_image, zone_responses } = await req.json();
 
-    if (!token)           return NextResponse.json({ error: "缺少 token" },     { status: 400 });
-    if (!signature_image) return NextResponse.json({ error: "缺少簽名圖片" },   { status: 400 });
+    if (!token) return NextResponse.json({ error: "缺少 token" }, { status: 400 });
 
     // 查找合約
     const { data: contract, error: findErr } = await supabase
@@ -30,6 +29,7 @@ export async function POST(req: NextRequest) {
         signed_at:       new Date().toISOString(),
         signature_image: signature_image,
         signer_name:     (signer_name || "").trim(),
+        ...(zone_responses ? { zone_responses } : {}),
       })
       .eq("id", contract.id);
 
