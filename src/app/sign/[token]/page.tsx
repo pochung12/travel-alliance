@@ -105,7 +105,15 @@ export default function SignPage() {
       // Pre-fill field zones with preset_text
       if (Array.isArray(c.zones)) {
         const fv: Record<string, string> = {};
-        c.zones.forEach((z: Zone) => { if (z.type === "field" && z.preset_text) fv[z.id] = z.preset_text; });
+        const today = new Date();
+        const rocYear = today.getFullYear() - 1911;
+        const mm = String(today.getMonth() + 1).padStart(2, "0");
+        const dd = String(today.getDate()).padStart(2, "0");
+        const todayStr = `民國 ${rocYear} 年 ${mm} 月 ${dd} 日`;
+        c.zones.forEach((z: Zone) => {
+          if (z.type === "date_b") fv[z.id] = todayStr;
+          if (z.type === "field" && z.preset_text) fv[z.id] = z.preset_text;
+        });
         setZoneFields(fv);
       }
       if (c.status === "signed") { setPageState("signed"); return; }
@@ -444,8 +452,20 @@ export default function SignPage() {
                               </div>
                             )
                           )}
-                          {/* 自訂欄位 → input */}
-                          {zone.type === "field" && (
+                          {/* 簽署日期 → 自動帶入，唯讀 */}
+                          {zone.type === "date_b" && (
+                            <div className="flex items-center justify-center h-full text-[11px] text-violet-700 font-medium px-1 select-none pointer-events-none">
+                              {zoneFields[zone.id] || ""}
+                            </div>
+                          )}
+                          {/* 自訂欄位（甲方預填）→ 唯讀顯示 */}
+                          {zone.type === "field" && (zone.signer ?? "b") === "a" && (
+                            <div className="flex items-center h-full text-xs text-slate-700 px-1 select-none pointer-events-none leading-tight">
+                              {zoneFields[zone.id] || zone.preset_text || zone.label}
+                            </div>
+                          )}
+                          {/* 自訂欄位（乙方填寫）→ 可編輯 input */}
+                          {zone.type === "field" && (zone.signer ?? "b") !== "a" && (
                             <input
                               className="w-full h-full bg-transparent text-xs text-slate-700 px-1 py-0.5 border-none focus:outline-none"
                               placeholder={zone.label}
