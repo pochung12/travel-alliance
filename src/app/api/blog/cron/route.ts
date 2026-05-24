@@ -215,7 +215,7 @@ async function generateArticle(
     body: JSON.stringify({
       model:       "anthropic/claude-sonnet-4-5",
       temperature: 0.85,
-      max_tokens:  4000,
+      max_tokens:  6000,
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user",   content: `請以「${topic}」為主題撰寫一篇旅遊文章。分類：${category}` },
