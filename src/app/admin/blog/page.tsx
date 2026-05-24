@@ -1,11 +1,11 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import Link from "next/link";
 import {
   Plus, Pencil, Trash2, Sparkles, Eye, EyeOff,
   Newspaper, Search, RefreshCw, Star, StarOff,
-  Calendar, Filter, ExternalLink, Bot,
+  Calendar, Filter, ExternalLink, Bot, Camera,
 } from "lucide-react";
 
 type Post = {
@@ -37,25 +37,70 @@ function fmtDate(d: string | null) {
 
 // ── AI Generate Dialog ───────────────────────────────────────────────────────
 function AIGenerateDialog({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => void }) {
-  const [topic,    setTopic]    = useState("");
-  const [category, setCategory] = useState("travel");
-  const [loading,  setLoading]  = useState(false);
-  const [error,    setError]    = useState("");
-  const [progress, setProgress] = useState("");
+  const [mode,        setMode]        = useState<"topic" | "photo">("topic");
+  const [topic,       setTopic]       = useState("");
+  const [destination, setDestination] = useState("");
+  const [category,    setCategory]    = useState("travel");
+  const [photos,      setPhotos]      = useState<string[]>([]);
+  const [loading,     setLoading]     = useState(false);
+  const [error,       setError]       = useState("");
+  const [progress,    setProgress]    = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 壓縮圖片至最大 1200px，JPEG 0.82
+  const compressImage = (file: File): Promise<string> =>
+    new Promise(resolve => {
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        const maxDim = 1200;
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) { height = Math.round(height * maxDim / width); width = maxDim; }
+          else { width = Math.round(width * maxDim / height); height = maxDim; }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width; canvas.height = height;
+        canvas.getContext("2d")!.drawImage(img, 0, 0, width, height);
+        URL.revokeObjectURL(url);
+        resolve(canvas.toDataURL("image/jpeg", 0.82));
+      };
+      img.src = url;
+    });
+
+  const handleFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setProgress("壓縮照片中...");
+    const newPhotos: string[] = [];
+    for (const file of Array.from(files).slice(0, 5 - photos.length)) {
+      if (!file.type.startsWith("image/")) continue;
+      newPhotos.push(await compressImage(file));
+    }
+    setPhotos(prev => [...prev, ...newPhotos].slice(0, 5));
+    setProgress("");
+  };
+
+  const canGenerate = mode === "topic"
+    ? topic.trim().length > 0
+    : photos.length > 0;
 
   const generate = async () => {
-    if (!topic.trim()) { setError("請輸入主題"); return; }
+    if (!canGenerate) { setError(mode === "topic" ? "請輸入主題" : "請上傳至少1張照片"); return; }
     setLoading(true); setError(""); setProgress("正在呼叫 AI 生成文章...");
     try {
+      const body = mode === "topic"
+        ? { topic, category }
+        : { destination, category, images: photos };
+
       const res = await fetch("/api/blog/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ topic, category }),
+        body: JSON.stringify(body),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "生成失敗");
       setProgress("儲存文章中...");
-      // Insert to Supabase
+
       const { error: dbErr } = await supabase.from("blog_posts").insert({
         title:        json.title,
         slug:         json.slug,
@@ -68,11 +113,10 @@ function AIGenerateDialog({ onClose, onSuccess }: { onClose: () => void; onSucce
         status:       "published",
         published_at: new Date().toISOString(),
         ai_generated: true,
-        ai_prompt:    topic,
+        ai_prompt:    mode === "photo" ? `📷 ${destination || "照片生成"}` : topic,
       });
       if (dbErr) throw new Error(dbErr.message);
-      onSuccess();
-      onClose();
+      onSuccess(); onClose();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "生成失敗");
     } finally {
@@ -83,28 +127,99 @@ function AIGenerateDialog({ onClose, onSuccess }: { onClose: () => void; onSucce
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-4">
-        <div className="flex items-center gap-3 mb-2">
-          <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center">
+      <div className="relative bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-lg p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+
+        {/* Header */}
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center shrink-0">
             <Sparkles className="w-5 h-5 text-white" />
           </div>
           <div>
             <h2 className="font-bold text-lg text-slate-900 dark:text-white">AI 自動生成文章</h2>
-            <p className="text-xs text-slate-400">輸入主題，雅婷幫你自動撰寫旅遊文章</p>
+            <p className="text-xs text-slate-400">輸入主題或上傳照片，雅婷幫你撰寫旅遊文章</p>
           </div>
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">主題 / 目的地</label>
-          <input
-            value={topic}
-            onChange={e => setTopic(e.target.value)}
-            placeholder="例如：東京秋季賞楓五天四夜行程"
-            className="w-full border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-2.5 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400"
-            onKeyDown={e => e.key === "Enter" && generate()}
-          />
+        {/* Mode tabs */}
+        <div className="flex gap-1 bg-slate-100 dark:bg-slate-700 p-1 rounded-xl">
+          {([["topic", "✍️ 主題生成"], ["photo", "📷 照片生成"]] as const).map(([m, label]) => (
+            <button key={m} onClick={() => { setMode(m); setError(""); }}
+              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${mode === m ? "bg-white dark:bg-slate-600 text-slate-900 dark:text-white shadow-sm" : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"}`}>
+              {label}
+            </button>
+          ))}
         </div>
 
+        {/* ── 主題模式 ── */}
+        {mode === "topic" && (
+          <div>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">主題 / 目的地</label>
+            <input value={topic} onChange={e => setTopic(e.target.value)}
+              placeholder="例如：東京秋季賞楓五天四夜行程"
+              className="w-full border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-2.5 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400"
+              onKeyDown={e => e.key === "Enter" && generate()} />
+          </div>
+        )}
+
+        {/* ── 照片模式 ── */}
+        {mode === "photo" && (
+          <div className="space-y-3">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">旅遊地點 / 城市（選填）</label>
+              <input value={destination} onChange={e => setDestination(e.target.value)}
+                placeholder="例如：日本京都、泰國清邁、義大利羅馬"
+                className="w-full border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-2.5 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-400" />
+            </div>
+
+            {/* Upload zone */}
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+                上傳照片
+                <span className="ml-1 text-xs font-normal text-slate-400">最多5張 · AI 根據照片撰寫文章 · 第一張為封面</span>
+              </label>
+              {photos.length < 5 && (
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={e => { e.preventDefault(); handleFiles(e.dataTransfer.files); }}
+                  className="border-2 border-dashed border-slate-200 dark:border-slate-600 rounded-xl p-5 text-center cursor-pointer hover:border-amber-400 hover:bg-amber-50/30 dark:hover:bg-amber-900/10 transition-colors">
+                  <Camera className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                  <p className="text-sm text-slate-500 dark:text-slate-400">點擊選取或拖曳照片至此</p>
+                  <p className="text-xs text-slate-300 mt-0.5">支援 JPG、PNG、HEIC、WEBP</p>
+                  <input ref={fileInputRef} type="file" accept="image/*" multiple className="hidden"
+                    onChange={e => handleFiles(e.target.files)} />
+                </div>
+              )}
+
+              {/* Previews */}
+              {photos.length > 0 && (
+                <div className="flex gap-2 mt-2 flex-wrap">
+                  {photos.map((src, i) => (
+                    <div key={i} className="relative w-20 h-20 rounded-xl overflow-hidden group shrink-0">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={src} alt="" className="w-full h-full object-cover" />
+                      <button onClick={() => setPhotos(p => p.filter((_, j) => j !== i))}
+                        className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-lg font-light">
+                        ✕
+                      </button>
+                      {i === 0 && (
+                        <span className="absolute bottom-0 inset-x-0 bg-amber-500/90 text-white text-[9px] text-center py-0.5 font-medium">封面</span>
+                      )}
+                    </div>
+                  ))}
+                  {photos.length < 5 && (
+                    <button onClick={() => fileInputRef.current?.click()}
+                      className="w-20 h-20 border-2 border-dashed border-slate-200 dark:border-slate-600 rounded-xl flex items-center justify-center text-slate-300 hover:border-amber-400 hover:text-amber-400 transition-colors shrink-0">
+                      <Plus className="w-6 h-6" />
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Category (shared) */}
         <div>
           <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">分類</label>
           <select value={category} onChange={e => setCategory(e.target.value)}
@@ -115,7 +230,7 @@ function AIGenerateDialog({ onClose, onSuccess }: { onClose: () => void; onSucce
           </select>
         </div>
 
-        {error   && <p className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">{error}</p>}
+        {error    && <p className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">{error}</p>}
         {progress && <p className="text-sm text-amber-600 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 rounded-lg flex items-center gap-2"><RefreshCw className="w-3.5 h-3.5 animate-spin" />{progress}</p>}
 
         <div className="flex gap-3 pt-1">
@@ -123,10 +238,10 @@ function AIGenerateDialog({ onClose, onSuccess }: { onClose: () => void; onSucce
             className="flex-1 px-4 py-2.5 border border-slate-200 dark:border-slate-600 rounded-xl text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors disabled:opacity-50">
             取消
           </button>
-          <button onClick={generate} disabled={loading || !topic.trim()}
+          <button onClick={generate} disabled={loading || !canGenerate}
             className="flex-1 px-4 py-2.5 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white rounded-xl text-sm font-medium transition-colors flex items-center justify-center gap-2">
-            {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-            {loading ? "生成中..." : "開始生成"}
+            {loading ? <RefreshCw className="w-4 h-4 animate-spin" /> : (mode === "photo" ? <Camera className="w-4 h-4" /> : <Sparkles className="w-4 h-4" />)}
+            {loading ? "生成中..." : mode === "photo" ? "分析照片並生成" : "開始生成"}
           </button>
         </div>
       </div>
