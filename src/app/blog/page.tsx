@@ -218,11 +218,6 @@ export default function BlogPage() {
               <span className={`text-xs font-bold px-2.5 py-1 rounded uppercase tracking-wider ${CAT_BADGE[featured.category] || CAT_BADGE.travel}`}>
                 {CAT_LABEL[featured.category] ?? featured.category}
               </span>
-              {featured.ai_generated && (
-                <span className="flex items-center gap-1 text-amber-300 text-xs bg-amber-500/20 px-2 py-0.5 rounded-full border border-amber-400/30">
-                  <Sparkles className="w-3 h-3" /> AI 生成
-                </span>
-              )}
               <span className="text-white/60 text-xs flex items-center gap-1">
                 <Clock className="w-3 h-3" /> {featured.reading_time} 分鐘
               </span>
@@ -276,11 +271,6 @@ export default function BlogPage() {
               <div className="relative h-48 overflow-hidden bg-slate-100">
                 <img src={coverOf(p)} alt={p.title}
                   className="card-img w-full h-full object-cover group-hover:scale-105" />
-                {p.ai_generated && (
-                  <div className="absolute top-3 right-3 flex items-center gap-1 text-[10px] bg-black/50 text-amber-300 px-2 py-1 rounded-full backdrop-blur-sm">
-                    <Sparkles className="w-2.5 h-2.5" /> AI
-                  </div>
-                )}
               </div>
               {/* Body */}
               <div className="flex-1 p-5 flex flex-col">
