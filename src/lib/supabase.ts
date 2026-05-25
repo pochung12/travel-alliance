@@ -74,6 +74,7 @@ export interface TourCost {
   unit_price: number;
   quantity: number;
   notes: string;
+  reference_url?: string;
 }
 
 export interface TourCostVersion {

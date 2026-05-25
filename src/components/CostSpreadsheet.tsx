@@ -1,7 +1,7 @@
 "use client";
 import { useState, useCallback, useEffect, useRef } from "react";
 import { supabase, TourCost, TourCostVersion, COST_CATEGORIES, CostCategory } from "@/lib/supabase";
-import { Save, Plus, Trash2, Settings, X, Camera, Upload, Check, ChevronDown, Pencil, Copy } from "lucide-react";
+import { Save, Plus, Trash2, Settings, X, Camera, Upload, Check, ChevronDown, Pencil, Copy, ExternalLink } from "lucide-react";
 
 interface CustomColumn {
   id: string;
@@ -16,6 +16,7 @@ interface Row {
   unit_price: number;
   quantity: number;
   notes: string;
+  reference_url: string;
   custom_data: Record<string, string | number>;
   dirty?: boolean;
   isNew?: boolean;
@@ -133,7 +134,9 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
     const dbRows: Row[] = (data || []).map((d: TourCost & { custom_data?: Record<string, string | number> }) => ({
       id: d.id, category: d.category as CostCategory,
       description: d.description, unit_price: d.unit_price,
-      quantity: d.quantity, notes: d.notes, custom_data: d.custom_data || {},
+      quantity: d.quantity, notes: d.notes,
+      reference_url: d.reference_url || "",
+      custom_data: d.custom_data || {},
     }));
 
     const existingCats = new Set(dbRows.map(r => r.category));
@@ -141,7 +144,7 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
       .filter(c => !existingCats.has(c.key))
       .map(c => ({
         category: c.key, description: "", unit_price: 0,
-        quantity: pax || 1, notes: "", custom_data: {}, isNew: true, dirty: false,
+        quantity: pax || 1, notes: "", reference_url: "", custom_data: {}, isNew: true, dirty: false,
       }));
     setRows([...dbRows, ...defaultRows]);
     setLastSaved(null);
@@ -166,7 +169,8 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
           tour_id: tourId, version_id: newVer.id,
           category: r.category, description: r.description,
           unit_price: r.unit_price, quantity: r.quantity,
-          notes: r.notes, custom_data: r.custom_data || {},
+          notes: r.notes, reference_url: r.reference_url || "",
+          custom_data: r.custom_data || {},
         }));
         await supabase.from("tour_costs").insert(copies);
       }
@@ -229,7 +233,7 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
   const addRow = () => {
     setRows(prev => [...prev, {
       category: "misc", description: "", unit_price: 0,
-      quantity: pax || 1, notes: "", custom_data: {}, isNew: true, dirty: true,
+      quantity: pax || 1, notes: "", reference_url: "", custom_data: {}, isNew: true, dirty: true,
     }]);
   };
 
@@ -249,7 +253,8 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
       const payload = {
         tour_id: tourId, version_id: activeVersionId,
         category: row.category, description: row.description,
-        unit_price: row.unit_price, quantity: row.quantity, notes: row.notes,
+        unit_price: row.unit_price, quantity: row.quantity,
+        notes: row.notes, reference_url: row.reference_url || "",
       };
       if (row.id) {
         const { error } = await supabase.from("tour_costs").update(payload).eq("id", row.id);
@@ -461,6 +466,7 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
                 <th className="text-right px-3 py-2.5 w-20">數量/人數</th>
                 <th className="text-right px-3 py-2.5 w-28 font-bold">小計 (NT$)</th>
                 <th className="text-left px-3 py-2.5 min-w-[100px]">備註</th>
+                <th className="text-left px-3 py-2.5 min-w-[160px]">參考網址</th>
                 {customColumns.map(col => (
                   <th key={col.id} className="text-left px-3 py-2.5 min-w-[110px] bg-indigo-700">{col.name}</th>
                 ))}
@@ -483,6 +489,20 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
                     <td className="px-1 py-1"><input type="number" className="cell-input text-right rounded" value={r.quantity || ""} placeholder="1" min="0" onChange={e => updateRow(idx, "quantity", +e.target.value)} /></td>
                     <td className="px-3 py-2 text-right font-semibold text-slate-700 dark:text-slate-200">{(r.unit_price * r.quantity).toLocaleString()}</td>
                     <td className="px-1 py-1"><input className="cell-input rounded" placeholder="備註" value={r.notes} onChange={e => updateRow(idx, "notes", e.target.value)} /></td>
+                    <td className="px-1 py-1">
+                      <div className="flex items-center gap-1">
+                        <input className="cell-input rounded flex-1 min-w-0" placeholder="貼上網址…" value={r.reference_url}
+                          onChange={e => updateRow(idx, "reference_url", e.target.value)} />
+                        {r.reference_url && (
+                          <a href={r.reference_url.startsWith("http") ? r.reference_url : `https://${r.reference_url}`}
+                            target="_blank" rel="noopener noreferrer"
+                            className="p-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors shrink-0"
+                            title="開啟網址">
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        )}
+                      </div>
+                    </td>
                     {customColumns.map(col => (
                       <td key={col.id} className="px-1 py-1 bg-indigo-50/30">
                         <input type={col.type === "number" ? "number" : "text"} className="cell-input rounded" placeholder="—"
@@ -516,6 +536,20 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
                     <td className="px-1 py-1"><input type="number" className="cell-input text-right rounded" value={r.quantity || ""} placeholder="1" min="0" onChange={e => updateRow(idx, "quantity", +e.target.value)} /></td>
                     <td className="px-3 py-2 text-right font-semibold text-slate-700 dark:text-slate-200">{(r.unit_price * r.quantity).toLocaleString()}</td>
                     <td className="px-1 py-1"><input className="cell-input rounded" value={r.notes} placeholder="備註" onChange={e => updateRow(idx, "notes", e.target.value)} /></td>
+                    <td className="px-1 py-1">
+                      <div className="flex items-center gap-1">
+                        <input className="cell-input rounded flex-1 min-w-0" placeholder="貼上網址…" value={r.reference_url}
+                          onChange={e => updateRow(idx, "reference_url", e.target.value)} />
+                        {r.reference_url && (
+                          <a href={r.reference_url.startsWith("http") ? r.reference_url : `https://${r.reference_url}`}
+                            target="_blank" rel="noopener noreferrer"
+                            className="p-1.5 text-blue-500 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors shrink-0"
+                            title="開啟網址">
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        )}
+                      </div>
+                    </td>
                     {customColumns.map(col => (
                       <td key={col.id} className="px-1 py-1 bg-indigo-50/30">
                         <input type={col.type === "number" ? "number" : "text"} className="cell-input rounded" placeholder="—"
