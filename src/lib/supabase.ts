@@ -69,6 +69,7 @@ export interface TourCost {
   id: string;
   tour_id: string;
   version_id?: string | null;
+  day_number?: number | null;
   category: CostCategory;
   description: string;
   unit_price: number;
@@ -83,6 +84,8 @@ export interface TourCostVersion {
   name: string;
   is_selected: boolean;
   notes: string;
+  calculation_mode: 'overall' | 'daily';
+  day_labels: Record<string, string>; // { "1": "第1天 台北出發", "2": "..." }
   created_at: string;
 }
 

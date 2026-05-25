@@ -117,10 +117,10 @@ function parseGdsPnr(text: string): ParsedFlight[] | null {
   // 5. Build one row per passenger
   const outSeg  = segments[0];
   const retSeg  = segments[segments.length - 1];
-  const allFlight = [...new Set(segments.map(s => s.flightNum))].join(" / ");
+  const allFlight = Array.from(new Set(segments.map(s => s.flightNum))).join(" / ");
 
   const results: ParsedFlight[] = [];
-  for (const [pNum, name] of [...passengers.entries()].sort((a,b)=>a[0]-b[0])) {
+  for (const [pNum, name] of Array.from(passengers.entries()).sort((a,b)=>a[0]-b[0])) {
     const ps = String(pNum);
     const outTicket = tkne.get(outSeg.flightShort)?.get(ps) ?? "";
     const retTicket = (retSeg !== outSeg)
