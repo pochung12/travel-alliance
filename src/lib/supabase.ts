@@ -68,11 +68,21 @@ export type CostCategory = typeof COST_CATEGORIES[number]['key'];
 export interface TourCost {
   id: string;
   tour_id: string;
+  version_id?: string | null;
   category: CostCategory;
   description: string;
   unit_price: number;
   quantity: number;
   notes: string;
+}
+
+export interface TourCostVersion {
+  id: string;
+  tour_id: string;
+  name: string;
+  is_selected: boolean;
+  notes: string;
+  created_at: string;
 }
 
 export type CustomerGender = 'male' | 'female' | 'other';
