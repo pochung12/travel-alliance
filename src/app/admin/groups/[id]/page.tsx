@@ -1834,10 +1834,10 @@ export default function GroupDetailPage() {
 
         return (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[90vh]">
 
               {/* Header */}
-              <div className="bg-gradient-to-r from-violet-600 to-purple-600 px-6 py-5 text-white">
+              <div className="bg-gradient-to-r from-violet-600 to-purple-600 px-6 py-5 text-white flex-shrink-0">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
                     <Link2 className="w-5 h-5" />
@@ -1852,7 +1852,7 @@ export default function GroupDetailPage() {
               </div>
 
               {/* Tour info */}
-              <div className="px-6 pt-5 pb-2">
+              <div className="px-6 pt-5 pb-2 flex-shrink-0">
                 <div className="bg-violet-50 dark:bg-violet-900/20 rounded-xl p-4 space-y-1">
                   <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">{tour?.name}</p>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
@@ -1861,7 +1861,7 @@ export default function GroupDetailPage() {
                 </div>
               </div>
 
-              <div className="px-6 pb-6 space-y-4 mt-3">
+              <div className="px-6 pb-6 space-y-4 mt-3 overflow-y-auto flex-1">
 
                 {/* ── 短網址 區塊（主推） ── */}
                 <div className="rounded-2xl border-2 border-violet-200 dark:border-violet-700 overflow-hidden">
@@ -1997,7 +1997,7 @@ export default function GroupDetailPage() {
                       ) : (
                         <>
                           <p className="text-xs text-slate-400">勾選要在報名表顯示的文章（依勾選順序排列）</p>
-                          <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                          <div className="space-y-2 max-h-52 overflow-y-auto pr-1">
                             {allBlogPosts.map(post => {
                               const checked = linkedPostIds.includes(post.id);
                               return (
