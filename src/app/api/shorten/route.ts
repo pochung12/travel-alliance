@@ -8,7 +8,27 @@ function getAdmin() {
   );
 }
 
-// ── is.gd（首選） ────────────────────────────────────────────────────────────
+// ── spoo.me（首選：完全免費、無廣告、直接跳轉） ─────────────────────────────
+async function spoomeShorten(longUrl: string): Promise<string | null> {
+  try {
+    const res = await fetch("https://spoo.me/", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Accept": "application/json",
+      },
+      body: new URLSearchParams({ url: longUrl }),
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return (data.short_url as string) || null;
+  } catch {
+    return null;
+  }
+}
+
+// ── is.gd（第二備用） ────────────────────────────────────────────────────────
 async function isgdShorten(longUrl: string): Promise<string | null> {
   try {
     const params = new URLSearchParams({ format: "json", url: longUrl });
@@ -24,17 +44,18 @@ async function isgdShorten(longUrl: string): Promise<string | null> {
   }
 }
 
-// ── TinyURL（備用） ──────────────────────────────────────────────────────────
-async function tinyurlShorten(longUrl: string): Promise<string | null> {
+// ── cleanuri.com（第三備用） ─────────────────────────────────────────────────
+async function cleanuriShorten(longUrl: string): Promise<string | null> {
   try {
-    const res = await fetch(
-      `https://tinyurl.com/api-create.php?url=${encodeURIComponent(longUrl)}`,
-      { signal: AbortSignal.timeout(5000) }
-    );
+    const res = await fetch("https://cleanuri.com/api/v1/shorten", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ url: longUrl }),
+      signal: AbortSignal.timeout(5000),
+    });
     if (!res.ok) return null;
-    const text = await res.text();
-    // TinyURL 回傳純文字，必須是 https:// 開頭
-    return text.startsWith("https://") ? text.trim() : null;
+    const data = await res.json();
+    return (data.result_url as string) || null;
   } catch {
     return null;
   }
@@ -54,7 +75,7 @@ export async function POST(req: Request) {
 
   const sb = getAdmin();
 
-  // 若已有短網址記錄 → 直接回傳
+  // 若已有記錄 → 直接回傳
   const { data: existing } = await sb
     .from("tour_join_codes")
     .select("code, short_url")
@@ -66,49 +87,47 @@ export async function POST(req: Request) {
   }
 
   // 目標報名表 URL
-  const host     = req.headers.get("host") || "";
-  const proto    = req.headers.get("x-forwarded-proto") || "https";
-  const joinUrl  = `${proto}://${host}/join/${tourId}`;
+  const host    = req.headers.get("host") || "";
+  const proto   = req.headers.get("x-forwarded-proto") || "https";
+  const joinUrl = `${proto}://${host}/join/${tourId}`;
 
-  // 依序嘗試三種方式
+  // 依序嘗試外部短網址服務
   let shortUrl: string | null = null;
   let source = "";
 
-  shortUrl = await isgdShorten(joinUrl);
-  if (shortUrl) { source = "is.gd"; }
+  shortUrl = await spoomeShorten(joinUrl);
+  if (shortUrl) { source = "spoo.me"; }
 
   if (!shortUrl) {
-    shortUrl = await tinyurlShorten(joinUrl);
-    if (shortUrl) { source = "tinyurl"; }
+    shortUrl = await isgdShorten(joinUrl);
+    if (shortUrl) { source = "is.gd"; }
   }
 
-  // 兩個外部服務都失敗 → 本地 /j/[code] 作為最終備用
+  if (!shortUrl) {
+    shortUrl = await cleanuriShorten(joinUrl);
+    if (shortUrl) { source = "cleanuri"; }
+  }
+
+  // 所有外部服務都失敗 → 本地短碼
   if (!shortUrl) {
     const code = randomCode(6);
     shortUrl = `${proto}://${host}/j/${code}`;
     source = "local";
 
-    // 存本地短碼
     if (existing && existing.length > 0) {
-      await sb.from("tour_join_codes")
-        .update({ short_url: shortUrl })
-        .eq("tour_id", tourId);
+      await sb.from("tour_join_codes").update({ short_url: shortUrl }).eq("tour_id", tourId);
     } else {
-      await sb.from("tour_join_codes")
-        .insert({ code, tour_id: tourId, short_url: shortUrl });
+      await sb.from("tour_join_codes").insert({ code, tour_id: tourId, short_url: shortUrl });
     }
     return NextResponse.json({ shortUrl, source });
   }
 
   // 外部短網址成功 → 存入 DB
+  const code = randomCode(6);
   if (existing && existing.length > 0) {
-    await sb.from("tour_join_codes")
-      .update({ short_url: shortUrl })
-      .eq("tour_id", tourId);
+    await sb.from("tour_join_codes").update({ short_url: shortUrl }).eq("tour_id", tourId);
   } else {
-    const code = randomCode(6);
-    await sb.from("tour_join_codes")
-      .insert({ code, tour_id: tourId, short_url: shortUrl });
+    await sb.from("tour_join_codes").insert({ code, tour_id: tourId, short_url: shortUrl });
   }
 
   return NextResponse.json({ shortUrl, source });
