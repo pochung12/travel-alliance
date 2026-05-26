@@ -26,6 +26,16 @@ interface ItinInfo {
   pdf_name: string;
 }
 
+interface BlogPost {
+  id: string;
+  slug: string;
+  title: string;
+  excerpt: string;
+  cover_image: string;
+  category: string;
+  published_at: string | null;
+}
+
 type Step = "form" | "success";
 
 // ── 工具函式 ──────────────────────────────────────────────────────────────────
@@ -207,6 +217,7 @@ export default function JoinPage() {
   const [itin,           setItin]           = useState<ItinInfo | null>(null);
   const [requiresTaibao, setRequiresTaibao] = useState(false);
   const [heroImageUrl,   setHeroImageUrl]   = useState("");
+  const [blogPosts,      setBlogPosts]      = useState<BlogPost[]>([]);
   const [loading,        setLoading]        = useState(true);
   const [step,           setStep]           = useState<Step>("form");
   const [submitting,     setSubmitting]     = useState(false);
@@ -248,6 +259,7 @@ export default function JoinPage() {
           setItin(d.itinerary);
           setRequiresTaibao(d.requiresTaibao ?? false);
           setHeroImageUrl(d.heroImageUrl ?? "");
+          setBlogPosts(d.blogPosts ?? []);
         }
       })
       .finally(() => setLoading(false));
@@ -449,6 +461,70 @@ export default function JoinPage() {
                 <iframe src={toEmbedUrl(itin.doc_url)} className="w-full" style={{ height: 520, border: "none" }} title="旅客行程" />
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── 相關文章 ── */}
+      {blogPosts.length > 0 && (
+        <div className="max-w-2xl mx-auto px-4 pt-6">
+          <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
+            <div className="bg-gradient-to-r from-rose-500 to-pink-600 px-6 py-4">
+              <div className="flex items-center gap-2.5 text-white">
+                <FileText className="w-5 h-5 opacity-90" />
+                <h2 className="font-semibold text-base">相關旅遊文章</h2>
+                <span className="text-xs bg-white/20 px-2 py-0.5 rounded-full">{blogPosts.length} 篇</span>
+              </div>
+            </div>
+            <div className="p-4 grid gap-3">
+              {blogPosts.map(post => (
+                <a
+                  key={post.id}
+                  href={`/blog/${post.slug}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group flex gap-4 p-3 rounded-2xl border border-slate-100 hover:border-rose-200 hover:bg-rose-50/40 transition-all duration-200"
+                >
+                  {/* 封面縮圖 */}
+                  <div className="w-20 h-20 sm:w-24 sm:h-24 flex-shrink-0 rounded-xl overflow-hidden bg-slate-100">
+                    {post.cover_image ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={post.cover_image}
+                        alt={post.title}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-slate-300">
+                        <ImageIcon className="w-8 h-8" />
+                      </div>
+                    )}
+                  </div>
+                  {/* 文字內容 */}
+                  <div className="flex-1 min-w-0 flex flex-col justify-between py-0.5">
+                    <div>
+                      {post.category && (
+                        <span className="text-[10px] font-semibold text-rose-500 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-full uppercase tracking-wide">
+                          {post.category}
+                        </span>
+                      )}
+                      <h3 className="mt-1.5 text-sm font-semibold text-slate-800 leading-snug line-clamp-2 group-hover:text-rose-600 transition-colors">
+                        {post.title}
+                      </h3>
+                      {post.excerpt && (
+                        <p className="mt-1 text-xs text-slate-400 line-clamp-2 leading-relaxed">
+                          {post.excerpt}
+                        </p>
+                      )}
+                    </div>
+                    <div className="mt-2 flex items-center gap-1 text-xs text-rose-500 font-medium">
+                      <span>閱讀文章</span>
+                      <span className="group-hover:translate-x-0.5 transition-transform">→</span>
+                    </div>
+                  </div>
+                </a>
+              ))}
+            </div>
           </div>
         </div>
       )}

@@ -111,7 +111,7 @@ async function autoAssignRoom(
   }
 }
 
-// ── GET: 行程資訊 + 台胞證判斷 + 背景圖 ─────────────────────────────────────
+// ── GET: 行程資訊 + 台胞證判斷 + 背景圖 + 綁定文章 ──────────────────────────
 export async function GET(
   _req: Request,
   context: { params: Promise<{ tourId: string }> }
@@ -119,7 +119,7 @@ export async function GET(
   const { tourId } = await context.params;
   const sb = getAdmin();
 
-  const [{ data: tour, error: tourErr }, { data: itin }] = await Promise.all([
+  const [{ data: tour, error: tourErr }, { data: itin }, { data: links }] = await Promise.all([
     sb.from("tours")
       .select("id, name, destination, start_date, end_date, pax, notes, status, selling_price")
       .eq("id", tourId)
@@ -129,10 +129,29 @@ export async function GET(
       .eq("tour_id", tourId)
       .eq("variant", "customer")
       .limit(1),
+    sb.from("tour_blog_links")
+      .select("blog_post_id, display_order")
+      .eq("tour_id", tourId)
+      .order("display_order"),
   ]);
 
   if (tourErr || !tour) {
     return NextResponse.json({ error: "行程不存在" }, { status: 404 });
+  }
+
+  // 取綁定文章詳情
+  const linkedIds = (links || []).map((l: { blog_post_id: string }) => l.blog_post_id);
+  let blogPosts: unknown[] = [];
+  if (linkedIds.length > 0) {
+    const { data: posts } = await sb
+      .from("blog_posts")
+      .select("id, slug, title, excerpt, cover_image, category, published_at")
+      .in("id", linkedIds)
+      .eq("status", "published");
+    // 維持 display_order 排序
+    blogPosts = (posts || []).sort(
+      (a: { id: string }, b: { id: string }) => linkedIds.indexOf(a.id) - linkedIds.indexOf(b.id)
+    );
   }
 
   const [requiresTaibao, heroImageUrl] = await Promise.all([
@@ -145,6 +164,7 @@ export async function GET(
     itinerary:     itin?.[0] || null,
     requiresTaibao,
     heroImageUrl,
+    blogPosts,
   });
 }
 

@@ -166,6 +166,12 @@ export default function GroupDetailPage() {
   const [shortCode,          setShortCode]          = useState<string | null>(null);
   const [shortLoading,       setShortLoading]       = useState(false);
   const [shortCopied,        setShortCopied]        = useState(false);
+  // 文章綁定
+  const [articleOpen,        setArticleOpen]        = useState(false);
+  const [allBlogPosts,       setAllBlogPosts]       = useState<{ id: string; title: string; cover_image: string; category: string; published_at: string | null }[]>([]);
+  const [linkedPostIds,      setLinkedPostIds]      = useState<string[]>([]);
+  const [articleLoading,     setArticleLoading]     = useState(false);
+  const [articleSaving,      setArticleSaving]      = useState(false);
 
   const loadTour = async () => {
     const { data } = await supabase.from("tours").select("*").eq("id", id).single();
@@ -1837,7 +1843,7 @@ export default function GroupDetailPage() {
                     <Link2 className="w-5 h-5" />
                     <h2 className="font-bold text-lg">線上報名表連結</h2>
                   </div>
-                  <button onClick={() => setShowRegisterModal(false)}
+                  <button onClick={() => { setShowRegisterModal(false); setArticleOpen(false); }}
                     className="text-white/70 hover:text-white transition-colors">
                     <X className="w-5 h-5" />
                   </button>
@@ -1948,6 +1954,119 @@ export default function GroupDetailPage() {
                     </div>
                   </div>
                 </details>
+
+                {/* ── 📰 文章設定 ── */}
+                <div className="rounded-2xl border border-slate-200 dark:border-slate-600 overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const next = !articleOpen;
+                      setArticleOpen(next);
+                      if (next && allBlogPosts.length === 0) {
+                        setArticleLoading(true);
+                        try {
+                          const res = await fetch(`/api/tour-blog-links?tourId=${id}`);
+                          const json = await res.json();
+                          setAllBlogPosts(json.posts || []);
+                          setLinkedPostIds(json.linkedIds || []);
+                        } finally { setArticleLoading(false); }
+                      }
+                    }}
+                    className="w-full flex items-center justify-between px-4 py-3 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-base">📰</span>
+                      <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">報名表顯示文章</span>
+                      {linkedPostIds.length > 0 && (
+                        <span className="text-[10px] bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 px-2 py-0.5 rounded-full font-medium">
+                          已選 {linkedPostIds.length} 篇
+                        </span>
+                      )}
+                    </div>
+                    <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${articleOpen ? "rotate-180" : ""}`} />
+                  </button>
+
+                  {articleOpen && (
+                    <div className="border-t border-slate-100 dark:border-slate-700 px-4 py-4 space-y-3">
+                      {articleLoading ? (
+                        <div className="flex items-center justify-center gap-2 py-4 text-slate-400 text-sm">
+                          <Loader2 className="w-4 h-4 animate-spin" /> 載入文章中…
+                        </div>
+                      ) : allBlogPosts.length === 0 ? (
+                        <p className="text-xs text-slate-400 text-center py-4">尚無已發布文章</p>
+                      ) : (
+                        <>
+                          <p className="text-xs text-slate-400">勾選要在報名表顯示的文章（依勾選順序排列）</p>
+                          <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                            {allBlogPosts.map(post => {
+                              const checked = linkedPostIds.includes(post.id);
+                              return (
+                                <label key={post.id}
+                                  className={`flex items-center gap-3 p-2.5 rounded-xl border cursor-pointer transition-all ${
+                                    checked
+                                      ? "border-rose-300 dark:border-rose-700 bg-rose-50 dark:bg-rose-900/20"
+                                      : "border-slate-100 dark:border-slate-700 hover:border-slate-200 dark:hover:border-slate-600"
+                                  }`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => {
+                                      setLinkedPostIds(prev =>
+                                        prev.includes(post.id)
+                                          ? prev.filter(x => x !== post.id)
+                                          : [...prev, post.id]
+                                      );
+                                    }}
+                                    className="w-4 h-4 rounded accent-rose-500 flex-shrink-0"
+                                  />
+                                  {/* 縮圖 */}
+                                  <div className="w-10 h-10 rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-700 flex-shrink-0">
+                                    {post.cover_image ? (
+                                      // eslint-disable-next-line @next/next/no-img-element
+                                      <img src={post.cover_image} alt="" className="w-full h-full object-cover" />
+                                    ) : (
+                                      <div className="w-full h-full flex items-center justify-center text-slate-300 text-xs">📷</div>
+                                    )}
+                                  </div>
+                                  {/* 標題 */}
+                                  <div className="flex-1 min-w-0">
+                                    <p className={`text-xs font-medium leading-snug line-clamp-2 ${checked ? "text-rose-700 dark:text-rose-300" : "text-slate-700 dark:text-slate-200"}`}>
+                                      {post.title}
+                                    </p>
+                                    {post.category && (
+                                      <span className="text-[10px] text-slate-400">{post.category}</span>
+                                    )}
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+                          <button
+                            type="button"
+                            disabled={articleSaving}
+                            onClick={async () => {
+                              setArticleSaving(true);
+                              try {
+                                await fetch("/api/tour-blog-links", {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ tourId: id, postIds: linkedPostIds }),
+                                });
+                              } finally { setArticleSaving(false); }
+                            }}
+                            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium bg-rose-500 hover:bg-rose-600 disabled:opacity-60 text-white transition-all"
+                          >
+                            {articleSaving
+                              ? <><Loader2 className="w-4 h-4 animate-spin" /> 儲存中…</>
+                              : <><CheckCheck className="w-4 h-4" /> 儲存文章設定（{linkedPostIds.length} 篇）</>
+                            }
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
 
                 <p className="text-xs text-slate-400 text-center">客人填寫後，資料會自動出現在旅客清單中</p>
               </div>
