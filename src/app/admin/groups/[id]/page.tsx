@@ -6,7 +6,7 @@ import CostSpreadsheet from "@/components/CostSpreadsheet";
 import PaymentsTab from "@/components/PaymentsTab";
 import ItineraryTab from "@/components/ItineraryTab";
 import FlightsTab from "@/components/FlightsTab";
-import { ArrowLeft, Save, Trash2, UserPlus, X, Search, BedDouble, Pencil, UtensilsCrossed, SlidersHorizontal, GripVertical, Users, Printer, Plus } from "lucide-react";
+import { ArrowLeft, Save, Trash2, UserPlus, X, Search, BedDouble, Pencil, UtensilsCrossed, SlidersHorizontal, GripVertical, Users, Printer, Plus, Link2, Copy, ExternalLink, CheckCheck } from "lucide-react";
 
 // ─── Meal options ──────────────────────────────────────────────────────────────
 const MEAL_OPTIONS = [
@@ -160,6 +160,9 @@ export default function GroupDetailPage() {
   const [bulkSubmitting,  setBulkSubmitting]  = useState(false);
   const [bulkPreview,     setBulkPreview]     = useState<BulkPreviewEntry[]>([]);
   const [bulkParsed,      setBulkParsed]      = useState(false);
+  // 線上報名表連結
+  const [showRegisterModal, setShowRegisterModal] = useState(false);
+  const [registerLinkCopied, setRegisterLinkCopied] = useState(false);
 
   const loadTour = async () => {
     const { data } = await supabase.from("tours").select("*").eq("id", id).single();
@@ -957,6 +960,11 @@ export default function GroupDetailPage() {
                     </>
                   )}
                 </div>
+                <button onClick={() => setShowRegisterModal(true)}
+                  className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors">
+                  <Link2 className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">報名表連結</span>
+                </button>
                 <button onClick={() => setShowBulkModal(true)}
                   className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors">
                   <Users className="w-3.5 h-3.5" />
@@ -1777,6 +1785,85 @@ export default function GroupDetailPage() {
               </div>
             </div>
           </>
+        );
+      })()}
+
+      {/* ── 線上報名表連結 Modal ── */}
+      {showRegisterModal && (() => {
+        const origin = typeof window !== "undefined" ? window.location.origin : "";
+        const regUrl = `${origin}/join/${id}`;
+        return (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+              {/* Header */}
+              <div className="bg-gradient-to-r from-violet-600 to-purple-600 px-6 py-5 text-white">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <Link2 className="w-5 h-5" />
+                    <h2 className="font-bold text-lg">線上報名表連結</h2>
+                  </div>
+                  <button onClick={() => setShowRegisterModal(false)}
+                    className="text-white/70 hover:text-white transition-colors">
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <p className="text-violet-200 text-sm mt-1.5">
+                  將連結分享給客人，讓客人自行填寫報名資料
+                </p>
+              </div>
+              {/* Tour info */}
+              <div className="px-6 pt-5 pb-3">
+                <div className="bg-violet-50 dark:bg-violet-900/20 rounded-xl p-4 space-y-1.5">
+                  <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
+                    {tour?.name}
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    📍 {tour?.destination}&nbsp;·&nbsp;
+                    {tour?.start_date} → {tour?.end_date}
+                  </p>
+                </div>
+              </div>
+              {/* Link */}
+              <div className="px-6 pb-5 space-y-3">
+                <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                  報名表網址
+                </label>
+                <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-xl p-3">
+                  <span className="flex-1 text-xs text-slate-600 dark:text-slate-300 break-all select-all font-mono">
+                    {regUrl}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={async () => {
+                      await navigator.clipboard.writeText(regUrl);
+                      setRegisterLinkCopied(true);
+                      setTimeout(() => setRegisterLinkCopied(false), 2000);
+                    }}
+                    className={`flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                      registerLinkCopied
+                        ? "bg-emerald-500 text-white"
+                        : "bg-violet-600 hover:bg-violet-700 text-white"
+                    }`}
+                  >
+                    {registerLinkCopied
+                      ? <><CheckCheck className="w-4 h-4" /> 已複製！</>
+                      : <><Copy className="w-4 h-4" /> 複製連結</>
+                    }
+                  </button>
+                  <button
+                    onClick={() => window.open(regUrl, "_blank")}
+                    className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-medium border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+                  >
+                    <ExternalLink className="w-4 h-4" /> 預覽頁面
+                  </button>
+                </div>
+                <p className="text-xs text-slate-400 text-center">
+                  客人填寫後，資料會自動出現在旅客清單中
+                </p>
+              </div>
+            </div>
+          </div>
         );
       })()}
 
