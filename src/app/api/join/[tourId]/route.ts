@@ -1,12 +1,82 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
 // 使用 service role（允許公開寫入，不受 RLS 限制）
-function getAdmin() {
+function getAdmin(): SupabaseClient {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
     || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
   return createClient(url, key);
+}
+
+// ── 自動分房 ──────────────────────────────────────────────────────────────────
+// 邏輯：
+//   1. 找到旅伴（依姓名模糊比對）
+//   2. 若旅伴已有房號 → 沿用；若無 → 自動產生新房號（現有最大整數+1）
+//   3. 雙方同時寫入相同房號
+//   4. 找不到旅伴 → 把偏好記在 customer_tours.notes
+async function autoAssignRoom(
+  sb: SupabaseClient,
+  tourId: string,
+  customerId: string,
+  roommateName: string,
+  singleRoom: boolean,
+): Promise<void> {
+  const noteParts: string[] = [];
+
+  if (singleRoom) {
+    noteParts.push("需求：單人房");
+  }
+
+  if (roommateName.trim()) {
+    // 取得此行程所有其他旅客（含房號與姓名）
+    type Participant = { id: string; room_number: string; customer: { name: string } | null };
+    const { data: others } = await sb
+      .from("customer_tours")
+      .select("id, room_number, customer:customers!inner(name)")
+      .eq("tour_id", tourId)
+      .neq("customer_id", customerId) as { data: Participant[] | null };
+
+    const name = roommateName.trim();
+
+    // 模糊比對：旅伴名字包含輸入值，或輸入值包含旅伴名字
+    const match = (others || []).find(p => {
+      const mName = p.customer?.name || "";
+      return mName.includes(name) || name.includes(mName);
+    });
+
+    if (match) {
+      let roomNum = match.room_number?.trim() || "";
+
+      if (!roomNum) {
+        // 產生新房號：現有整數最大值 + 1
+        const allNums = (others || [])
+          .map(p => parseInt(p.room_number || "0", 10))
+          .filter(n => Number.isFinite(n) && n > 0);
+        roomNum = String(allNums.length > 0 ? Math.max(...allNums) + 1 : 1);
+        // 將房號寫入旅伴
+        await sb.from("customer_tours")
+          .update({ room_number: roomNum })
+          .eq("id", match.id);
+      }
+
+      // 將房號寫入本人
+      await sb.from("customer_tours")
+        .update({ room_number: roomNum })
+        .eq("customer_id", customerId)
+        .eq("tour_id", tourId);
+    } else {
+      // 旅伴尚未報名，記下偏好（旅遊業者可稍後手動配）
+      noteParts.push(`同住偏好：${name}`);
+    }
+  }
+
+  if (noteParts.length > 0) {
+    await sb.from("customer_tours")
+      .update({ notes: noteParts.join("；") })
+      .eq("customer_id", customerId)
+      .eq("tour_id", tourId);
+  }
 }
 
 // ── GET: 取得行程資訊（供報名表頁面顯示）──────────────────────────────────────
@@ -57,6 +127,8 @@ export async function POST(
     emergency_contact, emergency_phone, meal_preference, notes,
     id_card_image, passport_image, taibao_image,
     participant_type,
+    roommate_name,   // 同住旅伴姓名
+    single_room,     // 需要單人房（"true" / "false"）
   } = body as Record<string, string>;
 
   if (!name?.trim()) {
@@ -144,6 +216,15 @@ export async function POST(
     .limit(1);
 
   if (existingEnroll && existingEnroll.length > 0) {
+    // 已報名：嘗試更新分房
+    const needRoom = roommate_name?.trim() || single_room === "true";
+    if (needRoom) {
+      await autoAssignRoom(
+        sb, tourId, customerId,
+        roommate_name?.trim() || "",
+        single_room === "true",
+      );
+    }
     return NextResponse.json({
       success: true,
       message: "您的資料已更新，感謝您！",
@@ -170,6 +251,16 @@ export async function POST(
     return NextResponse.json(
       { error: "報名失敗：" + enrollErr.message },
       { status: 500 }
+    );
+  }
+
+  // 自動分房（有填旅伴姓名或需要單人房時執行）
+  const needRoom = roommate_name?.trim() || single_room === "true";
+  if (needRoom) {
+    await autoAssignRoom(
+      sb, tourId, customerId,
+      roommate_name?.trim() || "",
+      single_room === "true",
     );
   }
 

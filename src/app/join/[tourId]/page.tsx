@@ -4,7 +4,7 @@ import { useParams } from "next/navigation";
 import {
   User, Phone, Mail, CreditCard, Globe, MapPin, Heart, Utensils,
   Camera, Upload, CheckCircle2, AlertCircle, Loader2, ChevronDown,
-  CalendarDays, Users, FileText, X, Image as ImageIcon,
+  CalendarDays, Users, FileText, X, Image as ImageIcon, BedDouble,
 } from "lucide-react";
 
 // ── 型別 ────────────────────────────────────────────────────────────────────────
@@ -244,6 +244,9 @@ export default function JoinPage() {
   const [selectedMeals,     setSelectedMeals]     = useState<string[]>([]);
   const [notes,             setNotes]             = useState("");
   const [participantType,   setParticipantType]   = useState("adult");
+  // 分房
+  const [roommateName,      setRoommateName]      = useState("");
+  const [singleRoom,        setSingleRoom]        = useState(false);
 
   // 照片
   const [idCardImage,    setIdCardImage]    = useState("");
@@ -295,6 +298,8 @@ export default function JoinPage() {
           meal_preference: selectedMeals.join(","),
           notes: notes.trim(),
           participant_type: participantType,
+          roommate_name: roommateName.trim(),
+          single_room:   String(singleRoom),
           id_card_image:   idCardImage,
           passport_image:  passportImage,
           taibao_image:    taibaoImage,
@@ -370,6 +375,20 @@ export default function JoinPage() {
             <p className="text-sm text-slate-600">
               <span className="font-medium">出發日期：</span>{fmtDate(tour.start_date)}
             </p>
+            {(roommateName.trim() || singleRoom) && (
+              <div className="pt-1.5 border-t border-emerald-50">
+                {singleRoom && (
+                  <p className="text-sm text-slate-600">
+                    <span className="font-medium">分房需求：</span>單人房（旅行社將另行確認）
+                  </p>
+                )}
+                {!singleRoom && roommateName.trim() && (
+                  <p className="text-sm text-slate-600">
+                    <span className="font-medium">同住旅伴：</span>{roommateName.trim()}（已送出配房請求）
+                  </p>
+                )}
+              </div>
+            )}
           </div>
           <p className="text-xs text-slate-400">
             如有任何疑問，請洽暖心旅行社
@@ -651,7 +670,61 @@ export default function JoinPage() {
           </div>
         </Section>
 
-        {/* 4. 餐食偏好 */}
+        {/* 4. 分房設定 */}
+        <Section icon={<BedDouble className="w-5 h-5" />} title="分房設定" color="teal">
+          <div className="p-3 bg-teal-50 rounded-xl text-xs text-teal-600 flex items-start gap-2">
+            <BedDouble className="w-4 h-4 mt-0.5 shrink-0" />
+            <span>
+              若您希望與特定旅伴同房，請填寫對方的<strong>中文姓名</strong>。
+              若雙方都有填寫彼此姓名，系統將自動配在同一房間。
+              若旅伴尚未報名，旅行社夥伴將收到您的分房偏好並手動協助配置。
+            </span>
+          </div>
+
+          {/* 需要單人房 toggle */}
+          <label className="flex items-center gap-3 cursor-pointer select-none group">
+            <div className="relative flex-shrink-0">
+              <input
+                type="checkbox"
+                className="sr-only peer"
+                checked={singleRoom}
+                onChange={e => {
+                  setSingleRoom(e.target.checked);
+                  if (e.target.checked) setRoommateName(""); // 單人房時清除旅伴
+                }}
+              />
+              <div className="w-11 h-6 rounded-full bg-slate-200 peer-checked:bg-teal-500 transition-colors" />
+              <div className="absolute left-1 top-1 w-4 h-4 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-slate-700">我需要單人房</p>
+              <p className="text-xs text-slate-400">旅行社將另行確認房型費用差額</p>
+            </div>
+          </label>
+
+          {/* 同住旅伴 — 勾選單人房後隱藏 */}
+          {!singleRoom && (
+            <Field label="同住旅伴姓名（選填）">
+              <div className="relative">
+                <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
+                <input
+                  className={inp + " pl-9"}
+                  placeholder="請輸入希望同房旅伴的中文姓名"
+                  value={roommateName}
+                  onChange={e => setRoommateName(e.target.value)}
+                />
+              </div>
+              {roommateName.trim() && (
+                <p className="text-xs text-teal-600 mt-1.5 flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  系統將嘗試自動配房給您與「{roommateName.trim()}」
+                </p>
+              )}
+            </Field>
+          )}
+        </Section>
+
+        {/* 5. 餐食偏好 */}
         <Section icon={<Utensils className="w-5 h-5" />} title="餐食偏好" color="amber">
           <p className="text-xs text-slate-400">請選擇所有適用的選項</p>
           <div className="flex flex-wrap gap-2">
@@ -678,8 +751,8 @@ export default function JoinPage() {
           )}
         </Section>
 
-        {/* 5. 證件照片上傳 */}
-        <Section icon={<Camera className="w-5 h-5" />} title="證件照片上傳" color="teal">
+        {/* 6. 證件照片上傳 */}
+        <Section icon={<Camera className="w-5 h-5" />} title="證件照片上傳" color="purple">
           <div className="p-3 bg-teal-50 rounded-xl text-xs text-teal-600 flex items-start gap-2">
             <ImageIcon className="w-4 h-4 mt-0.5 shrink-0" />
             <span>上傳清晰的證件照片，有助於旅行社協助您快速完成出票手續。照片僅供本次行程使用，不會對外揭露。</span>
@@ -706,7 +779,7 @@ export default function JoinPage() {
           </div>
         </Section>
 
-        {/* 6. 備註 */}
+        {/* 7. 備註 */}
         <Section icon={<FileText className="w-5 h-5" />} title="其他備註" color="emerald">
           <Field label="備註說明">
             <textarea

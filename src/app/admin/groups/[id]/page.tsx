@@ -1592,19 +1592,32 @@ export default function GroupDetailPage() {
                                     }}
                                     placeholder="房號…" />
                                 ) : (
-                                  <button
-                                    onClick={() => { setEditingRoomId(p.id); setRoomInput(p.room_number || ""); }}
-                                    className={`group/room flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-all ${
-                                      p.room_number && palette
-                                        ? `${palette.badge} font-medium shadow-sm hover:opacity-80`
-                                        : "text-slate-400 dark:text-slate-500 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 border border-dashed border-slate-200 dark:border-slate-600 hover:border-blue-400"
-                                    }`}>
-                                    {p.room_number ? (
-                                      <>{p.room_number} <Pencil className="w-2.5 h-2.5 opacity-70" /></>
-                                    ) : (
-                                      <><BedDouble className="w-3 h-3" /> 分配房號</>
+                                  <div className="flex flex-col gap-0.5 items-start">
+                                    <button
+                                      onClick={() => { setEditingRoomId(p.id); setRoomInput(p.room_number || ""); }}
+                                      className={`group/room flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-all ${
+                                        p.room_number && palette
+                                          ? `${palette.badge} font-medium shadow-sm hover:opacity-80`
+                                          : "text-slate-400 dark:text-slate-500 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 border border-dashed border-slate-200 dark:border-slate-600 hover:border-blue-400"
+                                      }`}>
+                                      {p.room_number ? (
+                                        <>{p.room_number} <Pencil className="w-2.5 h-2.5 opacity-70" /></>
+                                      ) : (
+                                        <><BedDouble className="w-3 h-3" /> 分配房號</>
+                                      )}
+                                    </button>
+                                    {/* 同住偏好 hint（從報名表自動帶入） */}
+                                    {(p.notes || "").includes("同住偏好：") && (
+                                      <span title={p.notes || ""} className="text-[9px] text-teal-500 dark:text-teal-400 px-1.5 py-0.5 bg-teal-50 dark:bg-teal-900/20 rounded border border-teal-100 dark:border-teal-800/40 truncate max-w-[100px] cursor-default">
+                                        {(p.notes || "").replace(/.*同住偏好：/, "→ ")}
+                                      </span>
                                     )}
-                                  </button>
+                                    {(p.notes || "").includes("單人房") && (
+                                      <span className="text-[9px] text-violet-500 dark:text-violet-400 px-1.5 py-0.5 bg-violet-50 dark:bg-violet-900/20 rounded border border-violet-100 dark:border-violet-800/40 cursor-default">
+                                        單人房需求
+                                      </span>
+                                    )}
+                                  </div>
                                 )}
                               </div>
                             );
