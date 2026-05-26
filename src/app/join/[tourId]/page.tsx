@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import {
-  User, Phone, Mail, CreditCard, Globe, MapPin, Heart, Utensils,
+  User, Phone, Mail, Globe, MapPin, Heart, Utensils,
   Camera, Upload, CheckCircle2, AlertCircle, Loader2, ChevronDown,
   CalendarDays, Users, FileText, X, Image as ImageIcon, BedDouble,
 } from "lucide-react";
@@ -63,8 +63,7 @@ async function compressImage(file: File, maxPx = 1400): Promise<string> {
         const w = Math.round(img.width * scale);
         const h = Math.round(img.height * scale);
         const canvas = document.createElement("canvas");
-        canvas.width = w;
-        canvas.height = h;
+        canvas.width = w; canvas.height = h;
         canvas.getContext("2d")!.drawImage(img, 0, 0, w, h);
         resolve(canvas.toDataURL("image/jpeg", 0.82));
       };
@@ -95,12 +94,8 @@ function PhotoUpload({
     if (!file.type.startsWith("image/")) { alert("請選擇圖片檔案"); return; }
     if (file.size > 20 * 1024 * 1024) { alert("圖片大小不可超過 20MB"); return; }
     setLoading(true);
-    try {
-      const b64 = await compressImage(file);
-      onChange(b64);
-    } finally {
-      setLoading(false);
-    }
+    try { onChange(await compressImage(file)); }
+    finally { setLoading(false); }
   };
 
   return (
@@ -147,27 +142,20 @@ function PhotoUpload({
             </p>
           </div>
         )}
-        <input
-          ref={ref}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={handle}
-        />
+        <input ref={ref} type="file" accept="image/*" className="hidden" onChange={handle} />
       </div>
     </div>
   );
 }
 
-// ── Section 標題組件 ──────────────────────────────────────────────────────────
+// ── Section 標題 ─────────────────────────────────────────────────────────────
+
+type SectionColor = "blue" | "purple" | "emerald" | "amber" | "rose" | "teal";
 
 function Section({ icon, title, children, color = "blue" }: {
-  icon: React.ReactNode;
-  title: string;
-  children: React.ReactNode;
-  color?: "blue" | "purple" | "emerald" | "amber" | "rose" | "teal";
+  icon: React.ReactNode; title: string; children: React.ReactNode; color?: SectionColor;
 }) {
-  const colors = {
+  const gradients: Record<SectionColor, string> = {
     blue:    "from-blue-500 to-indigo-600",
     purple:  "from-purple-500 to-pink-600",
     emerald: "from-emerald-500 to-teal-600",
@@ -177,7 +165,7 @@ function Section({ icon, title, children, color = "blue" }: {
   };
   return (
     <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
-      <div className={`bg-gradient-to-r ${colors[color]} px-6 py-4`}>
+      <div className={`bg-gradient-to-r ${gradients[color]} px-6 py-4`}>
         <div className="flex items-center gap-2.5 text-white">
           <span className="opacity-90">{icon}</span>
           <h2 className="font-semibold text-base">{title}</h2>
@@ -188,18 +176,15 @@ function Section({ icon, title, children, color = "blue" }: {
   );
 }
 
-// ── 輸入框組件 ────────────────────────────────────────────────────────────────
+// ── 輸入框 ────────────────────────────────────────────────────────────────────
 
 function Field({ label, required, children }: {
-  label: string;
-  required?: boolean;
-  children: React.ReactNode;
+  label: string; required?: boolean; children: React.ReactNode;
 }) {
   return (
     <label className="block space-y-1.5">
       <span className="text-sm font-medium text-slate-600">
-        {label}
-        {required && <span className="text-red-400 ml-1">*</span>}
+        {label}{required && <span className="text-red-400 ml-1">*</span>}
       </span>
       {children}
     </label>
@@ -218,62 +203,65 @@ const MEAL_OPTS = ["蛋奶素", "全素", "不吃羊", "不吃牛", "不吃豬",
 export default function JoinPage() {
   const { tourId } = useParams<{ tourId: string }>();
 
-  const [tour,    setTour]    = useState<TourInfo | null>(null);
-  const [itin,    setItin]    = useState<ItinInfo | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [step,    setStep]    = useState<Step>("form");
-  const [submitting, setSubmitting] = useState(false);
-  const [errMsg,  setErrMsg]  = useState("");
-  const [showItin, setShowItin] = useState(true);
+  const [tour,           setTour]           = useState<TourInfo | null>(null);
+  const [itin,           setItin]           = useState<ItinInfo | null>(null);
+  const [requiresTaibao, setRequiresTaibao] = useState(false);
+  const [heroImageUrl,   setHeroImageUrl]   = useState("");
+  const [loading,        setLoading]        = useState(true);
+  const [step,           setStep]           = useState<Step>("form");
+  const [submitting,     setSubmitting]     = useState(false);
+  const [errMsg,         setErrMsg]         = useState("");
+  const [showItin,       setShowItin]       = useState(true);
+  const [imgLoaded,      setImgLoaded]      = useState(false);
 
   // 表單欄位
-  const [name,              setName]              = useState("");
-  const [nameEn,            setNameEn]            = useState("");
-  const [phone,             setPhone]             = useState("");
-  const [email,             setEmail]             = useState("");
-  const [idNumber,          setIdNumber]          = useState("");
-  const [birthday,          setBirthday]          = useState("");
-  const [gender,            setGender]            = useState("female");
-  const [address,           setAddress]           = useState("");
-  const [passport,          setPassport]          = useState("");
-  const [passportExpiry,    setPassportExpiry]    = useState("");
-  const [taibaoNumber,      setTaibaoNumber]      = useState("");
-  const [taibaoExpiry,      setTaibaoExpiry]      = useState("");
-  const [emergencyContact,  setEmergencyContact]  = useState("");
-  const [emergencyPhone,    setEmergencyPhone]    = useState("");
-  const [selectedMeals,     setSelectedMeals]     = useState<string[]>([]);
-  const [notes,             setNotes]             = useState("");
-  const [participantType,   setParticipantType]   = useState("adult");
-  // 分房
-  const [roommateName,      setRoommateName]      = useState("");
-  const [singleRoom,        setSingleRoom]        = useState(false);
+  const [name,             setName]             = useState("");
+  const [nameEn,           setNameEn]           = useState("");
+  const [phone,            setPhone]            = useState("");
+  const [email,            setEmail]            = useState("");
+  const [idNumber,         setIdNumber]         = useState("");
+  const [birthday,         setBirthday]         = useState("");
+  const [gender,           setGender]           = useState("female");
+  const [address,          setAddress]          = useState("");
+  const [passport,         setPassport]         = useState("");
+  const [passportExpiry,   setPassportExpiry]   = useState("");
+  const [taibaoNumber,     setTaibaoNumber]     = useState("");
+  const [taibaoExpiry,     setTaibaoExpiry]     = useState("");
+  const [emergencyContact, setEmergencyContact] = useState("");
+  const [emergencyPhone,   setEmergencyPhone]   = useState("");
+  const [selectedMeals,    setSelectedMeals]    = useState<string[]>([]);
+  const [notes,            setNotes]            = useState("");
+  const [participantType,  setParticipantType]  = useState("adult");
+  const [roommateName,     setRoommateName]     = useState("");
+  const [singleRoom,       setSingleRoom]       = useState(false);
 
   // 照片
-  const [idCardImage,    setIdCardImage]    = useState("");
-  const [passportImage,  setPassportImage]  = useState("");
-  const [taibaoImage,    setTaibaoImage]    = useState("");
+  const [passportImage, setPassportImage] = useState("");
+  const [taibaoImage,   setTaibaoImage]   = useState("");
 
   useEffect(() => {
     fetch(`/api/join/${tourId}`)
       .then(r => r.json())
       .then(d => {
-        if (d.tour) { setTour(d.tour); setItin(d.itinerary); }
+        if (d.tour) {
+          setTour(d.tour);
+          setItin(d.itinerary);
+          setRequiresTaibao(d.requiresTaibao ?? false);
+          setHeroImageUrl(d.heroImageUrl ?? "");
+        }
       })
       .finally(() => setLoading(false));
   }, [tourId]);
 
-  const toggleMeal = (m: string) => {
-    setSelectedMeals(prev =>
-      prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]
-    );
-  };
+  const toggleMeal = (m: string) =>
+    setSelectedMeals(prev => prev.includes(m) ? prev.filter(x => x !== m) : [...prev, m]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrMsg("");
-
-    if (!name.trim())  { setErrMsg("請填寫中文姓名");   return; }
-    if (!phone.trim()) { setErrMsg("請填寫聯絡電話");   return; }
+    if (!name.trim())    { setErrMsg("請填寫中文姓名");     return; }
+    if (!nameEn.trim())  { setErrMsg("請填寫英文姓名拼音"); return; }
+    if (!phone.trim())   { setErrMsg("請填寫聯絡電話");     return; }
 
     setSubmitting(true);
     try {
@@ -281,36 +269,27 @@ export default function JoinPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: name.trim(),
-          name_en: nameEn.trim(),
-          phone: phone.trim(),
-          email: email.trim(),
-          id_number: idNumber.trim(),
-          birthday: birthday || null,
-          gender,
-          address: address.trim(),
-          passport: passport.trim(),
-          passport_expiry: passportExpiry || null,
-          taibao_number: taibaoNumber.trim(),
-          taibao_expiry: taibaoExpiry || null,
+          name: name.trim(), name_en: nameEn.trim(),
+          phone: phone.trim(), email: email.trim(),
+          id_number: idNumber.trim(), birthday: birthday || null,
+          gender, address: address.trim(),
+          passport: passport.trim(), passport_expiry: passportExpiry || null,
+          taibao_number: requiresTaibao ? taibaoNumber.trim() : "",
+          taibao_expiry: requiresTaibao ? (taibaoExpiry || null) : null,
           emergency_contact: emergencyContact.trim(),
-          emergency_phone: emergencyPhone.trim(),
-          meal_preference: selectedMeals.join(","),
+          emergency_phone:   emergencyPhone.trim(),
+          meal_preference:   selectedMeals.join(","),
           notes: notes.trim(),
           participant_type: participantType,
-          roommate_name: roommateName.trim(),
-          single_room:   String(singleRoom),
-          id_card_image:   idCardImage,
-          passport_image:  passportImage,
-          taibao_image:    taibaoImage,
+          roommate_name:    roommateName.trim(),
+          single_room:      String(singleRoom),
+          passport_image:   passportImage,
+          taibao_image:     requiresTaibao ? taibaoImage : "",
         }),
       });
       const json = await res.json();
-      if (json.success) {
-        setStep("success");
-      } else {
-        setErrMsg(json.error || "提交失敗，請再試一次");
-      }
+      if (json.success) setStep("success");
+      else setErrMsg(json.error || "提交失敗，請再試一次");
     } catch {
       setErrMsg("網路錯誤，請再試一次");
     } finally {
@@ -353,46 +332,31 @@ export default function JoinPage() {
             <div className="w-24 h-24 bg-gradient-to-br from-emerald-400 to-teal-500 rounded-full flex items-center justify-center mx-auto shadow-lg shadow-emerald-200">
               <CheckCircle2 className="w-12 h-12 text-white" />
             </div>
-            <div className="absolute -top-2 -right-2 w-8 h-8 bg-yellow-400 rounded-full flex items-center justify-center text-lg shadow">
-              🎉
-            </div>
+            <div className="absolute -top-2 -right-2 w-8 h-8 bg-yellow-400 rounded-full flex items-center justify-center text-lg shadow">🎉</div>
           </div>
           <div>
             <h1 className="text-2xl font-bold text-slate-800">報名成功！</h1>
             <p className="text-slate-500 mt-2 text-sm leading-relaxed">
-              您的報名資料已收到，<br />
-              旅行社夥伴將與您確認詳細行程
+              您的報名資料已收到，<br />旅行社夥伴將與您確認詳細行程
             </p>
           </div>
           <div className="bg-white rounded-2xl p-5 shadow-sm border border-emerald-100 text-left space-y-2">
             <p className="text-sm font-semibold text-slate-700">📋 行程資訊</p>
-            <p className="text-sm text-slate-600">
-              <span className="font-medium">行程名稱：</span>{tour.name}
-            </p>
-            <p className="text-sm text-slate-600">
-              <span className="font-medium">目的地：</span>{tour.destination}
-            </p>
-            <p className="text-sm text-slate-600">
-              <span className="font-medium">出發日期：</span>{fmtDate(tour.start_date)}
-            </p>
+            <p className="text-sm text-slate-600"><span className="font-medium">行程名稱：</span>{tour.name}</p>
+            <p className="text-sm text-slate-600"><span className="font-medium">目的地：</span>{tour.destination}</p>
+            <p className="text-sm text-slate-600"><span className="font-medium">出發日期：</span>{fmtDate(tour.start_date)}</p>
             {(roommateName.trim() || singleRoom) && (
               <div className="pt-1.5 border-t border-emerald-50">
                 {singleRoom && (
-                  <p className="text-sm text-slate-600">
-                    <span className="font-medium">分房需求：</span>單人房（旅行社將另行確認）
-                  </p>
+                  <p className="text-sm text-slate-600"><span className="font-medium">分房需求：</span>單人房（旅行社將另行確認）</p>
                 )}
                 {!singleRoom && roommateName.trim() && (
-                  <p className="text-sm text-slate-600">
-                    <span className="font-medium">同住旅伴：</span>{roommateName.trim()}（已送出配房請求）
-                  </p>
+                  <p className="text-sm text-slate-600"><span className="font-medium">同住旅伴：</span>{roommateName.trim()}（已送出配房請求）</p>
                 )}
               </div>
             )}
           </div>
-          <p className="text-xs text-slate-400">
-            如有任何疑問，請洽暖心旅行社
-          </p>
+          <p className="text-xs text-slate-400">如有任何疑問，請洽暖心旅行社</p>
         </div>
       </div>
     );
@@ -403,44 +367,58 @@ export default function JoinPage() {
     <div className="min-h-screen bg-gradient-to-br from-sky-50 via-white to-indigo-50">
 
       {/* ── Hero Banner ── */}
-      <div className="relative overflow-hidden bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700 text-white">
-        {/* 背景裝飾圓 */}
-        <div className="absolute -top-16 -right-16 w-64 h-64 bg-white/5 rounded-full" />
-        <div className="absolute -bottom-20 -left-10 w-80 h-80 bg-white/5 rounded-full" />
-        <div className="absolute top-8 left-1/3 w-32 h-32 bg-white/5 rounded-full" />
+      <div className="relative overflow-hidden text-white" style={{ minHeight: 240 }}>
+        {/* 背景：真實景點圖或漸層 */}
+        {heroImageUrl && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={heroImageUrl}
+            alt={tour.destination}
+            onLoad={() => setImgLoaded(true)}
+            className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-700 ${imgLoaded ? "opacity-100" : "opacity-0"}`}
+          />
+        )}
+        {/* 漸層底色 / overlay */}
+        <div className={`absolute inset-0 transition-opacity duration-700 ${
+          heroImageUrl && imgLoaded
+            ? "bg-gradient-to-b from-black/45 via-black/55 to-black/75"
+            : "bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700"
+        }`} />
+        {/* 裝飾圓（無圖時顯示） */}
+        {(!heroImageUrl || !imgLoaded) && (
+          <>
+            <div className="absolute -top-16 -right-16 w-64 h-64 bg-white/5 rounded-full" />
+            <div className="absolute -bottom-20 -left-10 w-80 h-80 bg-white/5 rounded-full" />
+          </>
+        )}
 
         <div className="relative max-w-2xl mx-auto px-6 py-10">
-          {/* 品牌 */}
           <div className="flex items-center gap-2 mb-6 opacity-80">
             <Globe className="w-4 h-4" />
             <span className="text-xs font-medium tracking-wider uppercase">暖心旅行社 · 線上報名</span>
           </div>
-
-          {/* 行程主標題 */}
-          <h1 className="text-2xl sm:text-3xl font-bold leading-tight mb-1">
+          <h1 className="text-2xl sm:text-3xl font-bold leading-tight mb-1 drop-shadow-sm">
             {tour.name}
           </h1>
-          <p className="text-blue-200 text-base mb-5">{tour.destination}</p>
-
-          {/* 行程 Info Chips */}
+          <p className="text-blue-100 text-base mb-5 drop-shadow-sm">{tour.destination}</p>
           <div className="flex flex-wrap gap-3">
-            <div className="flex items-center gap-1.5 bg-white/15 backdrop-blur rounded-full px-4 py-1.5 text-sm">
+            <div className="flex items-center gap-1.5 bg-white/20 backdrop-blur rounded-full px-4 py-1.5 text-sm">
               <CalendarDays className="w-4 h-4 opacity-80" />
               <span>{fmtDate(tour.start_date)}</span>
             </div>
             {tour.end_date && (
-              <div className="flex items-center gap-1.5 bg-white/15 backdrop-blur rounded-full px-4 py-1.5 text-sm">
+              <div className="flex items-center gap-1.5 bg-white/20 backdrop-blur rounded-full px-4 py-1.5 text-sm">
                 <CalendarDays className="w-4 h-4 opacity-80" />
                 <span>→ {fmtDate(tour.end_date)}</span>
               </div>
             )}
             {nights > 0 && (
-              <div className="flex items-center gap-1.5 bg-white/15 backdrop-blur rounded-full px-4 py-1.5 text-sm">
-                <span>🌙 {nights} 晚 {nights + 1} 天</span>
+              <div className="flex items-center gap-1.5 bg-white/20 backdrop-blur rounded-full px-4 py-1.5 text-sm">
+                🌙 {nights} 晚 {nights + 1} 天
               </div>
             )}
             {tour.pax > 0 && (
-              <div className="flex items-center gap-1.5 bg-white/15 backdrop-blur rounded-full px-4 py-1.5 text-sm">
+              <div className="flex items-center gap-1.5 bg-white/20 backdrop-blur rounded-full px-4 py-1.5 text-sm">
                 <Users className="w-4 h-4 opacity-80" />
                 <span>預計 {tour.pax} 人</span>
               </div>
@@ -464,18 +442,11 @@ export default function JoinPage() {
                 </div>
                 <span className="font-semibold text-slate-700">旅客行程內容</span>
               </div>
-              <ChevronDown
-                className={`w-5 h-5 text-slate-400 transition-transform duration-300 ${showItin ? "rotate-180" : ""}`}
-              />
+              <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform duration-300 ${showItin ? "rotate-180" : ""}`} />
             </button>
             {showItin && (
               <div className="border-t border-slate-100">
-                <iframe
-                  src={toEmbedUrl(itin.doc_url)}
-                  className="w-full"
-                  style={{ height: 520, border: "none" }}
-                  title="旅客行程"
-                />
+                <iframe src={toEmbedUrl(itin.doc_url)} className="w-full" style={{ height: 520, border: "none" }} title="旅客行程" />
               </div>
             )}
           </div>
@@ -489,109 +460,67 @@ export default function JoinPage() {
         <Section icon={<User className="w-5 h-5" />} title="基本資料" color="blue">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <Field label="中文姓名" required>
-              <input
-                className={inp}
-                placeholder="請填寫與證件相同的姓名"
-                value={name}
-                onChange={e => setName(e.target.value)}
-              />
+              <input className={inp} placeholder="請填寫與證件相同的姓名"
+                value={name} onChange={e => setName(e.target.value)} />
             </Field>
-            <Field label="英文姓名 (護照拼音)">
-              <input
-                className={inp}
-                placeholder="如：CHEN MING"
-                value={nameEn}
-                onChange={e => setNameEn(e.target.value.toUpperCase())}
-              />
+            <Field label="英文姓名（護照拼音）" required>
+              <input className={inp + " tracking-wider"} placeholder="如：CHEN MING"
+                value={nameEn} onChange={e => setNameEn(e.target.value.toUpperCase())} />
             </Field>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <Field label="性別">
-              <select
-                className={inp}
-                value={gender}
-                onChange={e => setGender(e.target.value)}
-              >
+              <select className={inp} value={gender} onChange={e => setGender(e.target.value)}>
                 <option value="female">女</option>
                 <option value="male">男</option>
                 <option value="other">其他</option>
               </select>
             </Field>
             <Field label="出生日期">
-              <input
-                type="date"
-                className={inp}
-                value={birthday}
-                onChange={e => setBirthday(e.target.value)}
-              />
+              <input type="date" className={inp} value={birthday} onChange={e => setBirthday(e.target.value)} />
             </Field>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <Field label="聯絡電話" required>
               <div className="relative">
                 <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
-                <input
-                  className={inp + " pl-9"}
-                  placeholder="0912-345-678"
-                  value={phone}
-                  onChange={e => setPhone(e.target.value)}
-                />
+                <input className={inp + " pl-9"} placeholder="0912-345-678"
+                  value={phone} onChange={e => setPhone(e.target.value)} />
               </div>
             </Field>
             <Field label="Email">
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
-                <input
-                  type="email"
-                  className={inp + " pl-9"}
-                  placeholder="example@mail.com"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                />
+                <input type="email" className={inp + " pl-9"} placeholder="example@mail.com"
+                  value={email} onChange={e => setEmail(e.target.value)} />
               </div>
             </Field>
           </div>
           <Field label="身分證號碼">
-            <div className="relative">
-              <CreditCard className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
-              <input
-                className={inp + " pl-9 tracking-widest"}
-                placeholder="A123456789"
-                value={idNumber}
-                onChange={e => setIdNumber(e.target.value.toUpperCase())}
-              />
-            </div>
+            <input className={inp + " tracking-widest"} placeholder="A123456789"
+              value={idNumber} onChange={e => setIdNumber(e.target.value.toUpperCase())} />
           </Field>
           <Field label="聯絡地址">
             <div className="relative">
               <MapPin className="absolute left-3 top-3 w-4 h-4 text-slate-300" />
-              <input
-                className={inp + " pl-9"}
-                placeholder="台北市中正區…"
-                value={address}
-                onChange={e => setAddress(e.target.value)}
-              />
+              <input className={inp + " pl-9"} placeholder="台北市中正區…"
+                value={address} onChange={e => setAddress(e.target.value)} />
             </div>
           </Field>
           <Field label="參團身份">
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {[
+              {([
                 { k: "adult",     l: "成人",   e: "👤" },
                 { k: "tour_only", l: "只參團", e: "🧳" },
                 { k: "child",     l: "兒童",   e: "🧒" },
                 { k: "infant",    l: "嬰兒",   e: "👶" },
-              ].map(({ k, l, e }) => (
-                <button
-                  key={k}
-                  type="button"
-                  onClick={() => setParticipantType(k)}
-                  className={`
-                    flex items-center justify-center gap-1.5 py-2.5 rounded-xl border text-sm font-medium transition-all
-                    ${participantType === k
+              ] as const).map(({ k, l, e }) => (
+                <button key={k} type="button" onClick={() => setParticipantType(k)}
+                  className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl border text-sm font-medium transition-all ${
+                    participantType === k
                       ? "bg-blue-50 border-blue-400 text-blue-700 shadow-sm"
-                      : "border-slate-200 text-slate-500 hover:border-blue-200"}
-                  `}
-                >
+                      : "border-slate-200 text-slate-500 hover:border-blue-200"
+                  }`}>
                   <span>{e}</span> {l}
                 </button>
               ))}
@@ -601,70 +530,58 @@ export default function JoinPage() {
 
         {/* 2. 旅行證件 */}
         <Section icon={<Globe className="w-5 h-5" />} title="旅行證件" color="purple">
-          <div className="p-3 bg-purple-50 rounded-xl text-xs text-purple-600 flex items-start gap-2">
-            <span className="text-base leading-tight">💡</span>
-            <span>填寫護照或台胞證資料，以利後續出票作業。出境台灣（往中國大陸）請填台胞證；出境其他國家請填護照。</span>
-          </div>
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider pt-1">護照資訊</p>
+          {/* 護照 */}
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">護照資訊</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <Field label="護照號碼">
-              <input
-                className={inp + " tracking-widest"}
-                placeholder="A12345678"
-                value={passport}
-                onChange={e => setPassport(e.target.value.toUpperCase())}
-              />
+              <input className={inp + " tracking-widest"} placeholder="A12345678"
+                value={passport} onChange={e => setPassport(e.target.value.toUpperCase())} />
             </Field>
             <Field label="護照效期">
-              <input
-                type="date"
-                className={inp}
-                value={passportExpiry}
-                onChange={e => setPassportExpiry(e.target.value)}
-              />
+              <input type="date" className={inp} value={passportExpiry}
+                onChange={e => setPassportExpiry(e.target.value)} />
             </Field>
           </div>
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider pt-1">台胞證資訊</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-            <Field label="台胞證號碼">
-              <input
-                className={inp + " tracking-widest"}
-                placeholder="TA1234567"
-                value={taibaoNumber}
-                onChange={e => setTaibaoNumber(e.target.value.toUpperCase())}
-              />
-            </Field>
-            <Field label="台胞證效期">
-              <input
-                type="date"
-                className={inp}
-                value={taibaoExpiry}
-                onChange={e => setTaibaoExpiry(e.target.value)}
-              />
-            </Field>
-          </div>
+
+          {/* 台胞證（條件顯示） */}
+          {requiresTaibao ? (
+            <>
+              <div className="flex items-start gap-2.5 p-3 bg-orange-50 rounded-xl text-xs text-orange-600 border border-orange-100">
+                <span className="text-base leading-tight">🇨🇳</span>
+                <span>此行程目的地需要<strong>台胞證</strong>，請填寫台胞證資訊並上傳照片</span>
+              </div>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">台胞證資訊</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                <Field label="台胞證號碼">
+                  <input className={inp + " tracking-widest"} placeholder="TA1234567"
+                    value={taibaoNumber} onChange={e => setTaibaoNumber(e.target.value.toUpperCase())} />
+                </Field>
+                <Field label="台胞證效期">
+                  <input type="date" className={inp} value={taibaoExpiry}
+                    onChange={e => setTaibaoExpiry(e.target.value)} />
+                </Field>
+              </div>
+            </>
+          ) : (
+            <div className="flex items-start gap-2.5 p-3 bg-emerald-50 rounded-xl text-xs text-emerald-600 border border-emerald-100">
+              <CheckCircle2 className="w-4 h-4 mt-0.5 shrink-0" />
+              <span>此行程目的地<strong>不需要台胞證</strong>，填寫護照資訊即可</span>
+            </div>
+          )}
         </Section>
 
         {/* 3. 緊急聯絡人 */}
         <Section icon={<Heart className="w-5 h-5" />} title="緊急聯絡人" color="rose">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
             <Field label="緊急聯絡人姓名">
-              <input
-                className={inp}
-                placeholder="姓名"
-                value={emergencyContact}
-                onChange={e => setEmergencyContact(e.target.value)}
-              />
+              <input className={inp} placeholder="姓名"
+                value={emergencyContact} onChange={e => setEmergencyContact(e.target.value)} />
             </Field>
             <Field label="緊急聯絡人電話">
               <div className="relative">
                 <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
-                <input
-                  className={inp + " pl-9"}
-                  placeholder="0912-000-000"
-                  value={emergencyPhone}
-                  onChange={e => setEmergencyPhone(e.target.value)}
-                />
+                <input className={inp + " pl-9"} placeholder="0912-000-000"
+                  value={emergencyPhone} onChange={e => setEmergencyPhone(e.target.value)} />
               </div>
             </Field>
           </div>
@@ -672,27 +589,20 @@ export default function JoinPage() {
 
         {/* 4. 分房設定 */}
         <Section icon={<BedDouble className="w-5 h-5" />} title="分房設定" color="teal">
-          <div className="p-3 bg-teal-50 rounded-xl text-xs text-teal-600 flex items-start gap-2">
+          <div className="p-3 bg-teal-50 rounded-xl text-xs text-teal-600 flex items-start gap-2 border border-teal-100">
             <BedDouble className="w-4 h-4 mt-0.5 shrink-0" />
             <span>
-              若您希望與特定旅伴同房，請填寫對方的<strong>中文姓名</strong>。
-              若雙方都有填寫彼此姓名，系統將自動配在同一房間。
-              若旅伴尚未報名，旅行社夥伴將收到您的分房偏好並手動協助配置。
+              若希望與特定旅伴同房，請填寫對方的<strong>中文姓名</strong>。
+              雙方都填彼此姓名時，系統自動配同一房間。
+              旅伴尚未報名時，旅行社將收到您的偏好並手動配置。
             </span>
           </div>
 
-          {/* 需要單人房 toggle */}
+          {/* 需要單人房 */}
           <label className="flex items-center gap-3 cursor-pointer select-none group">
             <div className="relative flex-shrink-0">
-              <input
-                type="checkbox"
-                className="sr-only peer"
-                checked={singleRoom}
-                onChange={e => {
-                  setSingleRoom(e.target.checked);
-                  if (e.target.checked) setRoommateName(""); // 單人房時清除旅伴
-                }}
-              />
+              <input type="checkbox" className="sr-only peer" checked={singleRoom}
+                onChange={e => { setSingleRoom(e.target.checked); if (e.target.checked) setRoommateName(""); }} />
               <div className="w-11 h-6 rounded-full bg-slate-200 peer-checked:bg-teal-500 transition-colors" />
               <div className="absolute left-1 top-1 w-4 h-4 rounded-full bg-white shadow transition-transform peer-checked:translate-x-5" />
             </div>
@@ -702,17 +612,12 @@ export default function JoinPage() {
             </div>
           </label>
 
-          {/* 同住旅伴 — 勾選單人房後隱藏 */}
           {!singleRoom && (
             <Field label="同住旅伴姓名（選填）">
               <div className="relative">
                 <Users className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300" />
-                <input
-                  className={inp + " pl-9"}
-                  placeholder="請輸入希望同房旅伴的中文姓名"
-                  value={roommateName}
-                  onChange={e => setRoommateName(e.target.value)}
-                />
+                <input className={inp + " pl-9"} placeholder="請輸入希望同房旅伴的中文姓名"
+                  value={roommateName} onChange={e => setRoommateName(e.target.value)} />
               </div>
               {roommateName.trim() && (
                 <p className="text-xs text-teal-600 mt-1.5 flex items-center gap-1">
@@ -729,17 +634,12 @@ export default function JoinPage() {
           <p className="text-xs text-slate-400">請選擇所有適用的選項</p>
           <div className="flex flex-wrap gap-2">
             {MEAL_OPTS.map(m => (
-              <button
-                key={m}
-                type="button"
-                onClick={() => toggleMeal(m)}
-                className={`
-                  px-4 py-2 rounded-full text-sm border font-medium transition-all
-                  ${selectedMeals.includes(m)
+              <button key={m} type="button" onClick={() => toggleMeal(m)}
+                className={`px-4 py-2 rounded-full text-sm border font-medium transition-all ${
+                  selectedMeals.includes(m)
                     ? "bg-amber-500 border-amber-500 text-white shadow-sm"
-                    : "border-slate-200 text-slate-500 hover:border-amber-300"}
-                `}
-              >
+                    : "border-slate-200 text-slate-500 hover:border-amber-300"
+                }`}>
                 {m}
               </button>
             ))}
@@ -753,42 +653,34 @@ export default function JoinPage() {
 
         {/* 6. 證件照片上傳 */}
         <Section icon={<Camera className="w-5 h-5" />} title="證件照片上傳" color="purple">
-          <div className="p-3 bg-teal-50 rounded-xl text-xs text-teal-600 flex items-start gap-2">
+          <div className="p-3 bg-purple-50 rounded-xl text-xs text-purple-600 flex items-start gap-2 border border-purple-100">
             <ImageIcon className="w-4 h-4 mt-0.5 shrink-0" />
             <span>上傳清晰的證件照片，有助於旅行社協助您快速完成出票手續。照片僅供本次行程使用，不會對外揭露。</span>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-            <PhotoUpload
-              label="身分證（正面）"
-              icon={<CreditCard className="w-3.5 h-3.5" />}
-              value={idCardImage}
-              onChange={setIdCardImage}
-            />
+          <div className={`grid gap-5 ${requiresTaibao ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1 sm:grid-cols-1 max-w-xs"}`}>
             <PhotoUpload
               label="護照資料頁"
               icon={<Globe className="w-3.5 h-3.5" />}
               value={passportImage}
               onChange={setPassportImage}
             />
-            <PhotoUpload
-              label="台胞證"
-              icon={<FileText className="w-3.5 h-3.5" />}
-              value={taibaoImage}
-              onChange={setTaibaoImage}
-            />
+            {requiresTaibao && (
+              <PhotoUpload
+                label="台胞證"
+                icon={<FileText className="w-3.5 h-3.5" />}
+                value={taibaoImage}
+                onChange={setTaibaoImage}
+              />
+            )}
           </div>
         </Section>
 
         {/* 7. 備註 */}
         <Section icon={<FileText className="w-5 h-5" />} title="其他備註" color="emerald">
           <Field label="備註說明">
-            <textarea
-              className={inp + " resize-none"}
-              rows={3}
+            <textarea className={inp + " resize-none"} rows={3}
               placeholder="如有任何特殊需求或補充說明，請填寫於此…"
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
-            />
+              value={notes} onChange={e => setNotes(e.target.value)} />
           </Field>
         </Section>
 
@@ -801,18 +693,8 @@ export default function JoinPage() {
         )}
 
         {/* Submit */}
-        <button
-          type="submit"
-          disabled={submitting}
-          className="
-            w-full py-4 rounded-2xl font-semibold text-base
-            bg-gradient-to-r from-blue-600 to-indigo-600
-            hover:from-blue-700 hover:to-indigo-700
-            text-white shadow-lg shadow-blue-200
-            disabled:opacity-60 disabled:cursor-not-allowed
-            transition-all duration-200 flex items-center justify-center gap-2
-          "
-        >
+        <button type="submit" disabled={submitting}
+          className="w-full py-4 rounded-2xl font-semibold text-base bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white shadow-lg shadow-blue-200 disabled:opacity-60 disabled:cursor-not-allowed transition-all duration-200 flex items-center justify-center gap-2">
           {submitting
             ? <><Loader2 className="w-5 h-5 animate-spin" /> 提交中…</>
             : <><CheckCircle2 className="w-5 h-5" /> 送出報名表</>

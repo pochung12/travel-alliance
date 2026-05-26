@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
-// 使用 service role（允許公開寫入，不受 RLS 限制）
+// ── Supabase client ───────────────────────────────────────────────────────────
 function getAdmin(): SupabaseClient {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -9,12 +9,55 @@ function getAdmin(): SupabaseClient {
   return createClient(url, key);
 }
 
+// ── 台胞證判斷：目的地含大陸城市/省份/關鍵字才需要 ──────────────────────────
+const MAINLAND_KEYWORDS = [
+  // 通用詞
+  "大陸", "中國大陸", "中国", "內地",
+  // 直轄市
+  "北京", "上海", "天津", "重慶",
+  // 一線城市
+  "廣州", "深圳", "成都", "武漢", "西安", "杭州", "南京", "青島",
+  "廈門", "大連", "瀋陽", "長春", "哈爾濱", "烏魯木齊",
+  // 熱門旅遊城市
+  "蘇州", "無錫", "昆明", "三亞", "桂林", "麗江", "九寨溝",
+  "張家界", "黃山", "敦煌", "洛陽", "泰山", "峨眉山", "樂山",
+  "西雙版納", "香格里拉", "西寧", "拉薩", "烏魯木齊",
+  "鄭州", "長沙", "濟南", "南昌", "合肥", "福州", "南寧", "貴陽",
+  "蘭州", "太原", "石家莊", "南寧", "銀川", "呼和浩特",
+  // 省份/自治區
+  "廣東", "浙江", "江蘇", "四川", "湖南", "湖北", "福建", "雲南",
+  "貴州", "廣西", "海南", "新疆", "西藏", "內蒙古", "黑龍江",
+  "吉林", "遼寧", "河北", "山西", "河南", "山東", "安徽", "江西", "陝西", "甘肅",
+  // 轉機/過境
+  "轉機大陸", "轉機中國", "經大陸", "過境大陸", "經中國",
+];
+
+function checkRequiresTaibao(destination: string): boolean {
+  return MAINLAND_KEYWORDS.some(kw => destination.includes(kw));
+}
+
+// ── Pexels 景點背景圖 ─────────────────────────────────────────────────────────
+async function fetchHeroImage(destination: string): Promise<string> {
+  const key = process.env.PEXELS_API_KEY;
+  if (!key || !destination.trim()) return "";
+  try {
+    const query = encodeURIComponent(`${destination} travel landmark scenic`);
+    const res = await fetch(
+      `https://api.pexels.com/v1/search?query=${query}&per_page=5&orientation=landscape`,
+      { headers: { Authorization: key }, next: { revalidate: 3600 } }
+    );
+    if (!res.ok) return "";
+    const json = await res.json();
+    const photos: Array<{ src: { large2x: string; large: string } }> = json.photos || [];
+    if (photos.length === 0) return "";
+    const pick = photos[Math.floor(Math.random() * Math.min(photos.length, 3))];
+    return pick.src.large2x || pick.src.large || "";
+  } catch {
+    return "";
+  }
+}
+
 // ── 自動分房 ──────────────────────────────────────────────────────────────────
-// 邏輯：
-//   1. 找到旅伴（依姓名模糊比對）
-//   2. 若旅伴已有房號 → 沿用；若無 → 自動產生新房號（現有最大整數+1）
-//   3. 雙方同時寫入相同房號
-//   4. 找不到旅伴 → 把偏好記在 customer_tours.notes
 async function autoAssignRoom(
   sb: SupabaseClient,
   tourId: string,
@@ -29,7 +72,6 @@ async function autoAssignRoom(
   }
 
   if (roommateName.trim()) {
-    // 取得此行程所有其他旅客（含房號與姓名）
     type Participant = { id: string; room_number: string; customer: { name: string } | null };
     const { data: others } = await sb
       .from("customer_tours")
@@ -38,8 +80,6 @@ async function autoAssignRoom(
       .neq("customer_id", customerId) as { data: Participant[] | null };
 
     const name = roommateName.trim();
-
-    // 模糊比對：旅伴名字包含輸入值，或輸入值包含旅伴名字
     const match = (others || []).find(p => {
       const mName = p.customer?.name || "";
       return mName.includes(name) || name.includes(mName);
@@ -47,26 +87,18 @@ async function autoAssignRoom(
 
     if (match) {
       let roomNum = match.room_number?.trim() || "";
-
       if (!roomNum) {
-        // 產生新房號：現有整數最大值 + 1
         const allNums = (others || [])
           .map(p => parseInt(p.room_number || "0", 10))
           .filter(n => Number.isFinite(n) && n > 0);
         roomNum = String(allNums.length > 0 ? Math.max(...allNums) + 1 : 1);
-        // 將房號寫入旅伴
-        await sb.from("customer_tours")
-          .update({ room_number: roomNum })
-          .eq("id", match.id);
+        await sb.from("customer_tours").update({ room_number: roomNum }).eq("id", match.id);
       }
-
-      // 將房號寫入本人
       await sb.from("customer_tours")
         .update({ room_number: roomNum })
         .eq("customer_id", customerId)
         .eq("tour_id", tourId);
     } else {
-      // 旅伴尚未報名，記下偏好（旅遊業者可稍後手動配）
       noteParts.push(`同住偏好：${name}`);
     }
   }
@@ -79,7 +111,7 @@ async function autoAssignRoom(
   }
 }
 
-// ── GET: 取得行程資訊（供報名表頁面顯示）──────────────────────────────────────
+// ── GET: 行程資訊 + 台胞證判斷 + 背景圖 ─────────────────────────────────────
 export async function GET(
   _req: Request,
   context: { params: Promise<{ tourId: string }> }
@@ -103,7 +135,17 @@ export async function GET(
     return NextResponse.json({ error: "行程不存在" }, { status: 404 });
   }
 
-  return NextResponse.json({ tour, itinerary: itin?.[0] || null });
+  const [requiresTaibao, heroImageUrl] = await Promise.all([
+    Promise.resolve(checkRequiresTaibao(tour.destination || "")),
+    fetchHeroImage(tour.destination || ""),
+  ]);
+
+  return NextResponse.json({
+    tour,
+    itinerary:     itin?.[0] || null,
+    requiresTaibao,
+    heroImageUrl,
+  });
 }
 
 // ── POST: 提交報名表 ─────────────────────────────────────────────────────────
@@ -114,7 +156,6 @@ export async function POST(
   const { tourId } = await context.params;
   const sb = getAdmin();
 
-  // 驗證行程存在
   const { data: tour } = await sb.from("tours").select("id").eq("id", tourId).single();
   if (!tour) {
     return NextResponse.json({ error: "行程不存在" }, { status: 404 });
@@ -125,34 +166,27 @@ export async function POST(
     name, name_en, phone, email, id_number, birthday, gender, address,
     passport, passport_expiry, taibao_number, taibao_expiry,
     emergency_contact, emergency_phone, meal_preference, notes,
-    id_card_image, passport_image, taibao_image,
+    passport_image, taibao_image,
     participant_type,
-    roommate_name,   // 同住旅伴姓名
-    single_room,     // 需要單人房（"true" / "false"）
+    roommate_name,
+    single_room,
   } = body as Record<string, string>;
 
-  if (!name?.trim()) {
-    return NextResponse.json({ error: "請填寫姓名" }, { status: 400 });
-  }
-  if (!phone?.trim()) {
-    return NextResponse.json({ error: "請填寫聯絡電話" }, { status: 400 });
-  }
+  if (!name?.trim())    return NextResponse.json({ error: "請填寫中文姓名" }, { status: 400 });
+  if (!name_en?.trim()) return NextResponse.json({ error: "請填寫英文姓名拼音" }, { status: 400 });
+  if (!phone?.trim())   return NextResponse.json({ error: "請填寫聯絡電話" }, { status: 400 });
 
   // 查詢是否已有相同電話的旅客
   const { data: existingCusts } = await sb
-    .from("customers")
-    .select("id")
-    .eq("phone", phone.trim())
-    .limit(1);
+    .from("customers").select("id").eq("phone", phone.trim()).limit(1);
 
   let customerId: string;
 
   if (existingCusts && existingCusts.length > 0) {
     customerId = existingCusts[0].id;
-    // 更新既有旅客資料
     await sb.from("customers").update({
       name:              name.trim(),
-      name_en:           name_en?.trim()           || "",
+      name_en:           name_en.trim(),
       email:             email?.trim()             || "",
       id_number:         id_number?.trim()         || "",
       birthday:          birthday                  || null,
@@ -166,17 +200,15 @@ export async function POST(
       emergency_phone:   emergency_phone?.trim()   || "",
       meal_preference:   meal_preference           || "",
       notes:             notes?.trim()             || "",
-      ...(id_card_image  ? { id_card_image }  : {}),
       ...(passport_image ? { passport_image } : {}),
       ...(taibao_image   ? { taibao_image }   : {}),
     }).eq("id", customerId);
   } else {
-    // 建立新旅客
     const { data: newCust, error: custErr } = await sb
       .from("customers")
       .insert([{
         name:              name.trim(),
-        name_en:           name_en?.trim()           || "",
+        name_en:           name_en.trim(),
         phone:             phone.trim(),
         email:             email?.trim()             || "",
         id_number:         id_number?.trim()         || "",
@@ -189,7 +221,7 @@ export async function POST(
         taibao_number:     taibao_number?.trim()     || "",
         taibao_expiry:     taibao_expiry             || null,
         taibao_image:      taibao_image              || "",
-        id_card_image:     id_card_image             || "",
+        id_card_image:     "",
         emergency_contact: emergency_contact?.trim() || "",
         emergency_phone:   emergency_phone?.trim()   || "",
         meal_preference:   meal_preference           || "",
@@ -199,37 +231,24 @@ export async function POST(
       .single();
 
     if (custErr || !newCust) {
-      return NextResponse.json(
-        { error: "建立旅客資料失敗：" + custErr?.message },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: "建立旅客資料失敗：" + custErr?.message }, { status: 500 });
     }
     customerId = newCust.id;
   }
 
-  // 檢查是否已報名此行程
+  // 已報名處理
   const { data: existingEnroll } = await sb
-    .from("customer_tours")
-    .select("id")
-    .eq("customer_id", customerId)
-    .eq("tour_id", tourId)
-    .limit(1);
+    .from("customer_tours").select("id")
+    .eq("customer_id", customerId).eq("tour_id", tourId).limit(1);
 
   if (existingEnroll && existingEnroll.length > 0) {
-    // 已報名：嘗試更新分房
-    const needRoom = roommate_name?.trim() || single_room === "true";
-    if (needRoom) {
-      await autoAssignRoom(
-        sb, tourId, customerId,
-        roommate_name?.trim() || "",
-        single_room === "true",
-      );
+    if (roommate_name?.trim() || single_room === "true") {
+      await autoAssignRoom(sb, tourId, customerId,
+        roommate_name?.trim() || "", single_room === "true");
     }
     return NextResponse.json({
-      success: true,
-      message: "您的資料已更新，感謝您！",
-      customerId,
-      alreadyEnrolled: true,
+      success: true, message: "您的資料已更新，感謝您！",
+      customerId, alreadyEnrolled: true,
     });
   }
 
@@ -248,20 +267,12 @@ export async function POST(
   }]);
 
   if (enrollErr) {
-    return NextResponse.json(
-      { error: "報名失敗：" + enrollErr.message },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "報名失敗：" + enrollErr.message }, { status: 500 });
   }
 
-  // 自動分房（有填旅伴姓名或需要單人房時執行）
-  const needRoom = roommate_name?.trim() || single_room === "true";
-  if (needRoom) {
-    await autoAssignRoom(
-      sb, tourId, customerId,
-      roommate_name?.trim() || "",
-      single_room === "true",
-    );
+  if (roommate_name?.trim() || single_room === "true") {
+    await autoAssignRoom(sb, tourId, customerId,
+      roommate_name?.trim() || "", single_room === "true");
   }
 
   return NextResponse.json({ success: true, message: "報名成功！", customerId });
