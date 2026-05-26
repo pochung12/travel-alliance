@@ -163,7 +163,7 @@ export default function GroupDetailPage() {
   // 線上報名表連結
   const [showRegisterModal,  setShowRegisterModal]  = useState(false);
   const [registerLinkCopied, setRegisterLinkCopied] = useState(false);
-  const [shortCode,          setShortCode]          = useState<string | null>(null);
+  const [shortUrl,           setShortUrl]           = useState<string | null>(null);
   const [shortLoading,       setShortLoading]       = useState(false);
   const [shortCopied,        setShortCopied]        = useState(false);
   // 文章綁定
@@ -1814,9 +1814,8 @@ export default function GroupDetailPage() {
       {showRegisterModal && (() => {
         const origin = typeof window !== "undefined" ? window.location.origin : "";
         const regUrl  = `${origin}/join/${id}`;
-        const shortUrl = shortCode ? `${origin}/j/${shortCode}` : null;
 
-        const genShortCode = async () => {
+        const genShortUrl = async () => {
           setShortLoading(true);
           try {
             const res = await fetch("/api/shorten", {
@@ -1825,7 +1824,7 @@ export default function GroupDetailPage() {
               body: JSON.stringify({ tourId: id }),
             });
             const json = await res.json();
-            if (json.code) setShortCode(json.code);
+            if (json.shortUrl) setShortUrl(json.shortUrl);
             else alert(json.error || "產生失敗");
           } finally {
             setShortLoading(false);
@@ -1905,9 +1904,9 @@ export default function GroupDetailPage() {
                     </div>
                   ) : (
                     <div className="px-4 py-4 text-center">
-                      <p className="text-xs text-slate-400 mb-3">點擊產生專屬短網址，方便傳給客人</p>
+                      <p className="text-xs text-slate-400 mb-3">點擊產生專屬短網址（由 is.gd 提供），方便傳給客人</p>
                       <button
-                        onClick={genShortCode}
+                        onClick={genShortUrl}
                         disabled={shortLoading}
                         className="flex items-center justify-center gap-2 mx-auto px-5 py-2.5 bg-violet-600 hover:bg-violet-700 disabled:opacity-60 text-white text-sm font-semibold rounded-xl transition-all"
                       >

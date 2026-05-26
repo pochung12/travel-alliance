@@ -8,17 +8,22 @@ function getAdmin() {
   );
 }
 
-// 去除易混淆字元（0 O l 1 I i）
-const CHARS = "abcdefghjkmnpqrstuvwxyz23456789";
-
-function randomCode(len = 6): string {
-  return Array.from(
-    { length: len },
-    () => CHARS[Math.floor(Math.random() * CHARS.length)]
-  ).join("");
+// ── is.gd 免費短網址 API（不需 API key，每小時 200 次限制） ──────────────────
+async function isgdShorten(longUrl: string): Promise<string | null> {
+  try {
+    const params = new URLSearchParams({ format: "json", url: longUrl });
+    const res = await fetch(`https://is.gd/create.php?${params}`, {
+      next: { revalidate: 0 },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return (data.shorturl as string) || null;
+  } catch {
+    return null;
+  }
 }
 
-// POST /api/shorten — 為行程建立短碼（已存在則直接回傳）
+// ── POST /api/shorten — 為行程建立 is.gd 短網址 ─────────────────────────────
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const { tourId } = body as { tourId?: string };
@@ -26,27 +31,45 @@ export async function POST(req: Request) {
 
   const sb = getAdmin();
 
-  // 若該行程已有短碼 → 直接回傳
+  // 若已有短網址記錄 → 直接回傳
   const { data: existing } = await sb
     .from("tour_join_codes")
-    .select("code")
+    .select("code, short_url")
     .eq("tour_id", tourId)
     .limit(1);
 
+  if (existing && existing.length > 0 && existing[0].short_url) {
+    return NextResponse.json({ shortUrl: existing[0].short_url });
+  }
+
+  // 建構目標報名表 URL（用 request header 取得 host）
+  const host  = req.headers.get("host") || "";
+  const proto = req.headers.get("x-forwarded-proto") || "https";
+  const joinUrl = `${proto}://${host}/join/${tourId}`;
+
+  // 呼叫 is.gd 產生短網址
+  const shortUrl = await isgdShorten(joinUrl);
+  if (!shortUrl) {
+    return NextResponse.json(
+      { error: "is.gd 服務暫時無法使用，請稍後再試" },
+      { status: 503 }
+    );
+  }
+
+  // 存入 DB
   if (existing && existing.length > 0) {
-    return NextResponse.json({ code: existing[0].code });
+    // 已有記錄但無 short_url → 更新
+    await sb.from("tour_join_codes")
+      .update({ short_url: shortUrl })
+      .eq("tour_id", tourId);
+  } else {
+    // 全新記錄（保留 code 欄位相容舊資料）
+    const code = Array.from(
+      { length: 6 },
+      () => "abcdefghjkmnpqrstuvwxyz23456789"[Math.floor(Math.random() * 32)]
+    ).join("");
+    await sb.from("tour_join_codes").insert({ code, tour_id: tourId, short_url: shortUrl });
   }
 
-  // 產生新短碼（重試避免極低機率碰撞）
-  for (let attempt = 0; attempt < 8; attempt++) {
-    const code = randomCode(6);
-    const { error } = await sb
-      .from("tour_join_codes")
-      .insert({ code, tour_id: tourId });
-    if (!error) return NextResponse.json({ code });
-    // 若非 unique constraint 錯誤則直接中斷
-    if (!error.message?.includes("duplicate") && !error.message?.includes("unique")) break;
-  }
-
-  return NextResponse.json({ error: "產生短網址失敗，請再試一次" }, { status: 500 });
+  return NextResponse.json({ shortUrl });
 }
