@@ -8,22 +8,45 @@ function getAdmin() {
   );
 }
 
-// ── is.gd 免費短網址 API（不需 API key，每小時 200 次限制） ──────────────────
+// ── is.gd（首選） ────────────────────────────────────────────────────────────
 async function isgdShorten(longUrl: string): Promise<string | null> {
   try {
     const params = new URLSearchParams({ format: "json", url: longUrl });
     const res = await fetch(`https://is.gd/create.php?${params}`, {
-      next: { revalidate: 0 },
+      signal: AbortSignal.timeout(5000),
     });
     if (!res.ok) return null;
     const data = await res.json();
+    if (data.errorcode) return null;
     return (data.shorturl as string) || null;
   } catch {
     return null;
   }
 }
 
-// ── POST /api/shorten — 為行程建立 is.gd 短網址 ─────────────────────────────
+// ── TinyURL（備用） ──────────────────────────────────────────────────────────
+async function tinyurlShorten(longUrl: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `https://tinyurl.com/api-create.php?url=${encodeURIComponent(longUrl)}`,
+      { signal: AbortSignal.timeout(5000) }
+    );
+    if (!res.ok) return null;
+    const text = await res.text();
+    // TinyURL 回傳純文字，必須是 https:// 開頭
+    return text.startsWith("https://") ? text.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+// ── 本地短碼（最終備用） ─────────────────────────────────────────────────────
+const CHARS = "abcdefghjkmnpqrstuvwxyz23456789";
+function randomCode(len = 6): string {
+  return Array.from({ length: len }, () => CHARS[Math.floor(Math.random() * CHARS.length)]).join("");
+}
+
+// ── POST /api/shorten ────────────────────────────────────────────────────────
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const { tourId } = body as { tourId?: string };
@@ -42,34 +65,51 @@ export async function POST(req: Request) {
     return NextResponse.json({ shortUrl: existing[0].short_url });
   }
 
-  // 建構目標報名表 URL（用 request header 取得 host）
-  const host  = req.headers.get("host") || "";
-  const proto = req.headers.get("x-forwarded-proto") || "https";
-  const joinUrl = `${proto}://${host}/join/${tourId}`;
+  // 目標報名表 URL
+  const host     = req.headers.get("host") || "";
+  const proto    = req.headers.get("x-forwarded-proto") || "https";
+  const joinUrl  = `${proto}://${host}/join/${tourId}`;
 
-  // 呼叫 is.gd 產生短網址
-  const shortUrl = await isgdShorten(joinUrl);
+  // 依序嘗試三種方式
+  let shortUrl: string | null = null;
+  let source = "";
+
+  shortUrl = await isgdShorten(joinUrl);
+  if (shortUrl) { source = "is.gd"; }
+
   if (!shortUrl) {
-    return NextResponse.json(
-      { error: "is.gd 服務暫時無法使用，請稍後再試" },
-      { status: 503 }
-    );
+    shortUrl = await tinyurlShorten(joinUrl);
+    if (shortUrl) { source = "tinyurl"; }
   }
 
-  // 存入 DB
+  // 兩個外部服務都失敗 → 本地 /j/[code] 作為最終備用
+  if (!shortUrl) {
+    const code = randomCode(6);
+    shortUrl = `${proto}://${host}/j/${code}`;
+    source = "local";
+
+    // 存本地短碼
+    if (existing && existing.length > 0) {
+      await sb.from("tour_join_codes")
+        .update({ short_url: shortUrl })
+        .eq("tour_id", tourId);
+    } else {
+      await sb.from("tour_join_codes")
+        .insert({ code, tour_id: tourId, short_url: shortUrl });
+    }
+    return NextResponse.json({ shortUrl, source });
+  }
+
+  // 外部短網址成功 → 存入 DB
   if (existing && existing.length > 0) {
-    // 已有記錄但無 short_url → 更新
     await sb.from("tour_join_codes")
       .update({ short_url: shortUrl })
       .eq("tour_id", tourId);
   } else {
-    // 全新記錄（保留 code 欄位相容舊資料）
-    const code = Array.from(
-      { length: 6 },
-      () => "abcdefghjkmnpqrstuvwxyz23456789"[Math.floor(Math.random() * 32)]
-    ).join("");
-    await sb.from("tour_join_codes").insert({ code, tour_id: tourId, short_url: shortUrl });
+    const code = randomCode(6);
+    await sb.from("tour_join_codes")
+      .insert({ code, tour_id: tourId, short_url: shortUrl });
   }
 
-  return NextResponse.json({ shortUrl });
+  return NextResponse.json({ shortUrl, source });
 }
