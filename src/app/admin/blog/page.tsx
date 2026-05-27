@@ -382,7 +382,7 @@ export default function AdminBlogPage() {
           <Link href="/blog" target="_blank"
             className="flex items-center gap-1.5 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 px-3.5 py-2 rounded-xl text-sm transition-colors">
             <ExternalLink className="w-4 h-4" />
-            <span className="hidden sm:inline">前台預覽</span>
+            <span>前台</span>
           </Link>
         </div>
       </div>
@@ -416,8 +416,84 @@ export default function AdminBlogPage() {
         </button>
       </div>
 
-      {/* Table */}
-      <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 overflow-hidden">
+      {/* Mobile card list */}
+      {loading ? (
+        <div className="md:hidden flex justify-center py-12 text-slate-400">
+          <RefreshCw className="w-6 h-6 animate-spin" />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="md:hidden bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 py-14 text-center text-slate-400">
+          <Newspaper className="w-8 h-8 mx-auto mb-2 opacity-30" />
+          <p className="text-sm">尚無文章</p>
+          <div className="flex justify-center gap-3 mt-4">
+            <button onClick={() => setShowAI(true)} className="text-amber-500 hover:underline text-sm">AI 生成</button>
+            <span className="text-slate-300">|</span>
+            <Link href="/admin/blog/new" className="text-slate-600 hover:underline text-sm">手動新增</Link>
+          </div>
+        </div>
+      ) : (
+        <div className="md:hidden space-y-2">
+          {filtered.map(p => (
+            <div key={p.id} className="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 p-4 space-y-3">
+              {/* Title row */}
+              <div className="flex items-start gap-2">
+                <button onClick={() => toggleFeatured(p)}
+                  className={`mt-0.5 shrink-0 transition-colors ${p.featured ? "text-amber-500" : "text-slate-300"}`}>
+                  {p.featured ? <Star className="w-4 h-4 fill-current" /> : <StarOff className="w-4 h-4" />}
+                </button>
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-slate-900 dark:text-white leading-snug line-clamp-2">{p.title}</div>
+                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_BADGE[p.status] || STATUS_BADGE.draft}`}>
+                      {STATUS_LABEL[p.status] ?? p.status}
+                    </span>
+                    <span className="text-xs text-slate-400">{CAT_LABEL[p.category] ?? p.category}</span>
+                    {p.ai_generated && (
+                      <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-600 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded">
+                        <Sparkles className="w-2.5 h-2.5" /> AI
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              {/* Date + stats */}
+              <div className="flex items-center gap-3 text-xs text-slate-400">
+                <span>{fmtDate(p.published_at) !== "—" ? fmtDate(p.published_at) : fmtDate(p.created_at)}</span>
+                <span>{p.reading_time}分鐘 · {p.view_count}次瀏覽</span>
+              </div>
+              {/* Actions */}
+              <div className="flex items-center gap-2 pt-1 border-t border-slate-50 dark:border-slate-700">
+                <button onClick={() => togglePublish(p)}
+                  className={`flex-1 flex items-center justify-center gap-1.5 text-xs py-2 rounded-lg transition-colors border ${
+                    p.status === "published"
+                      ? "border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20"
+                      : "border-slate-200 dark:border-slate-600 text-slate-500 dark:text-slate-400"
+                  }`}>
+                  {p.status === "published" ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                  {p.status === "published" ? "已發布" : "草稿"}
+                </button>
+                <Link href={`/admin/blog/${p.id}`}
+                  className="flex-1 flex items-center justify-center gap-1.5 text-xs py-2 rounded-lg border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 transition-colors">
+                  <Pencil className="w-3.5 h-3.5" /> 編輯
+                </Link>
+                {p.status === "published" && (
+                  <Link href={`/blog/${p.slug}`} target="_blank"
+                    className="flex-1 flex items-center justify-center gap-1.5 text-xs py-2 rounded-lg border border-amber-200 dark:border-amber-800 text-amber-600 dark:text-amber-400 bg-amber-50/50 dark:bg-amber-900/10 transition-colors">
+                    <ExternalLink className="w-3.5 h-3.5" /> 預覽
+                  </Link>
+                )}
+                <button onClick={() => deletePost(p.id)} disabled={deleting === p.id}
+                  className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors disabled:opacity-40">
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Desktop table */}
+      <div className="hidden md:block bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[680px]">
             <thead>
@@ -426,7 +502,7 @@ export default function AdminBlogPage() {
                 <th className="text-left px-4 py-3 font-medium text-slate-500 dark:text-slate-400">標題</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-500 dark:text-slate-400 whitespace-nowrap">分類</th>
                 <th className="text-left px-4 py-3 font-medium text-slate-500 dark:text-slate-400 whitespace-nowrap">狀態</th>
-                <th className="text-left px-4 py-3 font-medium text-slate-500 dark:text-slate-400 whitespace-nowrap hidden md:table-cell">
+                <th className="text-left px-4 py-3 font-medium text-slate-500 dark:text-slate-400 whitespace-nowrap">
                   <Calendar className="w-3.5 h-3.5 inline-block mr-1" />發布日期
                 </th>
                 <th className="text-left px-4 py-3 font-medium text-slate-500 dark:text-slate-400 whitespace-nowrap hidden lg:table-cell">閱讀/瀏覽</th>
@@ -459,15 +535,13 @@ export default function AdminBlogPage() {
                   </td>
                   {/* Title */}
                   <td className="px-4 py-3 max-w-[260px]">
-                    <div className="flex items-start gap-2">
-                      <div className="min-w-0">
-                        <div className="font-medium text-slate-900 dark:text-white truncate leading-snug">{p.title}</div>
-                        {p.ai_generated && (
-                          <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-600 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded mt-0.5">
-                            <Sparkles className="w-2.5 h-2.5" /> AI
-                          </span>
-                        )}
-                      </div>
+                    <div className="min-w-0">
+                      <div className="font-medium text-slate-900 dark:text-white truncate leading-snug">{p.title}</div>
+                      {p.ai_generated && (
+                        <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-600 bg-amber-50 dark:bg-amber-900/20 px-1.5 py-0.5 rounded mt-0.5">
+                          <Sparkles className="w-2.5 h-2.5" /> AI
+                        </span>
+                      )}
                     </div>
                   </td>
                   {/* Category */}
@@ -481,7 +555,7 @@ export default function AdminBlogPage() {
                     </span>
                   </td>
                   {/* Date */}
-                  <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap hidden md:table-cell">
+                  <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400 whitespace-nowrap">
                     {fmtDate(p.published_at) !== "—" ? fmtDate(p.published_at) : fmtDate(p.created_at)}
                   </td>
                   {/* Stats */}
@@ -491,7 +565,6 @@ export default function AdminBlogPage() {
                   {/* Actions */}
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1">
-                      {/* Toggle publish */}
                       <button onClick={() => togglePublish(p)} title={p.status === "published" ? "設為草稿" : "發布"}
                         className={`p-1.5 rounded-lg transition-colors ${
                           p.status === "published"
@@ -500,19 +573,16 @@ export default function AdminBlogPage() {
                         }`}>
                         {p.status === "published" ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
                       </button>
-                      {/* Edit */}
                       <Link href={`/admin/blog/${p.id}`}
                         className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors">
                         <Pencil className="w-4 h-4" />
                       </Link>
-                      {/* Preview */}
                       {p.status === "published" && (
                         <Link href={`/blog/${p.slug}`} target="_blank"
                           className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-lg transition-colors">
                           <ExternalLink className="w-4 h-4" />
                         </Link>
                       )}
-                      {/* Delete */}
                       <button onClick={() => deletePost(p.id)} disabled={deleting === p.id}
                         className="p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors disabled:opacity-40">
                         <Trash2 className="w-4 h-4" />

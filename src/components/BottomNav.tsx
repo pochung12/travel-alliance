@@ -1,13 +1,16 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Map, Users } from "lucide-react";
+import { LayoutDashboard, Map, Users, FilePen, Newspaper, UserCog } from "lucide-react";
 import { UserRole } from "@/lib/supabase";
 
 const NAV = [
-  { href: "/admin",        label: "儀表板", icon: LayoutDashboard, roles: ["staff","admin"] as UserRole[] },
-  { href: "/admin/groups", label: "團管理",  icon: Map,             roles: ["staff","admin"] as UserRole[] },
-  { href: "/admin/crm",    label: "旅客",   icon: Users,           roles: ["staff","admin"] as UserRole[] },
+  { href: "/admin",           label: "儀表板", icon: LayoutDashboard, roles: ["staff","admin"] as UserRole[] },
+  { href: "/admin/groups",    label: "團管理",  icon: Map,             roles: ["staff","admin"] as UserRole[] },
+  { href: "/admin/crm",       label: "旅客",   icon: Users,           roles: ["staff","admin"] as UserRole[] },
+  { href: "/admin/contracts", label: "簽約",   icon: FilePen,         roles: ["staff","admin"] as UserRole[] },
+  { href: "/admin/blog",      label: "旅遊誌", icon: Newspaper,       roles: ["staff","admin"] as UserRole[] },
+  { href: "/admin/users",     label: "用戶",   icon: UserCog,         roles: ["admin"]          as UserRole[] },
 ];
 
 export default function BottomNav({ role }: { role?: UserRole }) {
@@ -20,7 +23,7 @@ export default function BottomNav({ role }: { role?: UserRole }) {
         const active = pathname === href || (href !== "/admin" && pathname.startsWith(href));
         return (
           <Link key={href} href={href}
-            className={`flex-1 flex flex-col items-center justify-center py-2.5 gap-0.5 text-[11px] font-medium transition-colors ${
+            className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 text-[10px] font-medium transition-colors ${
               active
                 ? "text-blue-600 dark:text-blue-400"
                 : "text-slate-400 dark:text-slate-500 active:text-slate-600 dark:active:text-slate-300"
