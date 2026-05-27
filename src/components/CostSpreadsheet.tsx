@@ -25,7 +25,7 @@ interface Row {
   isNew?: boolean;
 }
 
-interface TourImage { id?: string; name: string; data: string; caption: string; isNew?: boolean }
+interface TourImage { id?: string; name: string; data?: string; caption: string; isNew?: boolean }
 interface Props { tourId: string; pax: number; revenue: number; onSaved?: () => void }
 
 // Daily mode default categories per new day
@@ -111,9 +111,10 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     setCustomColumns((tourData as any)?.custom_columns || []);
 
-    const { data: imgData } = await supabase.from("tour_images").select("*").eq("tour_id", tourId).order("created_at");
+    // 只載入 metadata，不載入 base64 data（按需載入）
+    const { data: imgData } = await supabase.from("tour_images").select("id,name,caption,created_at").eq("tour_id", tourId).order("created_at");
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    setImages((imgData || []).map((i: any) => ({ id: i.id, name: i.name, data: i.data, caption: i.caption || "" })));
+    setImages((imgData || []).map((i: any) => ({ id: i.id, name: i.name, data: undefined, caption: i.caption || "" })));
 
     const { data: vData } = await supabase
       .from("tour_cost_versions").select("*").eq("tour_id", tourId).order("created_at");
@@ -207,9 +208,9 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
 
   const removeDay = async (dayNum: number) => {
     if (!confirm(`確定要刪除第 ${dayNum} 天的所有費用資料？`)) return;
-    const toDelete = rows.filter(r => r.day_number === dayNum && r.id);
-    for (const row of toDelete) {
-      await supabase.from("tour_costs").delete().eq("id", row.id!);
+    const idsToDelete = rows.filter(r => r.day_number === dayNum && r.id).map(r => r.id!);
+    if (idsToDelete.length > 0) {
+      await supabase.from("tour_costs").delete().in("id", idsToDelete);
     }
     setRows(prev => prev.filter(r => r.day_number !== dayNum));
     // Re-number days if needed (keep as-is to avoid confusion, user can rename)
@@ -393,15 +394,27 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
   const saveImages = async () => {
     setSavingImages(true);
     try {
-      for (const img of images.filter(i => i.isNew)) {
+      for (const img of images.filter(i => i.isNew && i.data)) {
         const { data } = await supabase.from("tour_images")
-          .insert([{ tour_id: tourId, name: img.name, data: img.data, caption: img.caption }]).select().single();
+          .insert([{ tour_id: tourId, name: img.name, data: img.data!, caption: img.caption }]).select().single();
         if (data) setImages(prev => prev.map(i => i === img ? { ...i, id: data.id, isNew: false } : i));
       }
       for (const img of images.filter(i => i.id && !i.isNew))
         await supabase.from("tour_images").update({ caption: img.caption }).eq("id", img.id!);
     } catch { alert("照片儲存失敗"); }
     finally { setSavingImages(false); }
+  };
+
+  // 按需載入圖片 data（點擊時才 fetch base64）
+  const loadAndViewImage = async (img: TourImage) => {
+    if (img.data) { setViewingImage(img); return; }
+    if (!img.id) return;
+    const { data } = await supabase.from("tour_images").select("data").eq("id", img.id).single();
+    if (data?.data) {
+      const loaded: TourImage = { ...img, data: data.data as string };
+      setImages(prev => prev.map(i => i.id === img.id ? loaded : i));
+      setViewingImage(loaded);
+    }
   };
 
   // ── Exchange rate ─────────────────────────────────────────────────────────────
@@ -925,8 +938,15 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
           <div className="p-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
             {images.map((img, idx) => (
               <div key={idx} className="relative group">
-                <div className="aspect-square rounded-lg overflow-hidden bg-slate-100 border border-slate-200 cursor-pointer" onClick={() => setViewingImage(img)}>
-                  <img src={img.data} alt={img.name} className="w-full h-full object-cover hover:scale-105 transition-transform" />
+                <div className="aspect-square rounded-lg overflow-hidden bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 cursor-pointer" onClick={() => loadAndViewImage(img)}>
+                  {img.data ? (
+                    <img src={img.data} alt={img.name} className="w-full h-full object-cover hover:scale-105 transition-transform" />
+                  ) : (
+                    <div className="w-full h-full flex flex-col items-center justify-center text-slate-300 dark:text-slate-600 gap-1 select-none">
+                      <Camera className="w-6 h-6" />
+                      <span className="text-[10px] truncate px-2 text-center leading-tight">{img.name}</span>
+                    </div>
+                  )}
                   {img.isNew && <div className="absolute top-1 left-1 bg-orange-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-medium">未儲存</div>}
                 </div>
                 <button onClick={() => removeImage(idx)}
@@ -1030,7 +1050,7 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
       {viewingImage && (
         <div className="fixed inset-0 bg-black/85 flex items-center justify-center z-50 p-4" onClick={() => setViewingImage(null)}>
           <div className="max-w-3xl max-h-full relative" onClick={e => e.stopPropagation()}>
-            <img src={viewingImage.data} alt={viewingImage.name} className="max-w-full max-h-[80vh] rounded-xl shadow-2xl object-contain" />
+            {viewingImage.data && <img src={viewingImage.data} alt={viewingImage.name} className="max-w-full max-h-[80vh] rounded-xl shadow-2xl object-contain" />}
             {viewingImage.caption && <div className="mt-3 text-center text-white text-sm bg-black/40 rounded-lg px-4 py-2">{viewingImage.caption}</div>}
             <button onClick={() => setViewingImage(null)} className="absolute -top-3 -right-3 p-2 bg-white/20 text-white rounded-full hover:bg-white/40 backdrop-blur-sm"><X className="w-5 h-5" /></button>
           </div>

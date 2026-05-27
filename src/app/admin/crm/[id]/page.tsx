@@ -110,8 +110,10 @@ export default function CustomerDetailPage() {
       meal_preference: form.meal_preference || "",
     }).eq("id", id);
     setSaving(false);
-    const { data } = await supabase.from("customers").select("*").eq("id", id).single();
-    if (data) { setCustomer(data); setForm(data); }
+    // 樂觀更新：直接用 form 狀態，不需要重新 fetch DB
+    const updated = { ...customer!, ...form } as Customer;
+    setCustomer(updated);
+    setForm(updated);
   };
 
   const toggleMealPref = (option: string) => {

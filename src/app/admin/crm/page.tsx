@@ -1053,13 +1053,11 @@ export default function CRMPage() {
       const existingTourIds = new Set((existingTours || []).map((r: {tour_id: string}) => r.tour_id));
       const { data: secTours } = await supabase
         .from("customer_tours").select("id,tour_id").eq("customer_id", secondary.id);
-      for (const t of (secTours || []) as {id:string;tour_id:string}[]) {
-        if (existingTourIds.has(t.tour_id)) {
-          await supabase.from("customer_tours").delete().eq("id", t.id);
-        } else {
-          await supabase.from("customer_tours").update({customer_id: primary.id}).eq("id", t.id);
-        }
-      }
+      const secToursArr = (secTours || []) as {id:string;tour_id:string}[];
+      const tourDelIds = secToursArr.filter(t =>  existingTourIds.has(t.tour_id)).map(t => t.id);
+      const tourUpdIds = secToursArr.filter(t => !existingTourIds.has(t.tour_id)).map(t => t.id);
+      if (tourDelIds.length > 0) await supabase.from("customer_tours").delete().in("id", tourDelIds);
+      if (tourUpdIds.length > 0) await supabase.from("customer_tours").update({customer_id: primary.id}).in("id", tourUpdIds);
 
       // 3. 標籤轉移（避免重複標籤）
       const { data: existingLabels } = await supabase
@@ -1067,13 +1065,11 @@ export default function CRMPage() {
       const existingLabelIds = new Set((existingLabels || []).map((r: {label_id: string}) => r.label_id));
       const { data: secLabels } = await supabase
         .from("customer_labels").select("id,label_id").eq("customer_id", secondary.id);
-      for (const l of (secLabels || []) as {id:string;label_id:string}[]) {
-        if (existingLabelIds.has(l.label_id)) {
-          await supabase.from("customer_labels").delete().eq("id", l.id);
-        } else {
-          await supabase.from("customer_labels").update({customer_id: primary.id}).eq("id", l.id);
-        }
-      }
+      const secLabelsArr = (secLabels || []) as {id:string;label_id:string}[];
+      const labelDelIds = secLabelsArr.filter(l =>  existingLabelIds.has(l.label_id)).map(l => l.id);
+      const labelUpdIds = secLabelsArr.filter(l => !existingLabelIds.has(l.label_id)).map(l => l.id);
+      if (labelDelIds.length > 0) await supabase.from("customer_labels").delete().in("id", labelDelIds);
+      if (labelUpdIds.length > 0) await supabase.from("customer_labels").update({customer_id: primary.id}).in("id", labelUpdIds);
 
       // 4. 刪除次要帳號
       await supabase.from("customers").delete().eq("id", secondary.id);

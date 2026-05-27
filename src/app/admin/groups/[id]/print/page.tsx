@@ -86,7 +86,7 @@ export default function PrintPage() {
       const [{ data: t }, { data: p }] = await Promise.all([
         sb.from("tours").select("*").eq("id", id).single(),
         sb.from("customer_tours")
-          .select("*, customer:customers(*)")
+          .select("*, customer:customers(id,name,name_en,phone,email,birthday,gender,id_number,passport,passport_expiry,taibao_number,taibao_expiry,address,emergency_contact,emergency_phone,notes,meal_preference)")
           .eq("tour_id", id),
       ]);
       setTour(t as Tour);

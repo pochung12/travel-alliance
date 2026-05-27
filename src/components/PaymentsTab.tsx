@@ -105,7 +105,7 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], o
   const loadPayments = useCallback(async () => {
     const { data } = await supabase
       .from("tour_payments")
-      .select("*")
+      .select("id,tour_id,type,category,description,amount,payment_date,note,image,customer_ids,is_payable,created_at")
       .eq("tour_id", tourId)
       .order("payment_date", { ascending: false });
     setPayments(data || []);

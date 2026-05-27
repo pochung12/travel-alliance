@@ -394,11 +394,11 @@ export default function AdminDashboard() {
   useEffect(() => {
     (async () => {
       const [{ data: tourData }, { count }, { data: payData }] = await Promise.all([
-        supabase.from("tours").select("*").order("start_date", { ascending: true }),
+        supabase.from("tours").select("id,name,destination,start_date,end_date,pax,status").order("start_date", { ascending: true }),
         supabase.from("customers").select("*", { count: "exact", head: true }),
         supabase.from("tour_payments").select("type, amount, payment_date"),
       ]);
-      setTours(tourData || []);
+      setTours((tourData || []) as unknown as Tour[]);
       setCustCount(count || 0);
       setPayments((payData || []) as Payment[]);
       setLoading(false);

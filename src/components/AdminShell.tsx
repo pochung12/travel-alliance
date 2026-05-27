@@ -20,12 +20,12 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
       if (!session) { router.replace("/login"); return; }
 
       const { data: prof } = await supabase
-        .from("profiles").select("*").eq("id", session.user.id).single();
+        .from("profiles").select("id,name,role,email").eq("id", session.user.id).single();
 
       if (!prof) { router.replace("/login"); return; }
       if (prof.role === "customer") { router.replace("/customer"); return; }
 
-      if (mounted) { setProfile(prof); setChecking(false); }
+      if (mounted) { setProfile(prof as Profile); setChecking(false); }
     };
 
     check();
