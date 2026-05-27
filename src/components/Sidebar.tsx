@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Map, Users, Globe,
   ChevronLeft, ChevronRight, Sun, Moon,
-  LogOut, UserCog, ShieldCheck, User, Newspaper, FilePen,
+  LogOut, UserCog, ShieldCheck, User, Newspaper, FilePen, RefreshCw,
 } from "lucide-react";
 import { APP_VERSION } from "@/lib/version";
 import { useTheme } from "./ThemeProvider";
@@ -37,7 +37,7 @@ export default function Sidebar({ collapsed, onToggleCollapse, profile }: Props)
   const router   = useRouter();
   const { theme, toggle } = useTheme();
 
-  const { rate } = useExchangeRate();
+  const { rate, rateDate, refreshing, refresh } = useExchangeRate();
   const role = profile?.role ?? "staff";
   const badge = ROLE_BADGE[role];
   const BadgeIcon = badge.icon;
@@ -97,21 +97,44 @@ export default function Sidebar({ collapsed, onToggleCollapse, profile }: Props)
       )}
 
       {/* CNY/TWD 匯率 */}
-      {rate && (
-        <div className={`border-b border-slate-700/60 px-3 py-2 ${collapsed ? "flex justify-center" : ""}`}>
-          <div className={`flex items-center gap-1.5 bg-amber-500/10 rounded-lg px-2.5 py-1.5 ${collapsed ? "justify-center" : ""}`}
-            title={`今日人民幣匯率：1 CNY = NT$ ${rate.toFixed(4)}`}>
-            <span className="text-amber-400 text-sm font-bold shrink-0">¥</span>
-            {!collapsed ? (
-              <span className="text-xs text-amber-300 whitespace-nowrap">
-                1 = <span className="font-bold text-amber-200">NT$ {rate.toFixed(2)}</span>
-              </span>
-            ) : (
-              <span className="text-[10px] text-amber-300 font-bold leading-tight">{rate.toFixed(1)}</span>
-            )}
+      <div className={`border-b border-slate-700/60 px-3 py-2 ${collapsed ? "flex justify-center" : ""}`}>
+        {!collapsed ? (
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 bg-amber-500/10 rounded-lg px-2.5 py-1.5 flex-1 min-w-0">
+              <span className="text-amber-400 text-sm font-bold shrink-0">¥</span>
+              {rate ? (
+                <div className="min-w-0">
+                  <span className="text-xs text-amber-300 whitespace-nowrap">
+                    1 = <span className="font-bold text-amber-200">NT$ {rate.toFixed(2)}</span>
+                  </span>
+                  {rateDate && <div className="text-[9px] text-slate-500 leading-tight">{rateDate}</div>}
+                </div>
+              ) : (
+                <span className="text-xs text-slate-500">尚未設定</span>
+              )}
+            </div>
+            <button
+              onClick={refresh}
+              disabled={refreshing}
+              title="手動更新匯率"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 transition-colors disabled:opacity-40 shrink-0"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`} />
+            </button>
           </div>
-        </div>
-      )}
+        ) : (
+          <button
+            onClick={refresh}
+            disabled={refreshing}
+            title={rate ? `¥1 = NT$${rate.toFixed(2)}　點擊更新` : "點擊更新匯率"}
+            className="flex flex-col items-center gap-0.5 p-1.5 rounded-lg hover:bg-amber-500/10 transition-colors disabled:opacity-40"
+          >
+            <span className="text-amber-400 text-xs font-bold">¥</span>
+            {rate && <span className="text-[9px] text-amber-300 font-bold">{rate.toFixed(1)}</span>}
+            <RefreshCw className={`w-2.5 h-2.5 text-slate-500 ${refreshing ? "animate-spin" : ""}`} />
+          </button>
+        )}
+      </div>
 
       {/* Nav */}
       <nav className="flex-1 px-2 py-4 space-y-1">

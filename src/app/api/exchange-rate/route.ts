@@ -8,23 +8,26 @@ function getAdmin() {
   );
 }
 
-// 取得 CNY→TWD 匯率，每天只從外部 API 抓一次，其餘從 DB 快取讀取
+// ── GET：讀取最新一筆匯率（只查 DB，不打外部 API）────────────────────────────
 export async function GET() {
-  const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
   const sb = getAdmin();
 
-  // ── 1. 先查 DB 快取 ────────────────────────────────────────────────────────
-  const { data: cached } = await sb
+  const { data } = await sb
     .from("exchange_rates")
-    .select("cny_to_twd")
-    .eq("date", today)
+    .select("cny_to_twd, date")
+    .order("date", { ascending: false })
+    .limit(1)
     .single();
 
-  if (cached?.cny_to_twd) {
-    return NextResponse.json({ rate: cached.cny_to_twd, date: today, cached: true });
+  if (!data) {
+    return NextResponse.json({ rate: null, date: null });
   }
 
-  // ── 2. 從 CDN 免費 API 抓最新匯率（不需 API key，jsdelivr CDN 快取每日更新）
+  return NextResponse.json({ rate: data.cny_to_twd, date: data.date });
+}
+
+// ── POST：手動觸發更新，從外部 API 抓最新匯率後存入 DB ──────────────────────
+export async function POST() {
   let rate: number | null = null;
 
   // 主要來源：fawazahmed0 currency API（CDN 托管，完全免費）
@@ -39,7 +42,7 @@ export async function GET() {
     }
   } catch { /* ignore, try fallback */ }
 
-  // 備用：exchangerate-api v4（免費、無需 key）
+  // 備用：exchangerate-api v4
   if (!rate) {
     try {
       const res = await fetch(
@@ -54,17 +57,16 @@ export async function GET() {
   }
 
   if (!rate) {
-    return NextResponse.json(
-      { error: "無法取得匯率，請稍後再試" },
-      { status: 503 }
-    );
+    return NextResponse.json({ error: "無法取得匯率，請稍後再試" }, { status: 503 });
   }
 
-  // ── 3. 寫入 DB 快取（upsert 防止重複）──────────────────────────────────────
+  const today = new Date().toISOString().slice(0, 10);
+  const sb = getAdmin();
+
   await sb.from("exchange_rates").upsert(
     { date: today, cny_to_twd: rate, updated_at: new Date().toISOString() },
     { onConflict: "date" }
   );
 
-  return NextResponse.json({ rate, date: today, cached: false });
+  return NextResponse.json({ rate, date: today });
 }

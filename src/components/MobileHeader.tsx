@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Globe, Sun, Moon, LogOut, X, ShieldCheck, UserCog, User } from "lucide-react";
+import { Globe, Sun, Moon, LogOut, X, ShieldCheck, UserCog, User, RefreshCw } from "lucide-react";
 import { supabase, Profile, UserRole } from "@/lib/supabase";
 import { useTheme } from "./ThemeProvider";
 import { APP_VERSION } from "@/lib/version";
@@ -16,7 +16,7 @@ const ROLE_INFO: Record<UserRole, { label: string; icon: React.ElementType; colo
 export default function MobileHeader({ profile }: { profile: Profile | null }) {
   const router          = useRouter();
   const { theme, toggle } = useTheme();
-  const { rate }          = useExchangeRate();
+  const { rate, refreshing, refresh } = useExchangeRate();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const role    = profile?.role ?? "staff";
@@ -41,12 +41,18 @@ export default function MobileHeader({ profile }: { profile: Profile | null }) {
 
         {/* Right actions */}
         <div className="flex items-center gap-1">
-          {/* CNY 匯率小標籤 */}
-          {rate && (
-            <span className="text-[11px] font-medium bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-full border border-amber-200 dark:border-amber-700/50 whitespace-nowrap">
-              ¥ = {rate.toFixed(2)}
+          {/* CNY 匯率 + 更新按鈕 */}
+          <button
+            onClick={refresh}
+            disabled={refreshing}
+            title={rate ? `¥1 = NT$${rate.toFixed(2)}　點擊更新` : "點擊更新匯率"}
+            className="flex items-center gap-1 bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-full border border-amber-200 dark:border-amber-700/50 disabled:opacity-50 transition-opacity"
+          >
+            <span className="text-[11px] font-medium whitespace-nowrap">
+              {rate ? `¥ ${rate.toFixed(2)}` : "¥ —"}
             </span>
-          )}
+            <RefreshCw className={`w-3 h-3 shrink-0 ${refreshing ? "animate-spin" : ""}`} />
+          </button>
           {/* Dark mode toggle */}
           <button
             onClick={toggle}
