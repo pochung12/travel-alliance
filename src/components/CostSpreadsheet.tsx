@@ -1,6 +1,7 @@
 "use client";
 import { useState, useCallback, useEffect, useRef } from "react";
 import { supabase, TourCost, TourCostVersion, COST_CATEGORIES, CostCategory } from "@/lib/supabase";
+import { useExchangeRate } from "@/lib/useExchangeRate";
 import {
   Save, Plus, Trash2, Settings, X, Camera, Upload,
   Check, ChevronDown, ChevronRight, Pencil, Copy,
@@ -403,6 +404,9 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
     finally { setSavingImages(false); }
   };
 
+  // ── Exchange rate ─────────────────────────────────────────────────────────────
+  const { rate: cnyRate } = useExchangeRate();
+
   // ── Derived ───────────────────────────────────────────────────────────────────
   const overallRows = rows.filter(r => r.day_number == null);
   const displayRows = calcMode === 'overall' ? overallRows : rows.filter(r => r.day_number != null);
@@ -431,6 +435,10 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
       <tr className="bg-slate-700 text-white text-xs">
         <th className="text-left px-3 py-2 w-32">費用項目</th>
         <th className="text-left px-3 py-2 min-w-[130px]">說明</th>
+        <th className="text-right px-3 py-2 w-24 bg-amber-600/60">
+          ¥ 人民幣
+          {cnyRate && <span className="block text-[9px] text-amber-200 font-normal">×{cnyRate.toFixed(2)}</span>}
+        </th>
         <th className="text-right px-3 py-2 w-24">單價 (NT$)</th>
         <th className="text-right px-3 py-2 w-16">數量</th>
         <th className="text-right px-3 py-2 w-24 font-bold">小計 (NT$)</th>
@@ -445,32 +453,58 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
   );
 
   // ── Row render (shared) ───────────────────────────────────────────────────────
-  const renderRow = (r: Row, idx: number) => (
-    <tr key={idx} className={`border-t border-slate-100 dark:border-slate-700 ${idx % 2 === 0 ? "bg-white dark:bg-slate-800" : "bg-slate-50/50 dark:bg-slate-800/50"} hover:bg-blue-50/30 dark:hover:bg-blue-900/10 transition-colors`}>
-      <td className="px-1 py-1">
-        <select className="w-full text-xs border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
-          value={r.category} onChange={e => updateRow(idx, "category", e.target.value)}>
-          {COST_CATEGORIES.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
-        </select>
-      </td>
-      <td className="px-1 py-1"><input className="cell-input rounded" placeholder="說明（選填）" value={r.description} onChange={e => updateRow(idx, "description", e.target.value)} /></td>
-      <td className="px-1 py-1"><input type="number" className="cell-input text-right rounded" value={r.unit_price || ""} placeholder="0" min="0" onChange={e => updateRow(idx, "unit_price", +e.target.value)} /></td>
-      <td className="px-1 py-1"><input type="number" className="cell-input text-right rounded" value={r.quantity || ""} placeholder="1" min="0" onChange={e => updateRow(idx, "quantity", +e.target.value)} /></td>
-      <td className="px-3 py-2 text-right font-semibold text-slate-700 dark:text-slate-200 whitespace-nowrap">{(r.unit_price * r.quantity).toLocaleString()}</td>
-      <td className="px-1 py-1"><input className="cell-input rounded" placeholder="備註" value={r.notes} onChange={e => updateRow(idx, "notes", e.target.value)} /></td>
-      <td className="px-1 py-1"><UrlCell value={r.reference_url} onChange={v => updateRow(idx, "reference_url", v)} /></td>
-      {customColumns.map(col => (
-        <td key={col.id} className="px-1 py-1 bg-indigo-50/30">
-          <input type={col.type === "number" ? "number" : "text"} className="cell-input rounded" placeholder="—"
-            value={r.custom_data[col.id] !== undefined ? String(r.custom_data[col.id]) : ""}
-            onChange={e => updateCustomCell(idx, col.id, col.type === "number" ? +e.target.value : e.target.value)} />
+  const renderRow = (r: Row, idx: number) => {
+    const cnyVal = r.custom_data._cny !== undefined ? Number(r.custom_data._cny) : undefined;
+    const handleCnyChange = (val: string) => {
+      const cny = val === "" ? 0 : parseFloat(val);
+      const twd = cnyRate && cny > 0 ? Math.round(cny * cnyRate) : r.unit_price;
+      setRows(prev => prev.map((row, i) => i !== idx ? row : {
+        ...row,
+        unit_price: cny > 0 ? (cnyRate ? Math.round(cny * cnyRate) : row.unit_price) : row.unit_price,
+        custom_data: { ...row.custom_data, _cny: cny > 0 ? cny : 0 },
+        dirty: true,
+      }));
+      void twd; // suppress unused warning
+    };
+
+    return (
+      <tr key={idx} className={`border-t border-slate-100 dark:border-slate-700 ${idx % 2 === 0 ? "bg-white dark:bg-slate-800" : "bg-slate-50/50 dark:bg-slate-800/50"} hover:bg-blue-50/30 dark:hover:bg-blue-900/10 transition-colors`}>
+        <td className="px-1 py-1">
+          <select className="w-full text-xs border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400"
+            value={r.category} onChange={e => updateRow(idx, "category", e.target.value)}>
+            {COST_CATEGORIES.map(c => <option key={c.key} value={c.key}>{c.label}</option>)}
+          </select>
         </td>
-      ))}
-      <td className="px-1 py-1 text-center">
-        <button onClick={() => removeRow(idx)} className="p-1.5 text-slate-400 hover:text-white hover:bg-red-500 transition-colors rounded-lg"><Trash2 className="w-3.5 h-3.5" /></button>
-      </td>
-    </tr>
-  );
+        <td className="px-1 py-1"><input className="cell-input rounded" placeholder="說明（選填）" value={r.description} onChange={e => updateRow(idx, "description", e.target.value)} /></td>
+        {/* ¥ 人民幣欄位 */}
+        <td className="px-1 py-1 bg-amber-50/20 dark:bg-amber-900/10">
+          <input
+            type="number"
+            className="cell-input text-right rounded border-amber-200 dark:border-amber-700/50 focus:ring-amber-400"
+            placeholder="¥"
+            min="0"
+            value={(cnyVal && cnyVal > 0) ? cnyVal : ""}
+            onChange={e => handleCnyChange(e.target.value)}
+          />
+        </td>
+        <td className="px-1 py-1"><input type="number" className="cell-input text-right rounded" value={r.unit_price || ""} placeholder="0" min="0" onChange={e => updateRow(idx, "unit_price", +e.target.value)} /></td>
+        <td className="px-1 py-1"><input type="number" className="cell-input text-right rounded" value={r.quantity || ""} placeholder="1" min="0" onChange={e => updateRow(idx, "quantity", +e.target.value)} /></td>
+        <td className="px-3 py-2 text-right font-semibold text-slate-700 dark:text-slate-200 whitespace-nowrap">{(r.unit_price * r.quantity).toLocaleString()}</td>
+        <td className="px-1 py-1"><input className="cell-input rounded" placeholder="備註" value={r.notes} onChange={e => updateRow(idx, "notes", e.target.value)} /></td>
+        <td className="px-1 py-1"><UrlCell value={r.reference_url} onChange={v => updateRow(idx, "reference_url", v)} /></td>
+        {customColumns.map(col => (
+          <td key={col.id} className="px-1 py-1 bg-indigo-50/30">
+            <input type={col.type === "number" ? "number" : "text"} className="cell-input rounded" placeholder="—"
+              value={r.custom_data[col.id] !== undefined ? String(r.custom_data[col.id]) : ""}
+              onChange={e => updateCustomCell(idx, col.id, col.type === "number" ? +e.target.value : e.target.value)} />
+          </td>
+        ))}
+        <td className="px-1 py-1 text-center">
+          <button onClick={() => removeRow(idx)} className="p-1.5 text-slate-400 hover:text-white hover:bg-red-500 transition-colors rounded-lg"><Trash2 className="w-3.5 h-3.5" /></button>
+        </td>
+      </tr>
+    );
+  };
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
@@ -634,7 +668,7 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
                   {/* Total */}
                   <tr className="bg-slate-800 text-white font-bold text-sm border-t-2 border-slate-600">
                     <td className="px-3 py-3">合計成本</td>
-                    <td colSpan={3} className="px-3 py-3 text-xs text-slate-300 font-normal">每人成本 NT${Math.round(costPerPax).toLocaleString()}</td>
+                    <td colSpan={4} className="px-3 py-3 text-xs text-slate-300 font-normal">每人成本 NT${Math.round(costPerPax).toLocaleString()}</td>
                     <td className="px-3 py-3 text-right text-yellow-300 text-base">NT${totalCost.toLocaleString()}</td>
                     <td colSpan={2 + customColumns.length}></td>
                   </tr>
@@ -706,7 +740,7 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
                             {dayRows.map(({ r, idx }) => renderRow(r, idx))}
                             {/* Day subtotal */}
                             <tr className="bg-violet-900/80 text-white text-xs border-t border-violet-700">
-                              <td colSpan={4} className="px-3 py-2 font-medium text-violet-200">
+                              <td colSpan={5} className="px-3 py-2 font-medium text-violet-200">
                                 {label} 小計
                               </td>
                               <td className="px-3 py-2 text-right font-bold text-yellow-300">

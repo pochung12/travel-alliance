@@ -9,6 +9,7 @@ import {
 import { APP_VERSION } from "@/lib/version";
 import { useTheme } from "./ThemeProvider";
 import { supabase, Profile, UserRole } from "@/lib/supabase";
+import { useExchangeRate } from "@/lib/useExchangeRate";
 
 const NAV_ITEMS = [
   { href: "/admin",             label: "儀表板",   icon: LayoutDashboard, roles: ["staff", "admin"] as UserRole[] },
@@ -36,6 +37,7 @@ export default function Sidebar({ collapsed, onToggleCollapse, profile }: Props)
   const router   = useRouter();
   const { theme, toggle } = useTheme();
 
+  const { rate } = useExchangeRate();
   const role = profile?.role ?? "staff";
   const badge = ROLE_BADGE[role];
   const BadgeIcon = badge.icon;
@@ -91,6 +93,23 @@ export default function Sidebar({ collapsed, onToggleCollapse, profile }: Props)
       {collapsed && profile && (
         <div className="flex justify-center py-3 border-b border-slate-700/60">
           <BadgeIcon className={`w-4 h-4 ${badge.color}`} title={badge.label} />
+        </div>
+      )}
+
+      {/* CNY/TWD 匯率 */}
+      {rate && (
+        <div className={`border-b border-slate-700/60 px-3 py-2 ${collapsed ? "flex justify-center" : ""}`}>
+          <div className={`flex items-center gap-1.5 bg-amber-500/10 rounded-lg px-2.5 py-1.5 ${collapsed ? "justify-center" : ""}`}
+            title={`今日人民幣匯率：1 CNY = NT$ ${rate.toFixed(4)}`}>
+            <span className="text-amber-400 text-sm font-bold shrink-0">¥</span>
+            {!collapsed ? (
+              <span className="text-xs text-amber-300 whitespace-nowrap">
+                1 = <span className="font-bold text-amber-200">NT$ {rate.toFixed(2)}</span>
+              </span>
+            ) : (
+              <span className="text-[10px] text-amber-300 font-bold leading-tight">{rate.toFixed(1)}</span>
+            )}
+          </div>
         </div>
       )}
 

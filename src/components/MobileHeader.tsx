@@ -5,6 +5,7 @@ import { Globe, Sun, Moon, LogOut, X, ShieldCheck, UserCog, User } from "lucide-
 import { supabase, Profile, UserRole } from "@/lib/supabase";
 import { useTheme } from "./ThemeProvider";
 import { APP_VERSION } from "@/lib/version";
+import { useExchangeRate } from "@/lib/useExchangeRate";
 
 const ROLE_INFO: Record<UserRole, { label: string; icon: React.ElementType; color: string }> = {
   admin:    { label: "超級管理員", icon: ShieldCheck, color: "text-purple-400" },
@@ -15,6 +16,7 @@ const ROLE_INFO: Record<UserRole, { label: string; icon: React.ElementType; colo
 export default function MobileHeader({ profile }: { profile: Profile | null }) {
   const router          = useRouter();
   const { theme, toggle } = useTheme();
+  const { rate }          = useExchangeRate();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const role    = profile?.role ?? "staff";
@@ -39,6 +41,12 @@ export default function MobileHeader({ profile }: { profile: Profile | null }) {
 
         {/* Right actions */}
         <div className="flex items-center gap-1">
+          {/* CNY 匯率小標籤 */}
+          {rate && (
+            <span className="text-[11px] font-medium bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-full border border-amber-200 dark:border-amber-700/50 whitespace-nowrap">
+              ¥ = {rate.toFixed(2)}
+            </span>
+          )}
           {/* Dark mode toggle */}
           <button
             onClick={toggle}
