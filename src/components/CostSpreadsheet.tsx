@@ -51,6 +51,19 @@ function compressImage(file: File, maxPx = 2400, quality = 0.92): Promise<string
   });
 }
 
+// ── Default column widths (px) ─────────────────────────────────────────────────
+const DEFAULT_COL_WIDTHS: Record<string, number> = {
+  category:    130,
+  description: 160,
+  cny:         106,
+  ntd:         142,
+  quantity:    76,
+  subtotal:    112,
+  notes:       104,
+  url:         164,
+  del:         36,
+};
+
 // ── URL cell helper ────────────────────────────────────────────────────────────
 function UrlCell({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
@@ -101,6 +114,37 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
   const [viewingImage,   setViewingImage]  = useState<TourImage | null>(null);
   const [savingImages,   setSavingImages]  = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Column resizing ────────────────────────────────────────────────────────────
+  const [colWidths, setColWidths] = useState<Record<string, number>>(() => {
+    try {
+      const saved = localStorage.getItem(`tw-col-${tourId}`);
+      if (saved) return { ...DEFAULT_COL_WIDTHS, ...JSON.parse(saved) };
+    } catch {}
+    return { ...DEFAULT_COL_WIDTHS };
+  });
+  const resizeDrag = useRef<{ key: string; x0: number; w0: number } | null>(null);
+  const startResize = useCallback((key: string, e: React.MouseEvent) => {
+    e.preventDefault();
+    const w0 = colWidths[key] ?? DEFAULT_COL_WIDTHS[key] ?? 100;
+    resizeDrag.current = { key, x0: e.clientX, w0 };
+    const onMove = (ev: MouseEvent) => {
+      if (!resizeDrag.current) return;
+      const newW = Math.max(48, resizeDrag.current.w0 + (ev.clientX - resizeDrag.current.x0));
+      setColWidths(prev => ({ ...prev, [resizeDrag.current!.key]: newW }));
+    };
+    const onUp = () => {
+      resizeDrag.current = null;
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+      setColWidths(prev => {
+        try { localStorage.setItem(`tw-col-${tourId}`, JSON.stringify(prev)); } catch {}
+        return prev;
+      });
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }, [colWidths, tourId]);
 
   // ── Init ──────────────────────────────────────────────────────────────────────
   useEffect(() => { initLoad(); }, [tourId]);
@@ -467,31 +511,64 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
     return acc;
   }, {} as Record<string, number>);
 
+  // ── ColGroup — drives fixed-layout column widths ──────────────────────────────
+  const ColGroup = () => (
+    <colgroup>
+      <col style={{ width: colWidths.category }} />
+      <col style={{ width: colWidths.description }} />
+      <col style={{ width: colWidths.cny }} />
+      <col style={{ width: colWidths.ntd }} />
+      <col style={{ width: colWidths.quantity }} />
+      <col style={{ width: colWidths.subtotal }} />
+      <col style={{ width: colWidths.notes }} />
+      <col style={{ width: colWidths.url }} />
+      {customColumns.map(col => (
+        <col key={col.id} style={{ width: colWidths[`c_${col.id}`] ?? 110 }} />
+      ))}
+      <col style={{ width: colWidths.del }} />
+    </colgroup>
+  );
+
+  // ── Resize handle ─────────────────────────────────────────────────────────────
+  const RH = ({ k }: { k: string }) => (
+    <div
+      className="absolute inset-y-0 -right-1 w-3 cursor-col-resize z-10 flex items-center justify-center group/rh"
+      onMouseDown={e => startResize(k, e)}
+      onClick={e => e.stopPropagation()}
+    >
+      <div className="w-px h-4 bg-white/25 group-hover/rh:bg-blue-300 group-hover/rh:h-full transition-all" />
+    </div>
+  );
+
   // ── Table header (shared between overall & daily day tables) ──────────────────
   const TableHead = () => (
     <thead>
-      <tr className="bg-slate-700 text-white text-xs">
-        <th className="text-left px-3 py-2 w-32">費用項目</th>
-        <th className="text-left px-3 py-2 min-w-[130px]">說明</th>
-        <th className="text-right px-3 py-2 w-24 bg-amber-600/60">
+      <tr className="bg-slate-700 text-white text-xs select-none">
+        <th className="relative text-left px-3 py-2 overflow-hidden">費用項目<RH k="category" /></th>
+        <th className="relative text-left px-3 py-2 overflow-hidden">說明<RH k="description" /></th>
+        <th className="relative text-right px-3 py-2 overflow-hidden bg-amber-600/60">
           ¥ 人民幣
           {cnyRate
             ? <span className="block text-[9px] text-amber-200 font-normal">×{cnyRate.toFixed(2)}</span>
             : <span className="block text-[9px] text-amber-300/60 font-normal">需先設定匯率</span>
           }
+          <RH k="cny" />
         </th>
-        <th className="text-right px-3 py-2 w-32">新台幣</th>
-        <th className="text-right px-3 py-2 w-16">
+        <th className="relative text-right px-3 py-2 overflow-hidden">新台幣<RH k="ntd" /></th>
+        <th className="relative text-right px-3 py-2 overflow-hidden">
           人數
           {pax > 0 && <span className="block text-[9px] font-normal text-slate-300">綁定 {pax}人</span>}
+          <RH k="quantity" />
         </th>
-        <th className="text-right px-3 py-2 w-24 font-bold">小計 (NT$)</th>
-        <th className="text-left px-3 py-2 min-w-[90px]">備註</th>
-        <th className="text-left px-3 py-2 min-w-[140px]">參考網址</th>
+        <th className="relative text-right px-3 py-2 overflow-hidden font-bold">小計 (NT$)<RH k="subtotal" /></th>
+        <th className="relative text-left px-3 py-2 overflow-hidden">備註<RH k="notes" /></th>
+        <th className="relative text-left px-3 py-2 overflow-hidden">參考網址<RH k="url" /></th>
         {customColumns.map(col => (
-          <th key={col.id} className="text-left px-3 py-2 min-w-[100px] bg-indigo-700">{col.name}</th>
+          <th key={col.id} className="relative text-left px-3 py-2 overflow-hidden bg-indigo-700">
+            {col.name}<RH k={`c_${col.id}`} />
+          </th>
         ))}
-        <th className="w-7 px-1 py-2"></th>
+        <th className="px-1 py-2" />
       </tr>
     </thead>
   );
@@ -708,7 +785,8 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
         {calcMode === 'overall' && (
           <>
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="w-full text-sm" style={{ tableLayout: 'fixed' }}>
+                <ColGroup />
                 <TableHead />
                 <tbody>
                   {COST_CATEGORIES.map(cat => {
@@ -836,7 +914,8 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
                   {isExpanded && (
                     <>
                       <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
+                        <table className="w-full text-sm" style={{ tableLayout: 'fixed' }}>
+                          <ColGroup />
                           <TableHead />
                           <tbody>
                             {dayRows.map(({ r, idx }) => renderRow(r, idx))}
