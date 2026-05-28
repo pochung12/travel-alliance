@@ -420,6 +420,21 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
   // ── Exchange rate ─────────────────────────────────────────────────────────────
   const { rate: cnyRate } = useExchangeRate();
 
+  // ── CNY 欄位變更（共用，供 renderRow 和 OVERALL 分類列使用）────────────────────
+  const handleCnyChange = useCallback((idx: number, val: string) => {
+    const cny = val === "" ? 0 : (parseFloat(val) || 0);
+    setRows(prev => prev.map((row, i) => {
+      if (i !== idx) return row;
+      let newUnitPrice = row.unit_price;
+      if (cny > 0) {
+        if (cnyRate && cnyRate > 0) newUnitPrice = Math.round(cny * cnyRate);
+      } else {
+        newUnitPrice = 0;
+      }
+      return { ...row, unit_price: newUnitPrice, custom_data: { ...row.custom_data, _cny: cny > 0 ? cny : 0 }, dirty: true };
+    }));
+  }, [cnyRate]);
+
   // ── Derived ───────────────────────────────────────────────────────────────────
   const overallRows = rows.filter(r => r.day_number == null);
   const displayRows = calcMode === 'overall' ? overallRows : rows.filter(r => r.day_number != null);
@@ -456,7 +471,7 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
           }
         </th>
         <th className="text-right px-3 py-2 w-32">新台幣</th>
-        <th className="text-right px-3 py-2 w-16">數量</th>
+        <th className="text-right px-3 py-2 w-16">人數</th>
         <th className="text-right px-3 py-2 w-24 font-bold">小計 (NT$)</th>
         <th className="text-left px-3 py-2 min-w-[90px]">備註</th>
         <th className="text-left px-3 py-2 min-w-[140px]">參考網址</th>
@@ -472,29 +487,6 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
   const renderRow = (r: Row, idx: number) => {
     // 有效的 CNY 值（> 0 才算有填）
     const cnyVal = Number(r.custom_data._cny) > 0 ? Number(r.custom_data._cny) : null;
-
-    // 修正版：CNY 輸入變更處理
-    const handleCnyChange = (val: string) => {
-      const cny = val === "" ? 0 : (parseFloat(val) || 0);
-      setRows(prev => prev.map((row, i) => {
-        if (i !== idx) return row;
-        let newUnitPrice = row.unit_price;
-        if (cny > 0) {
-          // 有填 CNY + 有匯率 → 自動換算
-          if (cnyRate && cnyRate > 0) newUnitPrice = Math.round(cny * cnyRate);
-          // 有填 CNY 但無匯率 → 保留舊的 NT$ 值（等設定匯率後手動換算）
-        } else {
-          // 清空 CNY → NT$ 歸零
-          newUnitPrice = 0;
-        }
-        return {
-          ...row,
-          unit_price: newUnitPrice,
-          custom_data: { ...row.custom_data, _cny: cny > 0 ? cny : 0 },
-          dirty: true,
-        };
-      }));
-    };
 
     return (
       <tr key={idx} className={`border-t border-slate-100 dark:border-slate-700 ${idx % 2 === 0 ? "bg-white dark:bg-slate-800" : "bg-slate-50/50 dark:bg-slate-800/50"} hover:bg-blue-50/30 dark:hover:bg-blue-900/10 transition-colors`}>
@@ -517,7 +509,7 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
             placeholder="¥"
             min="0"
             value={cnyVal !== null ? cnyVal : ""}
-            onChange={e => handleCnyChange(e.target.value)}
+            onChange={e => handleCnyChange(idx, e.target.value)}
           />
         </td>
 
@@ -551,7 +543,7 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
         </td>
 
         <td className="px-1 py-1">
-          <input type="number" className="cell-input text-right rounded" value={r.quantity || ""} placeholder="1" min="0"
+          <input type="number" className="cell-input text-right rounded" value={r.quantity || ""} placeholder={String(pax || 1)} min="0"
             onChange={e => updateRow(idx, "quantity", +e.target.value)} />
         </td>
         <td className="px-3 py-2 text-right font-semibold text-slate-700 dark:text-slate-200 whitespace-nowrap">
@@ -717,8 +709,31 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
                           </td>
                         ) : null}
                         <td className="px-1 py-1"><input className="cell-input rounded" placeholder="說明（選填）" value={r.description} onChange={e => updateRow(idx, "description", e.target.value)} /></td>
-                        <td className="px-1 py-1"><input type="number" className="cell-input text-right rounded" value={r.unit_price || ""} placeholder="0" min="0" onChange={e => updateRow(idx, "unit_price", +e.target.value)} /></td>
-                        <td className="px-1 py-1"><input type="number" className="cell-input text-right rounded" value={r.quantity || ""} placeholder="1" min="0" onChange={e => updateRow(idx, "quantity", +e.target.value)} /></td>
+                        {/* ¥ 人民幣欄（補齊，避免欄位錯位）*/}
+                        <td className="px-1 py-1 bg-amber-50/20 dark:bg-amber-900/10">
+                          <input type="number" className="cell-input text-right rounded border-amber-200 dark:border-amber-700/50 focus:ring-amber-400"
+                            placeholder="¥" min="0"
+                            value={Number(r.custom_data._cny) > 0 ? Number(r.custom_data._cny) : ""}
+                            onChange={e => handleCnyChange(idx, e.target.value)} />
+                        </td>
+                        {/* 新台幣欄：有填 CNY 時顯示換算箭頭 */}
+                        <td className="px-1 py-1">
+                          {Number(r.custom_data._cny) > 0 ? (
+                            <div className="flex items-center gap-1 w-full">
+                              <span className="text-[11px] font-semibold text-amber-500 dark:text-amber-400 whitespace-nowrap shrink-0">
+                                ¥{Number(r.custom_data._cny).toLocaleString()} →
+                              </span>
+                              <input type="number" className="cell-input text-right rounded flex-1 min-w-0 font-semibold text-blue-700 dark:text-blue-300"
+                                value={r.unit_price || ""} placeholder="NT$" min="0" title="可手動調整換算後的新台幣金額"
+                                onChange={e => updateRow(idx, "unit_price", +e.target.value)} />
+                            </div>
+                          ) : (
+                            <input type="number" className="cell-input text-right rounded"
+                              value={r.unit_price || ""} placeholder="0" min="0"
+                              onChange={e => updateRow(idx, "unit_price", +e.target.value)} />
+                          )}
+                        </td>
+                        <td className="px-1 py-1"><input type="number" className="cell-input text-right rounded" value={r.quantity || ""} placeholder={String(pax || 1)} min="0" onChange={e => updateRow(idx, "quantity", +e.target.value)} /></td>
                         <td className="px-3 py-2 text-right font-semibold text-slate-700 dark:text-slate-200">{(r.unit_price * r.quantity).toLocaleString()}</td>
                         <td className="px-1 py-1"><input className="cell-input rounded" placeholder="備註" value={r.notes} onChange={e => updateRow(idx, "notes", e.target.value)} /></td>
                         <td className="px-1 py-1"><UrlCell value={r.reference_url} onChange={v => updateRow(idx, "reference_url", v)} /></td>
@@ -744,7 +759,7 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
                     <td className="px-3 py-3">合計成本</td>
                     <td colSpan={4} className="px-3 py-3 text-xs text-slate-300 font-normal">每人成本 NT${Math.round(costPerPax).toLocaleString()}</td>
                     <td className="px-3 py-3 text-right text-yellow-300 text-base">NT${totalCost.toLocaleString()}</td>
-                    <td colSpan={2 + customColumns.length}></td>
+                    <td colSpan={3 + customColumns.length}></td>
                   </tr>
                 </tbody>
               </table>
@@ -820,7 +835,7 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
                               <td className="px-3 py-2 text-right font-bold text-yellow-300">
                                 NT${dt.toLocaleString()}
                               </td>
-                              <td colSpan={2 + customColumns.length} className="px-3 py-2 text-xs text-violet-300">
+                              <td colSpan={3 + customColumns.length} className="px-3 py-2 text-xs text-violet-300">
                                 每人 NT${pax > 0 ? Math.round(dt / pax).toLocaleString() : "—"}
                               </td>
                             </tr>
