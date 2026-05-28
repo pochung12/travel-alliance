@@ -152,7 +152,8 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
       id: d.id, day_number: d.day_number ?? null,
       category: d.category as CostCategory,
       description: d.description, unit_price: d.unit_price,
-      quantity: d.quantity, notes: d.notes,
+      quantity: pax || d.quantity || 1,   // 人數綁定出團總人數
+      notes: d.notes,
       reference_url: d.reference_url || "",
       custom_data: d.custom_data || {},
     }));
@@ -420,6 +421,15 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
   // ── Exchange rate ─────────────────────────────────────────────────────────────
   const { rate: cnyRate } = useExchangeRate();
 
+  // ── 人數綁定：基本資料的總人數變更時，同步所有費用列的人數 ─────────────────────
+  useEffect(() => {
+    if (pax <= 0) return;
+    setRows(prev => {
+      if (prev.length === 0) return prev;
+      return prev.map(r => ({ ...r, quantity: pax, dirty: true }));
+    });
+  }, [pax]);
+
   // ── CNY 欄位變更（共用，供 renderRow 和 OVERALL 分類列使用）────────────────────
   const handleCnyChange = useCallback((idx: number, val: string) => {
     const cny = val === "" ? 0 : (parseFloat(val) || 0);
@@ -471,7 +481,10 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
           }
         </th>
         <th className="text-right px-3 py-2 w-32">新台幣</th>
-        <th className="text-right px-3 py-2 w-16">人數</th>
+        <th className="text-right px-3 py-2 w-16">
+          人數
+          {pax > 0 && <span className="block text-[9px] font-normal text-slate-300">綁定 {pax}人</span>}
+        </th>
         <th className="text-right px-3 py-2 w-24 font-bold">小計 (NT$)</th>
         <th className="text-left px-3 py-2 min-w-[90px]">備註</th>
         <th className="text-left px-3 py-2 min-w-[140px]">參考網址</th>
