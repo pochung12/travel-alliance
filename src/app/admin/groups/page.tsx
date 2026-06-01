@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { supabase, Tour, TourStatus } from "@/lib/supabase";
-import { Plus, Search, Map, SlidersHorizontal, GripVertical } from "lucide-react";
+import { Plus, Search, Map, SlidersHorizontal, GripVertical, Globe, Lock } from "lucide-react";
 import Link from "next/link";
 
 const STATUS_OPTIONS: { value: TourStatus | "all"; label: string }[] = [
@@ -62,7 +62,7 @@ const EMPTY: Omit<Tour, "id"|"created_at"> = {
   name: "", destination: "", start_date: "", end_date: "",
   pax: 0, pax_adult: 0, pax_tour_only: 0, pax_child: 0, pax_infant: 0,
   selling_price: 0, price_tour_only: 0, price_child: 0, price_infant: 0,
-  status: "planning", notes: "",
+  status: "planning", notes: "", is_public: false,
 };
 
 interface TourFinancial {
@@ -141,11 +141,13 @@ export default function GroupsPage() {
   // ── 載入資料
   const load = async () => {
     const [{ data: toursData }, { data: costsData }, { data: paymentsData }] = await Promise.all([
-      supabase.from("tours").select("*").order("start_date", { ascending: false }),
+      supabase.from("tours").select(
+        "id,name,destination,start_date,end_date,pax,pax_adult,pax_tour_only,pax_child,pax_infant,selling_price,price_tour_only,price_child,price_infant,custom_price_tiers,deposit_per_person,status,is_public,created_at"
+      ).order("start_date", { ascending: false }),
       supabase.from("tour_costs").select("tour_id, unit_price, quantity"),
       supabase.from("tour_payments").select("tour_id, type, amount, is_payable"),
     ]);
-    setTours(toursData || []);
+    setTours((toursData || []) as unknown as Tour[]);
     const fin: Record<string, TourFinancial> = {};
     for (const c of (costsData || [])) {
       if (!fin[c.tour_id]) fin[c.tour_id] = { cost: 0, income: 0, expense: 0 };
@@ -183,6 +185,14 @@ export default function GroupsPage() {
     }
     return { revenue, cost, profit: revenue - cost, realized: income - expense, income, expense };
   })();
+
+  const togglePublic = async (tourId: string, current: boolean, e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const next = !current;
+    const { error } = await supabase.from("tours").update({ is_public: next }).eq("id", tourId);
+    if (!error) setTours(ts => ts.map(t => t.id === tourId ? { ...t, is_public: next } : t));
+  };
 
   const settleGroup = async (tourId: string, e: React.MouseEvent) => {
     e.preventDefault();
@@ -353,9 +363,24 @@ export default function GroupsPage() {
                   className="block bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm p-4 active:bg-slate-50 dark:active:bg-slate-700/50 transition-colors">
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <div className="font-semibold text-blue-600 dark:text-blue-400 leading-snug">{tour.name}</div>
-                    <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium shrink-0 ${STATUS_COLOR[tour.status]}`}>
-                      {STATUS_LABEL[tour.status]}
-                    </span>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={e => togglePublic(tour.id, tour.is_public ?? false, e)}
+                        title={tour.is_public ? "前台公開 — 點擊設為私密" : "私密 — 點擊設為公開"}
+                        className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium flex items-center gap-0.5 transition-colors ${
+                          tour.is_public
+                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+                            : "bg-slate-100 text-slate-400 dark:bg-slate-700 dark:text-slate-500"
+                        }`}
+                      >
+                        {tour.is_public
+                          ? <><Globe className="w-2.5 h-2.5" /> 公開</>
+                          : <><Lock className="w-2.5 h-2.5" /> 私密</>}
+                      </button>
+                      <span className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[tour.status]}`}>
+                        {STATUS_LABEL[tour.status]}
+                      </span>
+                    </div>
                   </div>
                   <div className="text-xs text-slate-500 dark:text-slate-400 space-y-0.5">
                     {tour.destination && <div>📍 {tour.destination}</div>}
@@ -435,10 +460,24 @@ export default function GroupsPage() {
                           <td key={key} className="px-3 py-3 text-right tabular-nums whitespace-nowrap">{extraVal[key]}</td>
                         ))}
                         <td className="px-3 py-3 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
+                          <div className="flex items-center justify-center gap-1.5 flex-wrap">
                             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLOR[tour.status]}`}>
                               {STATUS_LABEL[tour.status]}
                             </span>
+                            {/* 公開/私密切換 */}
+                            <button
+                              onClick={e => togglePublic(tour.id, tour.is_public ?? false, e)}
+                              title={tour.is_public ? "前台公開 — 點擊設為私密" : "私密 — 點擊設為公開"}
+                              className={`flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded font-medium whitespace-nowrap transition-colors ${
+                                tour.is_public
+                                  ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-200 dark:bg-emerald-900/40 dark:text-emerald-300 dark:hover:bg-emerald-900/60"
+                                  : "bg-slate-100 text-slate-500 hover:bg-slate-200 dark:bg-slate-700 dark:text-slate-400 dark:hover:bg-slate-600"
+                              }`}
+                            >
+                              {tour.is_public
+                                ? <><Globe className="w-2.5 h-2.5" /> 公開</>
+                                : <><Lock className="w-2.5 h-2.5" /> 私密</>}
+                            </button>
                             {tour.status !== "settled" && tour.status !== "cancelled" && (
                               <button
                                 onClick={e => settleGroup(tour.id, e)}

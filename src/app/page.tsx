@@ -17,6 +17,7 @@ export default function HomePage() {
       .from("tours")
       .select("id,name,destination,start_date,end_date,pax,selling_price,status")
       .in("status", ["confirmed", "ongoing"])
+      .eq("is_public", true)
       .order("start_date", { ascending: true })
       .limit(6)
       .then(({ data }) => setTours((data || []) as unknown as Tour[]));

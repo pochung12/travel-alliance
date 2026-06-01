@@ -48,6 +48,7 @@ export interface Tour {
   deposit_per_person?: number;            // 每人訂金金額
   status: TourStatus;
   notes: string;
+  is_public?: boolean;                    // 是否在前台公開顯示
   created_at: string;
 }
 
