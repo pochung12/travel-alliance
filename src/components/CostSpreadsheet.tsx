@@ -196,7 +196,7 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
       id: d.id, day_number: d.day_number ?? null,
       category: d.category as CostCategory,
       description: d.description, unit_price: d.unit_price,
-      quantity: pax || d.quantity || 1,   // 人數綁定出團總人數
+      quantity: d.quantity || 1,
       notes: d.notes,
       reference_url: d.reference_url || "",
       custom_data: d.custom_data || {},
@@ -208,7 +208,7 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
       const existingCats = new Set(overallRows.map(r => r.category));
       const defaultRows: Row[] = COST_CATEGORIES
         .filter(c => !existingCats.has(c.key))
-        .map(c => ({ category: c.key, day_number: null, description: "", unit_price: 0, quantity: pax || 1, notes: "", reference_url: "", custom_data: {}, isNew: true, dirty: false }));
+        .map(c => ({ category: c.key, day_number: null, description: "", unit_price: 0, quantity: 1, notes: "", reference_url: "", custom_data: {}, isNew: true, dirty: false }));
       setRows([...overallRows, ...defaultRows, ...dbRows.filter(r => r.day_number != null)]);
     } else {
       // 按天模式：載入所有日期列
@@ -245,7 +245,7 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
     const newDay = maxDayNumber() + 1;
     const defaultRows: Row[] = DAILY_DEFAULT_CATS.map(cat => ({
       day_number: newDay, category: cat, description: "", unit_price: 0,
-      quantity: pax || 1, notes: "", reference_url: "", custom_data: {}, isNew: true, dirty: true,
+      quantity: 1, notes: "", reference_url: "", custom_data: {}, isNew: true, dirty: true,
     }));
     setRows(prev => [...prev, ...defaultRows]);
     setExpandedDays(prev => new Set(Array.from(prev).concat(newDay)));
@@ -273,7 +273,7 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
   const addRowToDay = (dayNum: number) => {
     setRows(prev => [...prev, {
       day_number: dayNum, category: "misc", description: "",
-      unit_price: 0, quantity: pax || 1, notes: "", reference_url: "",
+      unit_price: 0, quantity: 1, notes: "", reference_url: "",
       custom_data: {}, isNew: true, dirty: true,
     }]);
   };
@@ -292,7 +292,7 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
   const addRow = () => {
     setRows(prev => [...prev, {
       day_number: null, category: "misc", description: "", unit_price: 0,
-      quantity: pax || 1, notes: "", reference_url: "", custom_data: {}, isNew: true, dirty: true,
+      quantity: 1, notes: "", reference_url: "", custom_data: {}, isNew: true, dirty: true,
     }]);
   };
 
@@ -465,15 +465,6 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
   // ── Exchange rate ─────────────────────────────────────────────────────────────
   const { rate: cnyRate } = useExchangeRate();
 
-  // ── 人數綁定：基本資料的總人數變更時，同步所有費用列的人數 ─────────────────────
-  useEffect(() => {
-    if (pax <= 0) return;
-    setRows(prev => {
-      if (prev.length === 0) return prev;
-      return prev.map(r => ({ ...r, quantity: pax, dirty: true }));
-    });
-  }, [pax]);
-
   // ── CNY 欄位變更（共用，供 renderRow 和 OVERALL 分類列使用）────────────────────
   const handleCnyChange = useCallback((idx: number, val: string) => {
     const cny = val === "" ? 0 : (parseFloat(val) || 0);
@@ -555,11 +546,7 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
           <RH k="cny" />
         </th>
         <th className="relative text-right px-3 py-2 overflow-hidden">新台幣<RH k="ntd" /></th>
-        <th className="relative text-right px-3 py-2 overflow-hidden">
-          人數
-          {pax > 0 && <span className="block text-[9px] font-normal text-slate-300">綁定 {pax}人</span>}
-          <RH k="quantity" />
-        </th>
+        <th className="relative text-right px-3 py-2 overflow-hidden">人數<RH k="quantity" /></th>
         <th className="relative text-right px-3 py-2 overflow-hidden font-bold">小計 (NT$)<RH k="subtotal" /></th>
         <th className="relative text-left px-3 py-2 overflow-hidden">備註<RH k="notes" /></th>
         <th className="relative text-left px-3 py-2 overflow-hidden">參考網址<RH k="url" /></th>
@@ -633,7 +620,7 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
         </td>
 
         <td className="px-1 py-1">
-          <input type="number" className="cell-input text-right rounded" value={r.quantity || ""} placeholder={String(pax || 1)} min="0"
+          <input type="number" className="cell-input text-right rounded" value={r.quantity || ""} placeholder="1" min="0"
             onChange={e => updateRow(idx, "quantity", +e.target.value)} />
         </td>
         <td className="px-3 py-2 text-right font-semibold text-slate-700 dark:text-slate-200 whitespace-nowrap">
@@ -824,7 +811,7 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
                               onChange={e => updateRow(idx, "unit_price", +e.target.value)} />
                           )}
                         </td>
-                        <td className="px-1 py-1"><input type="number" className="cell-input text-right rounded" value={r.quantity || ""} placeholder={String(pax || 1)} min="0" onChange={e => updateRow(idx, "quantity", +e.target.value)} /></td>
+                        <td className="px-1 py-1"><input type="number" className="cell-input text-right rounded" value={r.quantity || ""} placeholder="1" min="0" onChange={e => updateRow(idx, "quantity", +e.target.value)} /></td>
                         <td className="px-3 py-2 text-right font-semibold text-slate-700 dark:text-slate-200">{(r.unit_price * r.quantity).toLocaleString()}</td>
                         <td className="px-1 py-1"><input className="cell-input rounded" placeholder="備註" value={r.notes} onChange={e => updateRow(idx, "notes", e.target.value)} /></td>
                         <td className="px-1 py-1"><UrlCell value={r.reference_url} onChange={v => updateRow(idx, "reference_url", v)} /></td>
