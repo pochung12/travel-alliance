@@ -2,15 +2,51 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Search, Globe, Star, Heart, Users, ArrowRight } from "lucide-react";
+import { Search, Globe, Star, Heart, Users, ArrowRight, BookOpen, Clock } from "lucide-react";
 import { supabase, Tour } from "@/lib/supabase";
 import PublicNavbar from "@/components/PublicNavbar";
 import TourCard from "@/components/TourCard";
+
+// ─── Blog types & helpers ──────────────────────────────────────────────────────
+type BlogPost = {
+  id: string; title: string; slug: string; excerpt: string;
+  cover_image: string; category: string; author: string;
+  published_at: string; created_at: string; reading_time: number;
+};
+
+const BLOG_CAT_LABEL: Record<string, string> = {
+  japan: "日本", asia: "亞洲", europe: "歐洲", southeast_asia: "東南亞",
+  china: "中國", tips: "旅遊攻略", food: "美食探索", travel: "旅遊",
+};
+const BLOG_CAT_BADGE: Record<string, string> = {
+  japan: "bg-red-100 text-red-700", asia: "bg-emerald-100 text-emerald-700",
+  europe: "bg-violet-100 text-violet-700", southeast_asia: "bg-amber-100 text-amber-700",
+  china: "bg-rose-100 text-rose-700", tips: "bg-sky-100 text-sky-700",
+  food: "bg-orange-100 text-orange-700", travel: "bg-slate-100 text-slate-700",
+};
+const BLOG_FALLBACK: Record<string, string> = {
+  japan: "https://images.unsplash.com/photo-1524413840807-0c3cb6fa808d?w=800&q=80",
+  asia:  "https://images.unsplash.com/photo-1552733407-5d5c46c3bb3b?w=800&q=80",
+  europe:"https://images.unsplash.com/photo-1499856871958-5b9627545d1a?w=800&q=80",
+  southeast_asia:"https://images.unsplash.com/photo-1528360983277-13d401cdc186?w=800&q=80",
+  china: "https://images.unsplash.com/photo-1508804185872-d7badad00f7d?w=800&q=80",
+  tips:  "https://images.unsplash.com/photo-1488085061387-422e29b40080?w=800&q=80",
+  food:  "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=800&q=80",
+  travel:"https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=800&q=80",
+};
+function blogCover(p: BlogPost) {
+  return p.cover_image || BLOG_FALLBACK[p.category] || BLOG_FALLBACK.travel;
+}
+function fmtBlogDate(d: string) {
+  if (!d) return "";
+  return new Date(d).toLocaleDateString("zh-TW", { year: "numeric", month: "long", day: "numeric" });
+}
 
 export default function HomePage() {
   const router = useRouter();
   const [searchVal, setSearchVal] = useState("");
   const [tours, setTours] = useState<Tour[]>([]);
+  const [blogPosts, setBlogPosts] = useState<BlogPost[]>([]);
 
   useEffect(() => {
     supabase
@@ -21,6 +57,14 @@ export default function HomePage() {
       .order("start_date", { ascending: true })
       .limit(6)
       .then(({ data }) => setTours((data || []) as unknown as Tour[]));
+
+    supabase
+      .from("blog_posts")
+      .select("id,title,slug,excerpt,cover_image,category,author,published_at,created_at,reading_time")
+      .eq("status", "published")
+      .order("published_at", { ascending: false })
+      .limit(3)
+      .then(({ data }) => setBlogPosts((data || []) as BlogPost[]));
   }, []);
 
   const handleSearch = (e: React.FormEvent) => {
@@ -147,6 +191,77 @@ export default function HomePage() {
           <div className="text-center py-14 text-slate-400">
             <div className="text-5xl mb-4">✈️</div>
             <p className="font-medium">即將推出更多精彩行程，敬請期待！</p>
+          </div>
+        )}
+      </section>
+
+      {/* ── 旅遊誌精選 ───────────────────────────────────────────────────────────── */}
+      <section className="max-w-6xl mx-auto px-4 pb-14">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-2">
+            <BookOpen className="w-6 h-6 text-amber-500" />
+            <h2 className="text-2xl font-bold text-slate-800">旅遊誌精選</h2>
+          </div>
+          <Link
+            href="/blog"
+            className="flex items-center gap-1 text-sm text-amber-600 hover:text-amber-700 font-medium transition-colors"
+          >
+            查看更多 <ArrowRight className="w-4 h-4" />
+          </Link>
+        </div>
+
+        {blogPosts.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+            {blogPosts.map((p) => (
+              <Link
+                key={p.id}
+                href={`/blog/${p.slug}`}
+                className="group bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1 flex flex-col"
+              >
+                {/* Cover */}
+                <div className="relative h-48 overflow-hidden bg-slate-100">
+                  <img
+                    src={blogCover(p)}
+                    alt={p.title}
+                    className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent" />
+                  <span
+                    className={`absolute top-3 left-3 text-[11px] font-bold px-2 py-0.5 rounded uppercase tracking-wide ${
+                      BLOG_CAT_BADGE[p.category] || BLOG_CAT_BADGE.travel
+                    }`}
+                  >
+                    {BLOG_CAT_LABEL[p.category] ?? p.category}
+                  </span>
+                </div>
+                {/* Body */}
+                <div className="p-5 flex flex-col flex-1">
+                  <h3 className="font-bold text-slate-900 text-base leading-snug mb-2 line-clamp-2 group-hover:text-amber-700 transition-colors">
+                    {p.title}
+                  </h3>
+                  <p className="text-slate-500 text-sm leading-relaxed line-clamp-3 flex-1 mb-3">
+                    {p.excerpt}
+                  </p>
+                  <div className="flex items-center justify-between text-xs text-slate-400 pt-3 border-t border-slate-100">
+                    <span className="flex items-center gap-1">
+                      <Clock className="w-3 h-3" /> {p.reading_time} 分鐘閱讀
+                    </span>
+                    <span>{fmtBlogDate(p.published_at || p.created_at)}</span>
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-14 rounded-2xl bg-amber-50 border border-amber-100">
+            <div className="text-5xl mb-4">📖</div>
+            <p className="font-medium text-slate-500 mb-3">精彩旅遊文章即將上線！</p>
+            <Link
+              href="/blog"
+              className="text-sm text-amber-600 hover:text-amber-700 font-medium underline underline-offset-2"
+            >
+              前往旅遊誌
+            </Link>
           </div>
         )}
       </section>

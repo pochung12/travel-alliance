@@ -38,6 +38,9 @@ export default function PublicNavbar() {
           <Link href="/tours?q=親子" className="text-sm text-slate-600 hover:text-cyan-600 font-medium transition-colors">
             親子旅遊
           </Link>
+          <Link href="/blog" className="text-sm text-amber-600 hover:text-amber-700 font-medium transition-colors">
+            旅遊誌
+          </Link>
         </div>
 
         {/* Desktop right buttons */}
@@ -85,6 +88,9 @@ export default function PublicNavbar() {
           </Link>
           <Link href="/tours?q=親子" className="block py-2.5 text-sm text-slate-700 hover:text-cyan-600" onClick={() => setOpen(false)}>
             親子旅遊
+          </Link>
+          <Link href="/blog" className="block py-2.5 text-sm text-amber-600 hover:text-amber-700 font-medium" onClick={() => setOpen(false)}>
+            旅遊誌
           </Link>
           <div className="border-t border-slate-100 pt-2 mt-1 flex gap-2">
             <Link href="/login" className="flex-1 py-2 text-sm text-center border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50" onClick={() => setOpen(false)}>
