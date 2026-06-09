@@ -114,6 +114,10 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
   const [viewingImage,   setViewingImage]  = useState<TourImage | null>(null);
   const [savingImages,   setSavingImages]  = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [autoSaving, setAutoSaving] = useState(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const saveAllRef = useRef<() => Promise<void>>(async () => {});
 
   // ── Column resizing ────────────────────────────────────────────────────────────
   const [colWidths, setColWidths] = useState<Record<string, number>>(() => {
@@ -465,6 +469,19 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
   // ── Exchange rate ─────────────────────────────────────────────────────────────
   const { rate: cnyRate } = useExchangeRate();
 
+  // ── Auto-save：每次 rows 有 dirty 變更，1.5 秒後自動儲存 ──────────────────────
+  saveAllRef.current = saveAll; // 保持 ref 指向最新 closure
+  useEffect(() => {
+    if (!rows.some(r => r.dirty)) return;
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(async () => {
+      setAutoSaving(true);
+      await saveAllRef.current();
+      setAutoSaving(false);
+    }, 1500);
+    return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
+  }, [rows]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── CNY 欄位變更（共用，供 renderRow 和 OVERALL 分類列使用）────────────────────
   const handleCnyChange = useCallback((idx: number, val: string) => {
     const cny = val === "" ? 0 : (parseFloat(val) || 0);
@@ -755,14 +772,24 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
                 className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg transition-colors">
                 <Settings className="w-3.5 h-3.5" /> 管理欄位
               </button>
-              {lastSaved && !hasDirty && (
-                <span className="text-xs text-slate-400">已儲存 {lastSaved.toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" })}</span>
+              {(saving || autoSaving) && (
+                <span className="text-xs text-blue-500 font-medium flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse inline-block" />
+                  儲存中…
+                </span>
               )}
-              {hasDirty && <span className="text-xs text-orange-500 font-medium">● 有未儲存的變更</span>}
-              <button onClick={saveAll} disabled={saving || !hasDirty}
+              {!saving && !autoSaving && lastSaved && !hasDirty && (
+                <span className="text-xs text-emerald-600 flex items-center gap-1">
+                  <Check className="w-3 h-3" /> 已儲存 {lastSaved.toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" })}
+                </span>
+              )}
+              {!saving && !autoSaving && hasDirty && (
+                <span className="text-xs text-slate-400">⏱ 即將自動儲存…</span>
+              )}
+              <button onClick={saveAll} disabled={saving || autoSaving || !hasDirty}
                 className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-40 transition-colors">
                 <Save className="w-3.5 h-3.5" />
-                {saving ? "儲存中…" : "儲存"}
+                儲存
               </button>
             </div>
           </div>
