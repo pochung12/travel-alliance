@@ -150,6 +150,21 @@ export const TOUR_PAGE_CATEGORIES = [
 
 export type TourPageCategory = typeof TOUR_PAGE_CATEGORIES[number]['key'];
 
+/** 中國團判斷（法規要求前台標注「交流考察團」）*/
+const CHINA_KEYWORDS = [
+  "中國", "大陸", "重慶", "北京", "上海", "天津", "新疆", "張家界", "雲南", "四川",
+  "九寨", "桂林", "西安", "杭州", "蘇州", "廈門", "福建", "湖南", "湖北", "貴州",
+  "山東", "青島", "海南", "廣州", "深圳", "武隆", "恩施", "絲路", "青海", "甘肅",
+  "西藏", "內蒙", "哈爾濱", "成都", "長沙", "南京", "鄭州", "洛陽", "敦煌",
+  "烏魯木齊", "喀納斯", "麗江", "大理", "昆明", "貴陽", "黃山", "華山", "泰山",
+  "長江", "三峽", "鳳凰古城", "黃果樹", "梵淨山", "稻城", "亞丁", "香格里拉",
+];
+export function isChinaTour(text?: string, category?: string): boolean {
+  if (category === "china") return true;
+  if (!text) return false;
+  return CHINA_KEYWORDS.some(k => text.includes(k));
+}
+
 export interface TourPagePoster { image: string; title: string; subtitle: string }
 
 export interface TourPageDay {

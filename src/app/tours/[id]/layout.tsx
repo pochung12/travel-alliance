@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { createClient } from "@supabase/supabase-js";
+import { isChinaTour } from "@/lib/supabase";
 
 // 每 5 分鐘重新抓取，確保 LINE/FB 連結預覽資訊夠新
 export const revalidate = 300;
@@ -23,7 +24,7 @@ export async function generateMetadata(
         .single(),
       supabase
         .from("tour_pages")
-        .select("hero_posters,content")
+        .select("category,hero_posters,content")
         .eq("tour_id", params.id)
         .eq("status", "published")
         .limit(1),
@@ -48,9 +49,12 @@ export async function generateMetadata(
       (new Date(tour.end_date).getTime() - new Date(tour.start_date).getTime()) / 86400000
     ) + 1;
 
-    const description =
+    const baseDesc =
       subtitle ||
       `${tour.destination}・${days}天${days - 1}夜｜NT$${(tour.selling_price || 0).toLocaleString()} 起｜暖心旅行社 Travel Alliance`;
+    const description = isChinaTour(`${tour.name} ${tour.destination}`, String(page?.category || ""))
+      ? `【交流考察團】${baseDesc}`
+      : baseDesc;
 
     return {
       title: `${tour.name}｜Travel Alliance 旅遊大聯盟`,

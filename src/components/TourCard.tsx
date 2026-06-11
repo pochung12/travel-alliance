@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Calendar, Clock, Users, ArrowRight } from "lucide-react";
-import type { Tour } from "@/lib/supabase";
+import { isChinaTour, type Tour } from "@/lib/supabase";
 
 export const CARD_GRADIENTS = [
   "from-cyan-500 to-blue-600",
@@ -25,12 +25,13 @@ export function fmtDate(d: string) {
 }
 
 export default function TourCard({
-  tour, idx, image, categoryLabel,
+  tour, idx, image, categoryLabel, categoryKey,
 }: {
-  tour: Tour; idx: number; image?: string; categoryLabel?: string;
+  tour: Tour; idx: number; image?: string; categoryLabel?: string; categoryKey?: string;
 }) {
   const grad = CARD_GRADIENTS[idx % CARD_GRADIENTS.length];
   const days = getDays(tour.start_date, tour.end_date);
+  const isChina = isChinaTour(`${tour.name} ${tour.destination}`, categoryKey);
 
   return (
     <Link
@@ -47,11 +48,18 @@ export default function TourCard({
           />
         )}
         <div className={`absolute inset-0 ${image ? "bg-gradient-to-t from-black/70 via-black/20 to-transparent" : "bg-black/10"}`} />
-        {categoryLabel && (
-          <span className="absolute top-3 left-3 z-10 text-[11px] bg-white/90 backdrop-blur-sm text-slate-700 font-medium px-2 py-0.5 rounded-full">
-            {categoryLabel}
-          </span>
-        )}
+        <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5 flex-wrap">
+          {isChina && (
+            <span className="text-[11px] bg-rose-600 text-white font-semibold px-2 py-0.5 rounded-full shadow-sm">
+              交流考察團
+            </span>
+          )}
+          {categoryLabel && (
+            <span className="text-[11px] bg-white/90 backdrop-blur-sm text-slate-700 font-medium px-2 py-0.5 rounded-full">
+              {categoryLabel}
+            </span>
+          )}
+        </div>
         <div className="relative z-10">
           <span className="text-white/75 text-xs font-medium block mb-1">
             📍 {tour.destination}

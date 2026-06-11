@@ -290,6 +290,7 @@ function ToursContent() {
                   idx={i}
                   image={pageMeta[t.id]?.image}
                   categoryLabel={catLabel(pageMeta[t.id]?.category || "")}
+                  categoryKey={pageMeta[t.id]?.category}
                 />
               ))}
             </div>

@@ -9,7 +9,7 @@ import {
   Camera, X, ArrowRight,
 } from "lucide-react";
 import {
-  supabase, Tour, TourPage, TourPageContent, TourPagePoster, TOUR_PAGE_CATEGORIES,
+  supabase, Tour, TourPage, TourPageContent, TourPagePoster, TOUR_PAGE_CATEGORIES, isChinaTour,
 } from "@/lib/supabase";
 import PublicNavbar from "@/components/PublicNavbar";
 import { CARD_GRADIENTS, getDays } from "@/components/TourCard";
@@ -242,9 +242,19 @@ function CaptionPill({ text }: { text: string }) {
 }
 
 // ── 海報輪播（Ken Burns）──────────────────────────────────────────────────────
+function ChinaBadge({ large = false }: { large?: boolean }) {
+  return (
+    <span className={`inline-flex items-center bg-rose-600 text-white font-semibold rounded-full shadow-sm ${
+      large ? "text-xs px-3 py-1" : "text-[11px] px-2.5 py-0.5"
+    }`}>
+      交流考察團
+    </span>
+  );
+}
+
 function HeroCarousel({
-  posters, tour, days, subtitle,
-}: { posters: TourPagePoster[]; tour: Tour; days: number; subtitle: string }) {
+  posters, tour, days, subtitle, isChina,
+}: { posters: TourPagePoster[]; tour: Tour; days: number; subtitle: string; isChina?: boolean }) {
   const [idx, setIdx] = useState(0);
   const n = posters.length;
   const go = useCallback((d: number) => setIdx(i => (i + d + n) % n), [n]);
@@ -271,6 +281,7 @@ function HeroCarousel({
           <div className="absolute bottom-0 left-0 right-0 pb-16 md:pb-24">
             <div className="max-w-6xl mx-auto px-5 md:px-8">
               <div className="flex items-center gap-2.5 mb-5 flex-wrap">
+                {isChina && <ChinaBadge large />}
                 <span className="text-[11px] md:text-xs tracking-[0.25em] uppercase text-amber-300/90 font-semibold">
                   {fmtShort(tour.start_date)} 出發 ・ {days}天{days - 1}夜 ・ {tour.destination}
                 </span>
@@ -339,6 +350,7 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
   const c = page.content as TourPageContent;
   const cat = TOUR_PAGE_CATEGORIES.find(x => x.key === page.category);
   const canJoin = tour.status === "confirmed" || tour.status === "ongoing";
+  const isChina = isChinaTour(`${tour.name} ${tour.destination}`, page.category);
   const [lightbox, setLightbox] = useState<string | null>(null);
 
   // 旅館清單（從每日行程彙整）
@@ -371,7 +383,7 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
       <PublicNavbar />
 
       {/* ── Hero ── */}
-      <HeroCarousel posters={page.hero_posters} tour={tour} days={days} subtitle={c.subtitle} />
+      <HeroCarousel posters={page.hero_posters} tour={tour} days={days} subtitle={c.subtitle} isChina={isChina} />
 
       {/* ── 錨點導覽（sticky）── */}
       <div className="sticky top-16 z-40 border-b backdrop-blur-md"
@@ -404,6 +416,7 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
         <div className="grid md:grid-cols-5 gap-10 md:gap-14 items-start">
           <Reveal className="md:col-span-3">
             <div className="flex items-center gap-2 mb-5 flex-wrap">
+              {isChina && <ChinaBadge />}
               {cat && (
                 <Link href={`/tours?cat=${cat.key}`}
                   className="text-xs font-medium px-3 py-1 rounded-full transition-colors"
@@ -810,8 +823,9 @@ function BasicTourPage({ tour, days }: { tour: Tour; days: number }) {
           <Link href="/tours" className="inline-flex items-center gap-1.5 text-white/70 hover:text-white text-sm mb-6 transition-colors">
             <ArrowLeft className="w-4 h-4" /> 返回行程列表
           </Link>
-          <div className="flex items-center gap-2 text-white/70 text-sm mb-3">
+          <div className="flex items-center gap-2 text-white/70 text-sm mb-3 flex-wrap">
             <MapPin className="w-4 h-4" /> {tour.destination}
+            {isChinaTour(`${tour.name} ${tour.destination}`) && <ChinaBadge />}
           </div>
           <h1 className="text-3xl md:text-4xl font-bold mb-4 leading-snug">{tour.name}</h1>
           <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-white/85 mb-4">

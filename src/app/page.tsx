@@ -47,6 +47,7 @@ export default function HomePage() {
   const [searchVal, setSearchVal] = useState("");
   const [tours, setTours] = useState<Tour[]>([]);
   const [tourImages, setTourImages] = useState<Record<string, string>>({});
+  const [tourCats, setTourCats] = useState<Record<string, string>>({});
   const [blogPosts, setBlogPosts] = useState<BlogPost[]>([]);
 
   useEffect(() => {
@@ -61,16 +62,19 @@ export default function HomePage() {
 
     supabase
       .from("tour_pages")
-      .select("tour_id,hero_posters")
+      .select("tour_id,category,hero_posters")
       .eq("status", "published")
       .then(({ data }) => {
-        const map: Record<string, string> = {};
+        const imgMap: Record<string, string> = {};
+        const catMap: Record<string, string> = {};
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         (data || []).forEach((p: any) => {
           const posters = (p.hero_posters || []) as TourPagePoster[];
-          if (posters[0]?.image) map[p.tour_id] = posters[0].image;
+          if (posters[0]?.image) imgMap[p.tour_id] = posters[0].image;
+          if (p.category) catMap[p.tour_id] = p.category;
         });
-        setTourImages(map);
+        setTourImages(imgMap);
+        setTourCats(catMap);
       });
 
     supabase
@@ -199,7 +203,7 @@ export default function HomePage() {
         {tours.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {tours.map((t, i) => (
-              <TourCard key={t.id} tour={t} idx={i} image={tourImages[t.id]} />
+              <TourCard key={t.id} tour={t} idx={i} image={tourImages[t.id]} categoryKey={tourCats[t.id]} />
             ))}
           </div>
         ) : (
