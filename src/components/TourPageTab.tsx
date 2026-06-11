@@ -41,6 +41,13 @@ export default function TourPageTab({ tour }: Props) {
   const [error, setError]       = useState("");
   // 保留區塊（重新生成時不變動）
   const [keepSet, setKeepSet] = useState<Set<string>>(new Set());
+  // 行程特色個別換圖
+  const [pickingHl, setPickingHl] = useState<number | null>(null);
+  const [imgQuery, setImgQuery]   = useState("");
+  const [imgResults, setImgResults] = useState<{ url: string; thumb: string; alt: string }[]>([]);
+  const [imgLoading, setImgLoading] = useState(false);
+  const [imgError, setImgError]   = useState("");
+  const [applyingImg, setApplyingImg] = useState("");
   // 每日餐食/住宿編輯
   const [editingDay, setEditingDay] = useState<number | null>(null);
   const [editVals, setEditVals] = useState({ title: "", breakfast: "", lunch: "", dinner: "", hotel: "" });
@@ -149,6 +156,58 @@ export default function TourPageTab({ tour }: Props) {
       }
     }
     setSaving(false);
+  };
+
+  // ── 行程特色個別換圖 ─────────────────────────────────────────────────────────
+  const openImagePicker = (idx: number) => {
+    const h = (page?.content as TourPageContent)?.highlights[idx];
+    if (!h) return;
+    setPickingHl(idx);
+    setImgQuery(`${tour.destination} ${h.title}`);
+    setImgResults([]);
+    setImgError("");
+  };
+
+  const searchImages = async () => {
+    if (!imgQuery.trim()) return;
+    setImgLoading(true);
+    setImgError("");
+    try {
+      const res = await fetch("/api/tour-page/image-search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: imgQuery.trim() }),
+      });
+      const json = await res.json();
+      if (!res.ok) { setImgError(json.error || "搜尋失敗"); return; }
+      setImgResults(json.images || []);
+      if ((json.images || []).length === 0) setImgError("找不到照片，請換個關鍵字（英文效果較好）");
+    } catch {
+      setImgError("搜尋失敗，請重試");
+    } finally {
+      setImgLoading(false);
+    }
+  };
+
+  const applyHighlightImage = async (url: string) => {
+    if (!page || pickingHl == null) return;
+    setApplyingImg(url);
+    const content = page.content as TourPageContent;
+    const newContent: TourPageContent = {
+      ...content,
+      highlights: content.highlights.map((h, i) =>
+        i === pickingHl ? { ...h, image: url } : h),
+    };
+    const { error: e } = await supabase.from("tour_pages")
+      .update({ content: newContent, updated_at: new Date().toISOString() })
+      .eq("id", page.id);
+    if (!e) {
+      setPage(prev => prev ? { ...prev, content: newContent } : prev);
+      setPickingHl(null);
+    } else {
+      alert("儲存失敗：" + e.message);
+    }
+    setApplyingImg("");
   };
 
   // ── 編輯單日餐食/住宿 ────────────────────────────────────────────────────────
@@ -412,12 +471,33 @@ Day2 箱根一日遊，蘆之湖海賊船、大涌谷，溫泉飯店會席料理
               )}
               {content.highlights.length > 0 && (
                 <div>
-                  <span className="text-xs text-slate-400 block mb-1.5">行程特色（{content.highlights.length}）</span>
-                  <div className="flex flex-wrap gap-2">
+                  <span className="text-xs text-slate-400 block mb-1.5">
+                    行程特色（{content.highlights.length}）
+                    <span className="ml-2 text-slate-300 dark:text-slate-500">照片不滿意可點「換圖」個別更換</span>
+                  </span>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5">
                     {content.highlights.map((h, i) => (
-                      <span key={i} className="text-xs bg-violet-50 dark:bg-violet-900/20 text-violet-700 dark:text-violet-300 px-2.5 py-1 rounded-full">
-                        {h.icon} {h.title}
-                      </span>
+                      <div key={i} className="relative rounded-xl overflow-hidden border border-slate-200 dark:border-slate-600 bg-slate-50 dark:bg-slate-700/50 group">
+                        <div className="relative h-24 overflow-hidden bg-slate-200 dark:bg-slate-700">
+                          {h.image ? (
+                            <img src={h.image} alt={h.title} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-3xl bg-gradient-to-br from-violet-100 to-purple-100 dark:from-violet-900/30 dark:to-purple-900/30">
+                              {h.icon}
+                            </div>
+                          )}
+                          <button
+                            onClick={() => openImagePicker(i)}
+                            className="absolute top-1.5 right-1.5 flex items-center gap-1 text-[10px] px-2 py-1 bg-black/55 hover:bg-violet-600 text-white rounded-full backdrop-blur-sm transition-colors"
+                            title="更換照片"
+                          >
+                            <RefreshCw className="w-2.5 h-2.5" /> 換圖
+                          </button>
+                        </div>
+                        <div className="px-2.5 py-1.5 text-xs text-slate-600 dark:text-slate-300 truncate">
+                          {h.icon} {h.title}
+                        </div>
+                      </div>
                     ))}
                   </div>
                 </div>
@@ -532,6 +612,95 @@ Day2 箱根一日遊，蘆之湖海賊船、大涌谷，溫泉飯店會席料理
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── 行程特色換圖彈窗 ─────────────────────────────────────────────────── */}
+      {pickingHl != null && page && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={() => setPickingHl(null)}>
+          <div
+            className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between shrink-0">
+              <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                <ImageIcon className="w-4 h-4 text-violet-500" />
+                更換照片：{(page.content as TourPageContent).highlights[pickingHl]?.icon}{" "}
+                {(page.content as TourPageContent).highlights[pickingHl]?.title}
+              </h3>
+              <button onClick={() => setPickingHl(null)} className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Search bar */}
+            <div className="px-5 py-3 border-b border-slate-100 dark:border-slate-700 shrink-0 space-y-2">
+              <div className="flex gap-2">
+                <input
+                  className="flex-1 text-sm border border-slate-200 dark:border-slate-600 rounded-xl px-3.5 py-2 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-400"
+                  placeholder="輸入關鍵字搜尋照片（英文效果較好，例：chongqing hotpot）"
+                  value={imgQuery}
+                  onChange={e => setImgQuery(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && !imgLoading && searchImages()}
+                  autoFocus
+                />
+                <button
+                  onClick={searchImages}
+                  disabled={imgLoading || !imgQuery.trim()}
+                  className="flex items-center gap-1.5 text-sm px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl font-medium disabled:opacity-50 transition-colors shrink-0"
+                >
+                  {imgLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                  搜尋
+                </button>
+              </div>
+              {imgError && (
+                <p className="flex items-center gap-1.5 text-xs text-red-500">
+                  <AlertCircle className="w-3.5 h-3.5" /> {imgError}
+                </p>
+              )}
+            </div>
+
+            {/* Results grid */}
+            <div className="p-5 overflow-y-auto">
+              {imgResults.length === 0 && !imgLoading && !imgError && (
+                <div className="text-center py-10 text-slate-400 text-sm">
+                  <ImageIcon className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                  按「搜尋」尋找新照片，點選即可套用
+                </div>
+              )}
+              {imgLoading && (
+                <div className="flex justify-center py-12">
+                  <Loader2 className="w-6 h-6 animate-spin text-violet-500" />
+                </div>
+              )}
+              {imgResults.length > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                  {imgResults.map((img, i) => (
+                    <button
+                      key={i}
+                      onClick={() => applyHighlightImage(img.url)}
+                      disabled={!!applyingImg}
+                      className="relative aspect-[4/3] rounded-xl overflow-hidden border-2 border-transparent hover:border-violet-500 transition-all group disabled:opacity-60"
+                      title={img.alt}
+                    >
+                      <img src={img.thumb} alt={img.alt} loading="lazy"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-center justify-center">
+                        {applyingImg === img.url ? (
+                          <Loader2 className="w-5 h-5 animate-spin text-white" />
+                        ) : (
+                          <span className="opacity-0 group-hover:opacity-100 text-white text-xs font-semibold bg-violet-600 px-3 py-1.5 rounded-full transition-opacity">
+                            套用這張
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
     </div>
