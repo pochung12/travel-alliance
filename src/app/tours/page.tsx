@@ -314,7 +314,7 @@ export default function ToursPage() {
         <ToursContent />
       </Suspense>
       <footer className="bg-slate-900 text-slate-400 py-8 text-center text-sm mt-4">
-        <p>© 2025 旅遊大聯盟 Travel Alliance. All rights reserved.</p>
+        <p>© 暖心旅行社 2026 旅遊大聯盟 Travel Alliance. All rights reserved.</p>
       </footer>
     </div>
   );

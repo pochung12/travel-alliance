@@ -358,7 +358,7 @@ export default function HomePage() {
 
       {/* ── Footer ─────────────────────────────────────────────────────────────── */}
       <footer className="bg-slate-900 text-slate-400 py-8 text-center text-sm">
-        <p>© 2025 旅遊大聯盟 Travel Alliance. All rights reserved.</p>
+        <p>© 暖心旅行社 2026 旅遊大聯盟 Travel Alliance. All rights reserved.</p>
       </footer>
     </div>
   );

@@ -20,8 +20,8 @@ export default function PublicNavbar() {
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2 text-cyan-600 font-bold text-xl shrink-0">
           <Plane className="w-6 h-6" />
-          <span className="hidden sm:block">Travel Alliance 旅遊聯盟</span>
-          <span className="sm:hidden font-bold">旅遊聯盟</span>
+          <span className="hidden sm:block">Travel Alliance 旅遊大聯盟</span>
+          <span className="sm:hidden font-bold">旅遊大聯盟</span>
         </Link>
 
         {/* Desktop nav links */}

@@ -734,7 +734,7 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
 
       {/* ── Footer ── */}
       <footer className="py-8 text-center text-sm" style={{ background: "#1c2a23", color: "rgba(255,255,255,.45)" }}>
-        <p>© 2025 旅遊大聯盟 Travel Alliance. All rights reserved.</p>
+        <p>© 暖心旅行社 2026 旅遊大聯盟 Travel Alliance. All rights reserved.</p>
       </footer>
 
       {/* ── 手機底部報名列 ── */}
@@ -825,7 +825,7 @@ function BasicTourPage({ tour, days }: { tour: Tour; days: number }) {
       </div>
 
       <footer className="bg-slate-900 text-slate-400 py-8 text-center text-sm mt-4">
-        <p>© 2025 旅遊大聯盟 Travel Alliance. All rights reserved.</p>
+        <p>© 暖心旅行社 2026 旅遊大聯盟 Travel Alliance. All rights reserved.</p>
       </footer>
     </div>
   );
