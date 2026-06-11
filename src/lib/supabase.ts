@@ -159,11 +159,19 @@ export interface TourPageDay {
   spots: string[];
   meals: { breakfast: string; lunch: string; dinner: string };
   hotel: string;
-  image: string;
+  image: string;       // 向下相容（V2.1.0 單圖）
+  images?: string[];   // 每日 3 張圖
 }
 
 export interface TourPageFlightInfo {
   flight_no: string; date: string; from: string; to: string; depart: string; arrive: string;
+}
+
+/** 景點美照：每個景點 3 張精美照片 */
+export interface TourPageGallerySpot {
+  name: string;
+  subtitle: string;
+  images: string[];
 }
 
 export interface TourPageContent {
@@ -171,6 +179,7 @@ export interface TourPageContent {
   intro: string;
   highlights: { icon: string; title: string; desc: string }[];
   days: TourPageDay[];
+  gallery?: TourPageGallerySpot[];
   flights: TourPageFlightInfo[];
   includes: string[];
   excludes: string[];

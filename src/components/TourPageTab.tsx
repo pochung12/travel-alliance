@@ -146,8 +146,8 @@ export default function TourPageTab({ tour }: Props) {
 
         <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
           貼上行程素材（每日行程、景點、餐食、飯店、航班等任何文字資料），AI 會自動生成包含
-          <span className="text-violet-600 dark:text-violet-400 font-medium"> 4 張特色海報、每日行程、景點照片、餐食住宿、航班資訊 </span>
-          的精美行程網頁。日期與價格自動帶入本團資料。
+          <span className="text-violet-600 dark:text-violet-400 font-medium"> 4 張特色海報、每日行程（每天 3 張配圖）、景點美照（每個景點 3 張）、餐食住宿、航班資訊 </span>
+          的雜誌級行程網頁。日期與價格自動帶入本團資料。
         </p>
 
         <textarea
@@ -292,18 +292,38 @@ Day2 箱根一日遊，蘆之湖海賊船、大涌谷，溫泉飯店會席料理
                 <div>
                   <span className="text-xs text-slate-400 block mb-1.5">每日行程（{content.days.length} 天）</span>
                   <div className="space-y-1.5">
-                    {content.days.map(d => (
-                      <div key={d.day} className="flex items-center gap-2 text-xs">
-                        <span className="shrink-0 w-12 text-center font-bold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 rounded-full py-0.5">D{d.day}</span>
-                        <span className="text-slate-600 dark:text-slate-300 truncate">{d.title}</span>
-                        {d.image && <ImageIcon className="w-3 h-3 text-emerald-500 shrink-0" />}
-                      </div>
+                    {content.days.map(d => {
+                      const imgCount = d.images?.length || (d.image ? 1 : 0);
+                      return (
+                        <div key={d.day} className="flex items-center gap-2 text-xs">
+                          <span className="shrink-0 w-12 text-center font-bold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 rounded-full py-0.5">D{d.day}</span>
+                          <span className="text-slate-600 dark:text-slate-300 truncate">{d.title}</span>
+                          {imgCount > 0 && (
+                            <span className="flex items-center gap-0.5 text-emerald-600 shrink-0">
+                              <ImageIcon className="w-3 h-3" /> {imgCount}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {(content.gallery?.length || 0) > 0 && (
+                <div>
+                  <span className="text-xs text-slate-400 block mb-1.5">景點美照（{content.gallery!.length} 個景點 × 3 張）</span>
+                  <div className="flex flex-wrap gap-2">
+                    {content.gallery!.map((g, i) => (
+                      <span key={i} className="text-xs bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 px-2.5 py-1 rounded-full flex items-center gap-1">
+                        <ImageIcon className="w-3 h-3" /> {g.name}（{g.images.length}）
+                      </span>
                     ))}
                   </div>
                 </div>
               )}
               <div className="flex flex-wrap gap-4 text-xs text-slate-400 pt-2 border-t border-slate-50 dark:border-slate-700">
                 <span>✈️ 航班 {content.flights.length} 筆</span>
+                <span>🖼 景點美照 {content.gallery?.length || 0} 組</span>
                 <span>✅ 費用包含 {content.includes.length} 項</span>
                 <span>❌ 費用不含 {content.excludes.length} 項</span>
                 <span>📌 注意事項 {content.notes.length} 項</span>
