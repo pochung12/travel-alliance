@@ -29,13 +29,13 @@ export default function PublicNavbar() {
           <Link href="/tours" className="text-sm text-slate-600 hover:text-cyan-600 font-medium transition-colors">
             所有行程
           </Link>
-          <Link href="/tours?q=團體旅遊" className="text-sm text-slate-600 hover:text-cyan-600 font-medium transition-colors">
+          <Link href="/tours?cat=group" className="text-sm text-slate-600 hover:text-cyan-600 font-medium transition-colors">
             團體旅遊
           </Link>
-          <Link href="/tours?q=海島" className="text-sm text-slate-600 hover:text-cyan-600 font-medium transition-colors">
+          <Link href="/tours?cat=island" className="text-sm text-slate-600 hover:text-cyan-600 font-medium transition-colors">
             海島度假
           </Link>
-          <Link href="/tours?q=親子" className="text-sm text-slate-600 hover:text-cyan-600 font-medium transition-colors">
+          <Link href="/tours?cat=family" className="text-sm text-slate-600 hover:text-cyan-600 font-medium transition-colors">
             親子旅遊
           </Link>
           <Link href="/blog" className="text-sm text-amber-600 hover:text-amber-700 font-medium transition-colors">
@@ -80,13 +80,13 @@ export default function PublicNavbar() {
           <Link href="/tours" className="block py-2.5 text-sm text-slate-700 hover:text-cyan-600" onClick={() => setOpen(false)}>
             所有行程
           </Link>
-          <Link href="/tours?q=團體旅遊" className="block py-2.5 text-sm text-slate-700 hover:text-cyan-600" onClick={() => setOpen(false)}>
+          <Link href="/tours?cat=group" className="block py-2.5 text-sm text-slate-700 hover:text-cyan-600" onClick={() => setOpen(false)}>
             團體旅遊
           </Link>
-          <Link href="/tours?q=海島" className="block py-2.5 text-sm text-slate-700 hover:text-cyan-600" onClick={() => setOpen(false)}>
+          <Link href="/tours?cat=island" className="block py-2.5 text-sm text-slate-700 hover:text-cyan-600" onClick={() => setOpen(false)}>
             海島度假
           </Link>
-          <Link href="/tours?q=親子" className="block py-2.5 text-sm text-slate-700 hover:text-cyan-600" onClick={() => setOpen(false)}>
+          <Link href="/tours?cat=family" className="block py-2.5 text-sm text-slate-700 hover:text-cyan-600" onClick={() => setOpen(false)}>
             親子旅遊
           </Link>
           <Link href="/blog" className="block py-2.5 text-sm text-amber-600 hover:text-amber-700 font-medium" onClick={() => setOpen(false)}>

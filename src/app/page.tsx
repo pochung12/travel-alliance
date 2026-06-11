@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Search, Globe, Star, Heart, Users, ArrowRight, BookOpen, Clock } from "lucide-react";
-import { supabase, Tour } from "@/lib/supabase";
+import { supabase, Tour, TourPagePoster } from "@/lib/supabase";
 import PublicNavbar from "@/components/PublicNavbar";
 import TourCard from "@/components/TourCard";
 
@@ -46,6 +46,7 @@ export default function HomePage() {
   const router = useRouter();
   const [searchVal, setSearchVal] = useState("");
   const [tours, setTours] = useState<Tour[]>([]);
+  const [tourImages, setTourImages] = useState<Record<string, string>>({});
   const [blogPosts, setBlogPosts] = useState<BlogPost[]>([]);
 
   useEffect(() => {
@@ -57,6 +58,20 @@ export default function HomePage() {
       .order("start_date", { ascending: true })
       .limit(6)
       .then(({ data }) => setTours((data || []) as unknown as Tour[]));
+
+    supabase
+      .from("tour_pages")
+      .select("tour_id,hero_posters")
+      .eq("status", "published")
+      .then(({ data }) => {
+        const map: Record<string, string> = {};
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (data || []).forEach((p: any) => {
+          const posters = (p.hero_posters || []) as TourPagePoster[];
+          if (posters[0]?.image) map[p.tour_id] = posters[0].image;
+        });
+        setTourImages(map);
+      });
 
     supabase
       .from("blog_posts")
@@ -135,27 +150,27 @@ export default function HomePage() {
               label: "團體旅遊",
               desc: "專業導遊全程陪伴，放心暢遊全球",
               icon: "🌏",
-              q: "團體旅遊",
+              cat: "group",
               grad: "from-cyan-500 to-teal-600",
             },
             {
               label: "海島度假",
               desc: "藍天碧海，享受頂級海島體驗",
               icon: "🏝️",
-              q: "海島",
+              cat: "island",
               grad: "from-blue-500 to-cyan-600",
             },
             {
               label: "親子旅遊",
               desc: "歡樂家庭時光，創造美好回憶",
               icon: "👨‍👩‍👧‍👦",
-              q: "親子",
+              cat: "family",
               grad: "from-orange-400 to-amber-500",
             },
           ].map((c) => (
             <Link
-              key={c.q}
-              href={`/tours?q=${encodeURIComponent(c.label)}`}
+              key={c.cat}
+              href={`/tours?cat=${c.cat}`}
               className={`relative bg-gradient-to-br ${c.grad} rounded-2xl p-6 text-white hover:scale-[1.02] active:scale-[0.99] transition-transform cursor-pointer overflow-hidden group`}
             >
               <div className="absolute right-5 bottom-5 text-6xl opacity-20 group-hover:opacity-30 transition-opacity select-none">
@@ -184,7 +199,7 @@ export default function HomePage() {
         {tours.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {tours.map((t, i) => (
-              <TourCard key={t.id} tour={t} idx={i} />
+              <TourCard key={t.id} tour={t} idx={i} image={tourImages[t.id]} />
             ))}
           </div>
         ) : (

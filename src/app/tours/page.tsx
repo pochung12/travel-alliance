@@ -1,41 +1,60 @@
 "use client";
 import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import Link from "next/link";
 import { Search, SlidersHorizontal, X, MapPin } from "lucide-react";
-import { supabase, Tour } from "@/lib/supabase";
+import { supabase, Tour, TourPagePoster, TOUR_PAGE_CATEGORIES } from "@/lib/supabase";
 import PublicNavbar from "@/components/PublicNavbar";
 import TourCard from "@/components/TourCard";
+
+interface PageMeta { category: string; image: string }
 
 function ToursContent() {
   const searchParams = useSearchParams();
   const initQ = searchParams.get("q") || "";
+  const initCat = searchParams.get("cat") || "";
 
   const [allTours, setAllTours] = useState<Tour[]>([]);
+  const [pageMeta, setPageMeta] = useState<Record<string, PageMeta>>({});
   const [loading, setLoading] = useState(true);
   const [searchQ, setSearchQ] = useState(initQ);
+  const [cat, setCat] = useState(initCat);
   const [destination, setDestination] = useState("");
   const [minPrice, setMinPrice] = useState("");
   const [maxPrice, setMaxPrice] = useState("");
   const [showMobileFilter, setShowMobileFilter] = useState(false);
 
   useEffect(() => {
-    supabase
-      .from("tours")
-      .select("id,name,destination,start_date,end_date,pax,selling_price,status")
-      .in("status", ["confirmed", "ongoing"])
-      .eq("is_public", true)
-      .order("start_date", { ascending: true })
-      .then(({ data }) => {
-        setAllTours((data || []) as unknown as Tour[]);
-        setLoading(false);
+    Promise.all([
+      supabase
+        .from("tours")
+        .select("id,name,destination,start_date,end_date,pax,selling_price,status")
+        .in("status", ["confirmed", "ongoing"])
+        .eq("is_public", true)
+        .order("start_date", { ascending: true }),
+      supabase
+        .from("tour_pages")
+        .select("tour_id,category,hero_posters")
+        .eq("status", "published"),
+    ]).then(([toursRes, pagesRes]) => {
+      setAllTours((toursRes.data || []) as unknown as Tour[]);
+      const map: Record<string, PageMeta> = {};
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (pagesRes.data || []).forEach((p: any) => {
+        const posters = (p.hero_posters || []) as TourPagePoster[];
+        map[p.tour_id] = { category: p.category || "", image: posters[0]?.image || "" };
       });
+      setPageMeta(map);
+      setLoading(false);
+    });
   }, []);
 
-  // Sync search param on mount
+  // Sync url params on mount
   useEffect(() => {
     setSearchQ(initQ);
   }, [initQ]);
+  useEffect(() => {
+    setCat(initCat);
+  }, [initCat]);
 
   const destinations = Array.from(new Set(allTours.map((t) => t.destination))).sort();
 
@@ -46,6 +65,7 @@ function ToursContent() {
       !t.destination.toLowerCase().includes(searchQ.toLowerCase())
     )
       return false;
+    if (cat && pageMeta[t.id]?.category !== cat) return false;
     if (destination && t.destination !== destination) return false;
     if (minPrice && t.selling_price < +minPrice) return false;
     if (maxPrice && t.selling_price > +maxPrice) return false;
@@ -54,12 +74,18 @@ function ToursContent() {
 
   const clearFilters = () => {
     setSearchQ("");
+    setCat("");
     setDestination("");
     setMinPrice("");
     setMaxPrice("");
   };
 
-  const hasFilter = searchQ || destination || minPrice || maxPrice;
+  const hasFilter = searchQ || cat || destination || minPrice || maxPrice;
+
+  const catLabel = (key: string) => {
+    const c = TOUR_PAGE_CATEGORIES.find(x => x.key === key);
+    return c ? `${c.emoji} ${c.label}` : "";
+  };
 
   const FilterPanel = () => (
     <div className="space-y-5">
@@ -144,6 +170,29 @@ function ToursContent() {
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
+      {/* Category chips */}
+      <div className="flex gap-2 overflow-x-auto pb-3 mb-4 scrollbar-none -mx-4 px-4">
+        <button
+          onClick={() => setCat("")}
+          className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium transition-colors ${
+            !cat ? "bg-cyan-600 text-white" : "bg-white border border-slate-200 text-slate-600 hover:border-cyan-400 hover:text-cyan-600"
+          }`}
+        >
+          全部行程
+        </button>
+        {TOUR_PAGE_CATEGORIES.map((c) => (
+          <button
+            key={c.key}
+            onClick={() => setCat(cat === c.key ? "" : c.key)}
+            className={`shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium transition-colors ${
+              cat === c.key ? "bg-cyan-600 text-white" : "bg-white border border-slate-200 text-slate-600 hover:border-cyan-400 hover:text-cyan-600"
+            }`}
+          >
+            {c.emoji} {c.label}
+          </button>
+        ))}
+      </div>
+
       {/* Mobile filter toggle */}
       <div className="md:hidden mb-4 flex items-center justify-between">
         <h1 className="text-xl font-bold text-slate-800">
@@ -235,7 +284,13 @@ function ToursContent() {
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               {filtered.map((t, i) => (
-                <TourCard key={t.id} tour={t} idx={i} />
+                <TourCard
+                  key={t.id}
+                  tour={t}
+                  idx={i}
+                  image={pageMeta[t.id]?.image}
+                  categoryLabel={catLabel(pageMeta[t.id]?.category || "")}
+                />
               ))}
             </div>
           )}

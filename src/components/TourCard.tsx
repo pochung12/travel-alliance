@@ -24,7 +24,11 @@ export function fmtDate(d: string) {
   return new Date(d).toLocaleDateString("zh-TW", { month: "short", day: "numeric" });
 }
 
-export default function TourCard({ tour, idx }: { tour: Tour; idx: number }) {
+export default function TourCard({
+  tour, idx, image, categoryLabel,
+}: {
+  tour: Tour; idx: number; image?: string; categoryLabel?: string;
+}) {
   const grad = CARD_GRADIENTS[idx % CARD_GRADIENTS.length];
   const days = getDays(tour.start_date, tour.end_date);
 
@@ -33,9 +37,21 @@ export default function TourCard({ tour, idx }: { tour: Tour; idx: number }) {
       href={`/tours/${tour.id}`}
       className="group bg-white rounded-2xl overflow-hidden shadow-sm hover:shadow-lg border border-slate-100 transition-all duration-300 hover:-translate-y-1"
     >
-      {/* Gradient header */}
-      <div className={`h-44 bg-gradient-to-br ${grad} relative flex items-end p-4`}>
-        <div className="absolute inset-0 bg-black/10" />
+      {/* Header：有海報圖用圖片，否則漸層 */}
+      <div className={`h-44 relative flex items-end p-4 overflow-hidden ${image ? "" : `bg-gradient-to-br ${grad}`}`}>
+        {image && (
+          <img
+            src={image}
+            alt={tour.name}
+            className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+          />
+        )}
+        <div className={`absolute inset-0 ${image ? "bg-gradient-to-t from-black/70 via-black/20 to-transparent" : "bg-black/10"}`} />
+        {categoryLabel && (
+          <span className="absolute top-3 left-3 z-10 text-[11px] bg-white/90 backdrop-blur-sm text-slate-700 font-medium px-2 py-0.5 rounded-full">
+            {categoryLabel}
+          </span>
+        )}
         <div className="relative z-10">
           <span className="text-white/75 text-xs font-medium block mb-1">
             📍 {tour.destination}

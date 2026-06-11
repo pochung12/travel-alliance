@@ -135,6 +135,60 @@ export interface CustomerTour {
   customer?: Customer;
 }
 
+// ─── Tour Pages（AI 行程網頁）──────────────────────────────────────────────────
+
+export const TOUR_PAGE_CATEGORIES = [
+  { key: 'group',  label: '團體旅遊', emoji: '🌏' },
+  { key: 'island', label: '海島度假', emoji: '🏝️' },
+  { key: 'family', label: '親子旅遊', emoji: '👨‍👩‍👧‍👦' },
+  { key: 'japan',  label: '日本旅遊', emoji: '🇯🇵' },
+  { key: 'china',  label: '中國旅遊', emoji: '🇨🇳' },
+  { key: 'sea',    label: '東南亞',   emoji: '🌴' },
+  { key: 'europe', label: '歐美長線', emoji: '🏰' },
+  { key: 'custom', label: '客製包團', emoji: '✨' },
+] as const;
+
+export type TourPageCategory = typeof TOUR_PAGE_CATEGORIES[number]['key'];
+
+export interface TourPagePoster { image: string; title: string; subtitle: string }
+
+export interface TourPageDay {
+  day: number;
+  title: string;
+  description: string;
+  spots: string[];
+  meals: { breakfast: string; lunch: string; dinner: string };
+  hotel: string;
+  image: string;
+}
+
+export interface TourPageFlightInfo {
+  flight_no: string; date: string; from: string; to: string; depart: string; arrive: string;
+}
+
+export interface TourPageContent {
+  subtitle: string;
+  intro: string;
+  highlights: { icon: string; title: string; desc: string }[];
+  days: TourPageDay[];
+  flights: TourPageFlightInfo[];
+  includes: string[];
+  excludes: string[];
+  notes: string[];
+}
+
+export interface TourPage {
+  id: string;
+  tour_id: string;
+  status: 'draft' | 'published';
+  category: TourPageCategory | string;
+  hero_posters: TourPagePoster[];
+  content: TourPageContent;
+  raw_input: string;
+  created_at: string;
+  updated_at: string;
+}
+
 // ─── Tour Flights ─────────────────────────────────────────────────────────────
 export interface TourFlight {
   id: string;

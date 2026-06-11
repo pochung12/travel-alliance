@@ -6,6 +6,7 @@ import CostSpreadsheet from "@/components/CostSpreadsheet";
 import PaymentsTab from "@/components/PaymentsTab";
 import ItineraryTab from "@/components/ItineraryTab";
 import FlightsTab from "@/components/FlightsTab";
+import TourPageTab from "@/components/TourPageTab";
 import { ArrowLeft, Save, Trash2, UserPlus, X, Search, BedDouble, Pencil, UtensilsCrossed, SlidersHorizontal, GripVertical, Users, Printer, Plus, Link2, Copy, ExternalLink, CheckCheck, Loader2, ChevronDown } from "lucide-react";
 
 // ─── Meal options ──────────────────────────────────────────────────────────────
@@ -98,7 +99,7 @@ export default function GroupDetailPage() {
   const [selectedCids, setSelectedCids] = useState<Set<string>>(new Set());
   const [addSearch, setAddSearch]       = useState("");
   const [saving, setSaving]            = useState(false);
-  const [activeTab, setActiveTab]      = useState<"info"|"costs"|"payments"|"participants"|"flights"|"itin_c"|"itin_t">("info");
+  const [activeTab, setActiveTab]      = useState<"info"|"costs"|"payments"|"participants"|"flights"|"itin_c"|"itin_t"|"webpage">("info");
   const [editingRoomId, setEditingRoomId] = useState<string|null>(null);
   const [roomInput,     setRoomInput]     = useState("");
   const [mealPickerId,  setMealPickerId]  = useState<string|null>(null);
@@ -534,7 +535,7 @@ export default function GroupDetailPage() {
 
       {/* Tabs — scrollable on mobile */}
       <div className="flex border-b border-slate-200 dark:border-slate-700 gap-0.5 overflow-x-auto scrollbar-none">
-        {([["info","基本資料"],["costs","費用試算"],["payments","收付款"],["participants","旅客"],["flights","✈️ 機票"],["itin_c","旅客行程"],["itin_t","同業行程"]] as const).map(([tab, label]) => (
+        {([["info","基本資料"],["costs","費用試算"],["payments","收付款"],["participants","旅客"],["flights","✈️ 機票"],["itin_c","旅客行程"],["itin_t","同業行程"],["webpage","🌐 行程網頁"]] as const).map(([tab, label]) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -1685,6 +1686,11 @@ export default function GroupDetailPage() {
       {/* ── Tab: Trade Itinerary ── */}
       {activeTab === "itin_t" && (
         <ItineraryTab tourId={id} variant="trade" />
+      )}
+
+      {/* ── Tab: AI Tour Webpage ── */}
+      {activeTab === "webpage" && tour && (
+        <TourPageTab tour={tour} />
       )}
 
       {/* ── Type picker (fixed) ── */}
