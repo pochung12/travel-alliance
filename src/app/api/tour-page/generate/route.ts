@@ -38,7 +38,7 @@ JSON 欄位定義：
 - posters: 海報陣列，固定 4 個物件 [{title: 海報大標（8-14字，磅礡有力如電影海報）, subtitle: 海報副標（12-22字）, image_keywords: 英文圖片搜尋關鍵字（3-5個英文單字，具體描述該海報主題的景色）}]
   四張海報主題建議：1. 行程總覽主視覺 2. 最具代表性景點 3. 美食或文化體驗 4. 住宿或自然風光
 - highlights: 行程特色陣列，固定 6 個 [{icon: 單一emoji, title: 特色標題（6-10字）, desc: 說明（25-45字）, image_keywords: 該特色對應的英文圖片搜尋關鍵字（3-5個英文單字，要具體呈現該特色的畫面，例如住宿特色用「luxury hotel river view night」、美食特色用「chongqing hotpot spicy food」）}]
-- days: 每日行程陣列，天數必須與出團天數一致 [{day: 天數（整數，從1開始）, title: 當日標題（例「台北 ✈ 東京 → 淺草雷門・晴空塔」）, description: 當日詳細描述（100-180字，有畫面感）, spots: 當日景點名稱陣列（2-6個）, meals: {breakfast, lunch, dinner}（素材沒提到就合理安排：搭機時段的餐食寫「機上」、飯店早餐寫「飯店內用」、自由活動寫「敬請自理」）, hotel: 當晚住宿（最後一天填「溫暖的家」）, image_keywords: 當日最具代表性景色的英文搜尋關鍵字（3-5個英文單字，要具體）}]
+- days: 每日行程陣列，天數必須與出團天數一致 [{day: 天數（整數，從1開始）, title: 當日標題（例「台北 ✈ 東京 → 淺草雷門・晴空塔」）, description: 當日詳細描述（100-180字，有畫面感）, spots: 當日景點名稱陣列（2-6個）, meals: {breakfast, lunch, dinner}（素材沒提到就合理安排：搭機時段的餐食寫「機上」、飯店早餐寫「飯店內用」、自由活動寫「敬請自理」）, hotel: 當晚住宿（最後一天填「溫暖的家」）, image_keywords: 當日最具代表性景色的英文搜尋關鍵字（3-5個英文單字，要具體）, meal_keywords: {breakfast, lunch, dinner}（各餐對應的英文圖片搜尋關鍵字，3-5個英文單字，依餐點名稱具體描述，例如午餐是重慶火鍋就寫「chongqing hotpot spicy food」；若該餐是機上/敬請自理/飯店內用等非特色餐，輸出空字串 ""）, hotel_keywords: 當晚飯店的英文圖片搜尋關鍵字（依飯店等級與特色描述，例「luxury hotel room city night view」；最後一天回家輸出空字串 ""）}]
 - gallery_spots: 全程最具代表性的景點精選，6-9 個 [{name: 景點名稱（中文，例「天門山國家森林公園」）, subtitle: 一句氛圍副標（8-18字，例「雲霧峰林・世界自然遺產」）, image_keywords: 該景點的英文搜尋關鍵字（3-5個英文單字，要非常具體，例「tianmen mountain cliff walkway fog」）}]
 - flights: 航班陣列（素材中有航班資訊才填，否則空陣列）[{flight_no, date, from, to, depart, arrive}]
 - includes: 費用包含項目陣列（4-8項，依素材與常理）
@@ -160,7 +160,7 @@ ${keepHints.map(h => `- ${h}`).join("\n")}` : ""}`;
 
     const fallbackKw = `${tour.destination} travel landscape`;
 
-    const [posterImages, dayImages, spotImages, hlImages] = await Promise.all([
+    const [posterImages, dayImages, spotImages, hlImages, dayMealHotelImages] = await Promise.all([
       Promise.all(posters.map(p =>
         searchPexelsMulti(String(p.image_keywords || fallbackKw), pexelsKey, 1))),
       Promise.all(days.map(d =>
@@ -169,6 +169,23 @@ ${keepHints.map(h => `- ${h}`).join("\n")}` : ""}`;
         searchPexelsMulti(String(s.image_keywords || fallbackKw), pexelsKey, 3))),
       Promise.all(hls.map(h =>
         searchPexelsMulti(String(h.image_keywords || fallbackKw), pexelsKey, 1))),
+      // 餐點 + 飯店照片（依名稱關鍵字，無關鍵字則跳過不浪費搜尋）
+      Promise.all(days.map(async d => {
+        const mk = d.meal_keywords || {};
+        const hk = String(d.hotel_keywords || "");
+        const [b, l, dn, h] = await Promise.all([
+          String(mk.breakfast || "") ? searchPexelsMulti(String(mk.breakfast), pexelsKey, 1) : Promise.resolve([] as string[]),
+          String(mk.lunch || "")     ? searchPexelsMulti(String(mk.lunch),     pexelsKey, 1) : Promise.resolve([] as string[]),
+          String(mk.dinner || "")    ? searchPexelsMulti(String(mk.dinner),    pexelsKey, 1) : Promise.resolve([] as string[]),
+          hk                          ? searchPexelsMulti(hk,                   pexelsKey, 1) : Promise.resolve([] as string[]),
+        ]);
+        return {
+          breakfast: b[0] || "",
+          lunch:     l[0] || "",
+          dinner:    dn[0] || "",
+          hotel:     h[0] || "",
+        };
+      })),
     ]);
 
     const hero_posters = posters.map((p, i) => ({
@@ -196,7 +213,13 @@ ${keepHints.map(h => `- ${h}`).join("\n")}` : ""}`;
           lunch:     String(d.meals?.lunch || "敬請自理"),
           dinner:    String(d.meals?.dinner || "敬請自理"),
         },
-        hotel:  String(d.hotel || ""),
+        meal_images: {
+          breakfast: dayMealHotelImages[i]?.breakfast || "",
+          lunch:     dayMealHotelImages[i]?.lunch || "",
+          dinner:    dayMealHotelImages[i]?.dinner || "",
+        },
+        hotel:       String(d.hotel || ""),
+        hotel_image: dayMealHotelImages[i]?.hotel || "",
         image:  dayImages[i]?.[0] || "",
         images: dayImages[i] || [],
       })),

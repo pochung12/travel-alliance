@@ -183,7 +183,9 @@ export interface TourPageDay {
   description: string;
   spots: string[];
   meals: { breakfast: string; lunch: string; dinner: string };
+  meal_images?: { breakfast?: string; lunch?: string; dinner?: string }; // 餐點照片
   hotel: string;
+  hotel_image?: string; // 飯店照片
   image: string;       // 向下相容（V2.1.0 單圖）
   images?: string[];   // 每日 3 張圖
 }

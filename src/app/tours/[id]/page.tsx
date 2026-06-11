@@ -624,22 +624,64 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
                       </div>
                     )}
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 pt-5"
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-5 pt-5"
                       style={{ borderTop: "1px solid #e7ddc6" }}>
+                      {/* 餐食（含照片）*/}
                       <div>
-                        <div className="flex items-center gap-1.5 text-sm font-bold mb-2" style={{ color: RED }}>
+                        <div className="flex items-center gap-1.5 text-sm font-bold mb-2.5" style={{ color: RED }}>
                           <UtensilsCrossed className="w-4 h-4" /> 餐食
                         </div>
-                        <div className="space-y-1 text-sm" style={{ color: "#5c5a4c" }}>
-                          <div>早餐：{d.meals.breakfast}</div>
-                          <div>午餐：{d.meals.lunch}</div>
-                          <div>晚餐：{d.meals.dinner}</div>
-                        </div>
+                        {(() => {
+                          const mealRows = [
+                            { label: "早餐", name: d.meals.breakfast, img: d.meal_images?.breakfast },
+                            { label: "午餐", name: d.meals.lunch,     img: d.meal_images?.lunch },
+                            { label: "晚餐", name: d.meals.dinner,    img: d.meal_images?.dinner },
+                          ];
+                          const withImg = mealRows.filter(m => m.img);
+                          return (
+                            <>
+                              {withImg.length > 0 && (
+                                <div className={`grid gap-1.5 mb-2.5 ${withImg.length === 1 ? "grid-cols-1" : withImg.length === 2 ? "grid-cols-2" : "grid-cols-3"}`}>
+                                  {withImg.map((m, i) => (
+                                    <div key={i}
+                                      className="relative rounded-xl overflow-hidden cursor-zoom-in group/meal"
+                                      style={{ height: withImg.length === 1 ? "7.5rem" : "5.5rem" }}
+                                      onClick={() => setLightbox(m.img!)}>
+                                      <img src={m.img} alt={m.name} loading="lazy"
+                                        className="w-full h-full object-cover transition-transform duration-500 group-hover/meal:scale-110" />
+                                      <div className="absolute inset-0 bg-gradient-to-t from-black/45 to-transparent" />
+                                      <span className="absolute bottom-1.5 left-2 text-[10px] font-semibold text-white drop-shadow">
+                                        {m.label}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              <div className="space-y-1 text-sm" style={{ color: "#5c5a4c" }}>
+                                {mealRows.map((m, i) => (
+                                  <div key={i}>{m.label}：{m.name}</div>
+                                ))}
+                              </div>
+                            </>
+                          );
+                        })()}
                       </div>
+                      {/* 住宿（含照片）*/}
                       <div>
-                        <div className="flex items-center gap-1.5 text-sm font-bold mb-2" style={{ color: RED }}>
+                        <div className="flex items-center gap-1.5 text-sm font-bold mb-2.5" style={{ color: RED }}>
                           <BedDouble className="w-4 h-4" /> 住宿
                         </div>
+                        {d.hotel_image && (
+                          <div className="relative rounded-xl overflow-hidden cursor-zoom-in group/hotel mb-2.5 h-[7.5rem]"
+                            onClick={() => setLightbox(d.hotel_image!)}>
+                            <img src={d.hotel_image} alt={d.hotel} loading="lazy"
+                              className="w-full h-full object-cover transition-transform duration-500 group-hover/hotel:scale-110" />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/45 to-transparent" />
+                            <span className="absolute bottom-1.5 left-2 text-[10px] font-semibold text-white drop-shadow line-clamp-1">
+                              {d.hotel}
+                            </span>
+                          </div>
+                        )}
                         <div className="text-sm" style={{ color: "#5c5a4c" }}>{d.hotel || "—"}</div>
                       </div>
                     </div>
