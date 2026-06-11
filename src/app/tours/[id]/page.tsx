@@ -521,14 +521,39 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
       {c.highlights.length > 0 && (
         <section id="highlights" className="scroll-mt-32 max-w-6xl mx-auto px-5 md:px-8 py-12 md:py-20">
           <SectionHead kicker="Highlights" title="行程特色" />
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-7">
             {c.highlights.map((h, i) => (
               <Reveal key={i} delay={i * 90}>
-                <div className="rounded-3xl p-6 md:p-7 h-full shadow-sm transition-shadow hover:shadow-md"
+                <div className="group rounded-3xl overflow-hidden h-full shadow-md hover:shadow-2xl transition-all duration-500 hover:-translate-y-1.5"
                   style={{ background: CARD, border: "1px solid #ece3cd" }}>
-                  <div className="text-4xl mb-4">{h.icon}</div>
-                  <div className="serif-tc font-bold text-lg mb-2">{h.title}</div>
-                  <div className="text-sm leading-relaxed" style={{ color: "#6b6a5c" }}>{h.desc}</div>
+                  {h.image ? (
+                    <>
+                      {/* 大圖 */}
+                      <div className="relative h-56 md:h-64 overflow-hidden cursor-zoom-in"
+                        onClick={() => setLightbox(h.image!)}>
+                        <img src={h.image} alt={h.title} loading="lazy"
+                          className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/5 to-transparent" />
+                        {/* emoji 圓徽章（跨在圖片與內容交界）*/}
+                        <div className="absolute -bottom-0 left-6 translate-y-1/2 w-14 h-14 rounded-full flex items-center justify-center text-2xl shadow-lg z-10"
+                          style={{ background: CARD, border: "1px solid #ece3cd" }}>
+                          {h.icon}
+                        </div>
+                      </div>
+                      {/* 內容 */}
+                      <div className="px-6 pt-11 pb-6">
+                        <div className="serif-tc font-black text-xl mb-2.5">{h.title}</div>
+                        <div className="text-sm leading-[1.8]" style={{ color: "#6b6a5c" }}>{h.desc}</div>
+                      </div>
+                    </>
+                  ) : (
+                    /* 無圖 fallback（舊版資料）*/
+                    <div className="p-6 md:p-7 h-full">
+                      <div className="text-4xl mb-4">{h.icon}</div>
+                      <div className="serif-tc font-bold text-lg mb-2">{h.title}</div>
+                      <div className="text-sm leading-relaxed" style={{ color: "#6b6a5c" }}>{h.desc}</div>
+                    </div>
+                  )}
                 </div>
               </Reveal>
             ))}

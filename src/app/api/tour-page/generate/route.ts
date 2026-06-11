@@ -37,7 +37,7 @@ JSON 欄位定義：
 - category: 分類，依目的地與行程性質從以下擇一：group（一般團體）/ island（海島度假）/ family（親子）/ japan（日本）/ china（中國大陸）/ sea（東南亞）/ europe（歐美長線）/ custom（客製包團）
 - posters: 海報陣列，固定 4 個物件 [{title: 海報大標（8-14字，磅礡有力如電影海報）, subtitle: 海報副標（12-22字）, image_keywords: 英文圖片搜尋關鍵字（3-5個英文單字，具體描述該海報主題的景色）}]
   四張海報主題建議：1. 行程總覽主視覺 2. 最具代表性景點 3. 美食或文化體驗 4. 住宿或自然風光
-- highlights: 行程特色陣列，4-6 個 [{icon: 單一emoji, title: 特色標題（6-10字）, desc: 說明（20-40字）}]
+- highlights: 行程特色陣列，固定 6 個 [{icon: 單一emoji, title: 特色標題（6-10字）, desc: 說明（25-45字）, image_keywords: 該特色對應的英文圖片搜尋關鍵字（3-5個英文單字，要具體呈現該特色的畫面，例如住宿特色用「luxury hotel river view night」、美食特色用「chongqing hotpot spicy food」）}]
 - days: 每日行程陣列，天數必須與出團天數一致 [{day: 天數（整數，從1開始）, title: 當日標題（例「台北 ✈ 東京 → 淺草雷門・晴空塔」）, description: 當日詳細描述（100-180字，有畫面感）, spots: 當日景點名稱陣列（2-6個）, meals: {breakfast, lunch, dinner}（素材沒提到就合理安排：搭機時段的餐食寫「機上」、飯店早餐寫「飯店內用」、自由活動寫「敬請自理」）, hotel: 當晚住宿（最後一天填「溫暖的家」）, image_keywords: 當日最具代表性景色的英文搜尋關鍵字（3-5個英文單字，要具體）}]
 - gallery_spots: 全程最具代表性的景點精選，6-9 個 [{name: 景點名稱（中文，例「天門山國家森林公園」）, subtitle: 一句氛圍副標（8-18字，例「雲霧峰林・世界自然遺產」）, image_keywords: 該景點的英文搜尋關鍵字（3-5個英文單字，要非常具體，例「tianmen mountain cliff walkway fog」）}]
 - flights: 航班陣列（素材中有航班資訊才填，否則空陣列）[{flight_no, date, from, to, depart, arrive}]
@@ -137,16 +137,20 @@ ${(rawInput || "").trim() || "（無額外素材，請依行程名稱與目的�
     const days: any[]    = Array.isArray(gen.days) ? gen.days : [];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const spots: any[]   = Array.isArray(gen.gallery_spots) ? gen.gallery_spots.slice(0, 10) : [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const hls: any[]     = Array.isArray(gen.highlights) ? gen.highlights.slice(0, 8) : [];
 
     const fallbackKw = `${tour.destination} travel landscape`;
 
-    const [posterImages, dayImages, spotImages] = await Promise.all([
+    const [posterImages, dayImages, spotImages, hlImages] = await Promise.all([
       Promise.all(posters.map(p =>
         searchPexelsMulti(String(p.image_keywords || fallbackKw), pexelsKey, 1))),
       Promise.all(days.map(d =>
         searchPexelsMulti(String(d.image_keywords || fallbackKw), pexelsKey, 3))),
       Promise.all(spots.map(s =>
         searchPexelsMulti(String(s.image_keywords || fallbackKw), pexelsKey, 3))),
+      Promise.all(hls.map(h =>
+        searchPexelsMulti(String(h.image_keywords || fallbackKw), pexelsKey, 1))),
     ]);
 
     const hero_posters = posters.map((p, i) => ({
@@ -158,7 +162,12 @@ ${(rawInput || "").trim() || "（無額外素材，請依行程名稱與目的�
     const content = {
       subtitle:   String(gen.subtitle || ""),
       intro:      String(gen.intro || ""),
-      highlights: Array.isArray(gen.highlights) ? gen.highlights : [],
+      highlights: hls.map((h, i) => ({
+        icon:  String(h.icon || "✨"),
+        title: String(h.title || ""),
+        desc:  String(h.desc || ""),
+        image: hlImages[i]?.[0] || "",
+      })),
       days: days.map((d, i) => ({
         day:         Number(d.day) || i + 1,
         title:       String(d.title || `第 ${i + 1} 天`),

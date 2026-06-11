@@ -177,7 +177,7 @@ export interface TourPageGallerySpot {
 export interface TourPageContent {
   subtitle: string;
   intro: string;
-  highlights: { icon: string; title: string; desc: string }[];
+  highlights: { icon: string; title: string; desc: string; image?: string }[];
   days: TourPageDay[];
   gallery?: TourPageGallerySpot[];
   flights: TourPageFlightInfo[];
