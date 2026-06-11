@@ -5,7 +5,7 @@ import {
 } from "@/lib/supabase";
 import {
   Sparkles, Globe, Eye, Loader2, CheckCircle2, AlertCircle,
-  RefreshCw, EyeOff, ExternalLink, Image as ImageIcon,
+  RefreshCw, EyeOff, ExternalLink, Image as ImageIcon, Pencil, X, Save,
 } from "lucide-react";
 
 interface Props { tour: Tour }
@@ -27,6 +27,10 @@ export default function TourPageTab({ tour }: Props) {
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving]     = useState(false);
   const [error, setError]       = useState("");
+  // 每日餐食/住宿編輯
+  const [editingDay, setEditingDay] = useState<number | null>(null);
+  const [editVals, setEditVals] = useState({ title: "", breakfast: "", lunch: "", dinner: "", hotel: "" });
+  const [savingDay, setSavingDay] = useState(false);
 
   useEffect(() => {
     supabase
@@ -109,6 +113,51 @@ export default function TourPageTab({ tour }: Props) {
       }
     }
     setSaving(false);
+  };
+
+  // ── 編輯單日餐食/住宿 ────────────────────────────────────────────────────────
+  const startEditDay = (dayNum: number) => {
+    const d = (page?.content as TourPageContent)?.days.find(x => x.day === dayNum);
+    if (!d) return;
+    setEditVals({
+      title: d.title,
+      breakfast: d.meals.breakfast,
+      lunch: d.meals.lunch,
+      dinner: d.meals.dinner,
+      hotel: d.hotel,
+    });
+    setEditingDay(dayNum);
+  };
+
+  const saveDayEdit = async () => {
+    if (!page || editingDay == null) return;
+    setSavingDay(true);
+    const content = page.content as TourPageContent;
+    const newContent: TourPageContent = {
+      ...content,
+      days: content.days.map(d => d.day === editingDay
+        ? {
+            ...d,
+            title: editVals.title.trim() || d.title,
+            meals: {
+              breakfast: editVals.breakfast.trim(),
+              lunch:     editVals.lunch.trim(),
+              dinner:    editVals.dinner.trim(),
+            },
+            hotel: editVals.hotel.trim(),
+          }
+        : d),
+    };
+    const { error: e } = await supabase.from("tour_pages")
+      .update({ content: newContent, updated_at: new Date().toISOString() })
+      .eq("id", page.id);
+    if (!e) {
+      setPage(prev => prev ? { ...prev, content: newContent } : prev);
+      setEditingDay(null);
+    } else {
+      alert("儲存失敗：" + e.message);
+    }
+    setSavingDay(false);
   };
 
   const changeCategory = async (cat: string) => {
@@ -290,18 +339,86 @@ Day2 箱根一日遊，蘆之湖海賊船、大涌谷，溫泉飯店會席料理
               )}
               {content.days.length > 0 && (
                 <div>
-                  <span className="text-xs text-slate-400 block mb-1.5">每日行程（{content.days.length} 天）</span>
+                  <span className="text-xs text-slate-400 block mb-1.5">
+                    每日行程（{content.days.length} 天）
+                    <span className="ml-2 text-slate-300 dark:text-slate-500">點 ✏️ 可修改標題、餐食與住宿</span>
+                  </span>
                   <div className="space-y-1.5">
                     {content.days.map(d => {
                       const imgCount = d.images?.length || (d.image ? 1 : 0);
+                      const isEditing = editingDay === d.day;
                       return (
-                        <div key={d.day} className="flex items-center gap-2 text-xs">
-                          <span className="shrink-0 w-12 text-center font-bold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 rounded-full py-0.5">D{d.day}</span>
-                          <span className="text-slate-600 dark:text-slate-300 truncate">{d.title}</span>
-                          {imgCount > 0 && (
-                            <span className="flex items-center gap-0.5 text-emerald-600 shrink-0">
-                              <ImageIcon className="w-3 h-3" /> {imgCount}
-                            </span>
+                        <div key={d.day}>
+                          <div className="flex items-center gap-2 text-xs group">
+                            <span className="shrink-0 w-12 text-center font-bold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 rounded-full py-0.5">D{d.day}</span>
+                            <span className="text-slate-600 dark:text-slate-300 truncate">{d.title}</span>
+                            {imgCount > 0 && (
+                              <span className="flex items-center gap-0.5 text-emerald-600 shrink-0">
+                                <ImageIcon className="w-3 h-3" /> {imgCount}
+                              </span>
+                            )}
+                            <button
+                              onClick={() => isEditing ? setEditingDay(null) : startEditDay(d.day)}
+                              className={`shrink-0 p-1 rounded transition-colors ${
+                                isEditing
+                                  ? "text-violet-600 bg-violet-50 dark:bg-violet-900/30"
+                                  : "text-slate-300 hover:text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-900/30"
+                              }`}
+                              title={`編輯第 ${d.day} 天`}
+                            >
+                              <Pencil className="w-3 h-3" />
+                            </button>
+                          </div>
+
+                          {/* 單日編輯面板 */}
+                          {isEditing && (
+                            <div className="mt-2 mb-3 ml-14 p-3.5 rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50/50 dark:bg-violet-900/10 space-y-2.5">
+                              <div>
+                                <label className="text-[11px] text-slate-400 block mb-0.5">當日標題</label>
+                                <input
+                                  className="w-full text-xs border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-violet-400"
+                                  value={editVals.title}
+                                  onChange={e => setEditVals(v => ({ ...v, title: e.target.value }))}
+                                />
+                              </div>
+                              <div className="grid grid-cols-3 gap-2">
+                                {([["breakfast","早餐"],["lunch","午餐"],["dinner","晚餐"]] as const).map(([key, label]) => (
+                                  <div key={key}>
+                                    <label className="text-[11px] text-slate-400 block mb-0.5">{label}</label>
+                                    <input
+                                      className="w-full text-xs border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-violet-400"
+                                      placeholder="例：機上 / 飯店內用"
+                                      value={editVals[key]}
+                                      onChange={e => setEditVals(v => ({ ...v, [key]: e.target.value }))}
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                              <div>
+                                <label className="text-[11px] text-slate-400 block mb-0.5">住宿</label>
+                                <input
+                                  className="w-full text-xs border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-violet-400"
+                                  value={editVals.hotel}
+                                  onChange={e => setEditVals(v => ({ ...v, hotel: e.target.value }))}
+                                />
+                              </div>
+                              <div className="flex items-center gap-2 pt-0.5">
+                                <button
+                                  onClick={saveDayEdit}
+                                  disabled={savingDay}
+                                  className="flex items-center gap-1 text-xs px-3.5 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded-lg font-medium disabled:opacity-50 transition-colors"
+                                >
+                                  {savingDay ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                                  儲存
+                                </button>
+                                <button
+                                  onClick={() => setEditingDay(null)}
+                                  className="flex items-center gap-1 text-xs px-3 py-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                                >
+                                  <X className="w-3 h-3" /> 取消
+                                </button>
+                              </div>
+                            </div>
                           )}
                         </div>
                       );
