@@ -7,6 +7,7 @@ import PaymentsTab from "@/components/PaymentsTab";
 import ItineraryTab from "@/components/ItineraryTab";
 import FlightsTab from "@/components/FlightsTab";
 import TourPageTab from "@/components/TourPageTab";
+import TourNameGenerator from "@/components/TourNameGenerator";
 import { ArrowLeft, Save, Trash2, UserPlus, X, Search, BedDouble, Pencil, UtensilsCrossed, SlidersHorizontal, GripVertical, Users, Printer, Plus, Link2, Copy, ExternalLink, CheckCheck, Loader2, ChevronDown } from "lucide-react";
 
 // ─── Meal options ──────────────────────────────────────────────────────────────
@@ -560,7 +561,19 @@ export default function GroupDetailPage() {
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm p-4 md:p-5 space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="col-span-2">
-              <label className={lbl}>團名 *</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className={lbl}>團名 *</label>
+                <TourNameGenerator
+                  currentName={form.name || ""}
+                  destination={form.destination || ""}
+                  days={
+                    form.start_date && form.end_date
+                      ? Math.round((new Date(form.end_date).getTime() - new Date(form.start_date).getTime()) / 86400000) + 1
+                      : 0
+                  }
+                  onPick={n => setForm({ ...form, name: n })}
+                />
+              </div>
               <input className={input} value={form.name || ""} onChange={e => setForm({...form, name: e.target.value})} />
             </div>
             <div>
