@@ -9,7 +9,7 @@ import {
   Camera, X, ArrowRight,
 } from "lucide-react";
 import {
-  supabase, Tour, TourPage, TourPageContent, TourPagePoster, TOUR_PAGE_CATEGORIES, isChinaTour,
+  supabase, Tour, TourPage, TourPageContent, TourPagePoster, TOUR_PAGE_CATEGORIES, isChinaTour, isTierPublic,
 } from "@/lib/supabase";
 import PublicNavbar from "@/components/PublicNavbar";
 import { CARD_GRADIENTS, getDays } from "@/components/TourCard";
@@ -148,7 +148,7 @@ function PriceRows({ tour }: { tour: Tour }) {
     { label: "只參團（不含機票）", price: tour.price_tour_only || 0, pax: tour.pax_tour_only },
     { label: "兒童", price: tour.price_child || 0, pax: tour.pax_child },
     { label: "嬰兒", price: tour.price_infant || 0, pax: tour.pax_infant },
-    ...(tour.custom_price_tiers || []).map((ct) => ({ label: ct.label, price: ct.price, pax: ct.pax })),
+    ...(tour.custom_price_tiers || []).filter(isTierPublic).map((ct) => ({ label: ct.label, price: ct.price, pax: ct.pax })),
   ].filter((p) => p.price > 0);
 
   return (

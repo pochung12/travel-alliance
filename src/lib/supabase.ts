@@ -27,6 +27,16 @@ export interface CustomPriceTier {
   label: string; // 類別名稱，e.g. "單人加艙"
   pax: number;   // 人數
   price: number; // 售價 (NT$)
+  hidden?: boolean; // 在前台隱藏此類別價格
+}
+
+/** 這些類別名稱一律不顯示在前台（避免洩漏優惠價格） */
+export const AUTO_HIDDEN_TIER_KEYWORDS = ["領隊", "優待"];
+
+/** 此自訂類別是否可顯示在前台 */
+export function isTierPublic(ct: CustomPriceTier): boolean {
+  if (ct.hidden) return false;
+  return !AUTO_HIDDEN_TIER_KEYWORDS.some(k => (ct.label || "").includes(k));
 }
 
 export interface Tour {
