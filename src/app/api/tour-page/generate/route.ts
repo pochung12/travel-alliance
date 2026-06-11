@@ -62,8 +62,10 @@ export async function POST(req: NextRequest) {
         days?: number; selling_price?: number;
       };
       rawInput?: string;
+      keep?: string[];   // 保留不重新生成的區塊
     };
     const { tour, rawInput } = body;
+    const keep = Array.isArray(body.keep) ? body.keep : [];
 
     if (!tour?.name || !tour?.destination) {
       return NextResponse.json({ error: "缺少出團基本資料" }, { status: 400 });
@@ -76,6 +78,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "未設定 AI API Key" }, { status: 500 });
     }
 
+    const KEEP_FIELD_HINT: Record<string, string> = {
+      posters:    "posters（輸出空陣列 []）",
+      intro:      "subtitle 與 intro（輸出空字串 \"\"）",
+      highlights: "highlights（輸出空陣列 []）",
+      days:       "days（輸出空陣列 []，忽略「days 長度 = 出團天數」的要求）",
+      gallery:    "gallery_spots（輸出空陣列 []）",
+      flights:    "flights（輸出空陣列 []）",
+      fees:       "includes 與 excludes（輸出空陣列 []）",
+      notes:      "notes（輸出空陣列 []）",
+    };
+    const keepHints = keep.map(k => KEEP_FIELD_HINT[k]).filter(Boolean);
+
     const userPrompt = `## 出團基本資料
 - 行程名稱：${tour.name}
 - 目的地：${tour.destination}
@@ -85,7 +99,10 @@ export async function POST(req: NextRequest) {
 - 成人售價：NT$${(tour.selling_price || 0).toLocaleString()}
 
 ## 行程素材（管理員提供）
-${(rawInput || "").trim() || "（無額外素材，請依行程名稱與目的地合理企劃）"}`;
+${(rawInput || "").trim() || "（無額外素材，請依行程名稱與目的地合理企劃）"}${keepHints.length > 0 ? `
+
+## 以下欄位本次不需生成（內容將沿用舊版），請直接輸出指定空值以節省篇幅：
+${keepHints.map(h => `- ${h}`).join("\n")}` : ""}`;
 
     // ── 呼叫 AI ────────────────────────────────────────────────────────────────
     const res = await fetch(`${baseUrl}/chat/completions`, {
@@ -131,14 +148,15 @@ ${(rawInput || "").trim() || "（無額外素材，請依行程名稱與目的�
     }
 
     // ── 圖片搜尋（海報 1 張、每日 3 張、每景點 3 張，全部並行）─────────────────
+    // 保留區塊一律清空，不浪費圖片搜尋（前端會沿用舊資料）
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const posters: any[] = Array.isArray(gen.posters) ? gen.posters.slice(0, 5) : [];
+    const posters: any[] = keep.includes("posters") ? [] : (Array.isArray(gen.posters) ? gen.posters.slice(0, 5) : []);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const days: any[]    = Array.isArray(gen.days) ? gen.days : [];
+    const days: any[]    = keep.includes("days") ? [] : (Array.isArray(gen.days) ? gen.days : []);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const spots: any[]   = Array.isArray(gen.gallery_spots) ? gen.gallery_spots.slice(0, 10) : [];
+    const spots: any[]   = keep.includes("gallery") ? [] : (Array.isArray(gen.gallery_spots) ? gen.gallery_spots.slice(0, 10) : []);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const hls: any[]     = Array.isArray(gen.highlights) ? gen.highlights.slice(0, 8) : [];
+    const hls: any[]     = keep.includes("highlights") ? [] : (Array.isArray(gen.highlights) ? gen.highlights.slice(0, 8) : []);
 
     const fallbackKw = `${tour.destination} travel landscape`;
 

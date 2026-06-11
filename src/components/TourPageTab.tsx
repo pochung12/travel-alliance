@@ -15,6 +15,18 @@ const EMPTY_CONTENT: TourPageContent = {
   flights: [], includes: [], excludes: [], notes: [],
 };
 
+// 可選擇保留（不重新生成）的區塊
+const KEEP_SECTIONS = [
+  { key: "posters",    label: "🖼 行程海報" },
+  { key: "intro",      label: "📝 副標語與介紹" },
+  { key: "highlights", label: "✨ 行程特色" },
+  { key: "days",       label: "📅 每日行程" },
+  { key: "gallery",    label: "📷 景點美照" },
+  { key: "flights",    label: "✈️ 航班資訊" },
+  { key: "fees",       label: "💰 費用包含/不含" },
+  { key: "notes",      label: "📌 注意事項" },
+] as const;
+
 function getDays(start: string, end: string) {
   const d = Math.round((new Date(end).getTime() - new Date(start).getTime()) / 86400000);
   return d + 1;
@@ -27,6 +39,8 @@ export default function TourPageTab({ tour }: Props) {
   const [generating, setGenerating] = useState(false);
   const [saving, setSaving]     = useState(false);
   const [error, setError]       = useState("");
+  // 保留區塊（重新生成時不變動）
+  const [keepSet, setKeepSet] = useState<Set<string>>(new Set());
   // 每日餐食/住宿編輯
   const [editingDay, setEditingDay] = useState<number | null>(null);
   const [editVals, setEditVals] = useState({ title: "", breakfast: "", lunch: "", dinner: "", hotel: "" });
@@ -52,6 +66,8 @@ export default function TourPageTab({ tour }: Props) {
   const generate = async () => {
     setGenerating(true);
     setError("");
+    // 只有已存在頁面時，保留勾選才有意義
+    const keep = page ? Array.from(keepSet) : [];
     try {
       const res = await fetch("/api/tour-page/generate", {
         method: "POST",
@@ -66,17 +82,37 @@ export default function TourPageTab({ tour }: Props) {
             selling_price: tour.selling_price,
           },
           rawInput,
+          keep,
         }),
       });
       const json = await res.json();
       if (!res.ok) { setError(json.error || "生成失敗，請重試"); return; }
 
-      // 自動存為草稿（保留原本的 status 與 category 覆寫）
+      // 合併：勾選保留的區塊沿用舊資料，其餘採用新生成
+      const oldC = page?.content as TourPageContent | undefined;
+      const newC = (json.content || EMPTY_CONTENT) as TourPageContent;
+      const has = (k: string) => keep.includes(k) && !!oldC;
+      const mergedContent: TourPageContent = {
+        subtitle:   has("intro")      ? oldC!.subtitle   : newC.subtitle,
+        intro:      has("intro")      ? oldC!.intro      : newC.intro,
+        highlights: has("highlights") ? oldC!.highlights : newC.highlights,
+        days:       has("days")       ? oldC!.days       : newC.days,
+        gallery:    has("gallery")    ? (oldC!.gallery || []) : (newC.gallery || []),
+        flights:    has("flights")    ? oldC!.flights    : newC.flights,
+        includes:   has("fees")       ? oldC!.includes   : newC.includes,
+        excludes:   has("fees")       ? oldC!.excludes   : newC.excludes,
+        notes:      has("notes")      ? oldC!.notes      : newC.notes,
+      };
+      const mergedPosters = keep.includes("posters") && page
+        ? page.hero_posters
+        : (json.hero_posters || []);
+
+      // 自動存為草稿（已有頁面則沿用其 status 與 category）
       const payload = {
         tour_id:      tour.id,
-        category:     json.category || page?.category || "group",
-        hero_posters: json.hero_posters || [],
-        content:      json.content || EMPTY_CONTENT,
+        category:     page?.category || json.category || "group",
+        hero_posters: mergedPosters,
+        content:      mergedContent,
         raw_input:    rawInput,
         status:       page?.status || "draft",
         updated_at:   new Date().toISOString(),
@@ -211,19 +247,68 @@ Day2 箱根一日遊，蘆之湖海賊船、大涌谷，溫泉飯店會席料理
           onChange={e => setRawInput(e.target.value)}
         />
 
+        {/* 重新生成時可保留的區塊 */}
+        {hasPage && (
+          <div className="rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-900/10 p-3.5">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-emerald-700 dark:text-emerald-400">
+                🔒 保留區塊（勾選的部分不重新生成，維持現狀）
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setKeepSet(new Set(KEEP_SECTIONS.map(s => s.key)))}
+                  className="text-[11px] text-emerald-600 hover:underline"
+                >全選</button>
+                <button
+                  onClick={() => setKeepSet(new Set())}
+                  className="text-[11px] text-slate-400 hover:underline"
+                >清除</button>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {KEEP_SECTIONS.map(s => (
+                <button
+                  key={s.key}
+                  type="button"
+                  onClick={() => setKeepSet(prev => {
+                    const next = new Set(prev);
+                    if (next.has(s.key)) next.delete(s.key); else next.add(s.key);
+                    return next;
+                  })}
+                  className={`text-xs px-3 py-1.5 rounded-full font-medium transition-colors ${
+                    keepSet.has(s.key)
+                      ? "bg-emerald-600 text-white"
+                      : "bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:border-emerald-400 hover:text-emerald-600"
+                  }`}
+                >
+                  {keepSet.has(s.key) ? "🔒 " : ""}{s.label}
+                </button>
+              ))}
+            </div>
+            {keepSet.size > 0 && (
+              <p className="text-[11px] text-emerald-600/80 dark:text-emerald-400/80 mt-2">
+                將保留 {keepSet.size} 個區塊，只重新生成其餘 {KEEP_SECTIONS.length - keepSet.size} 個區塊（省 AI 與圖片額度）
+              </p>
+            )}
+          </div>
+        )}
+
         <div className="flex items-center gap-3 flex-wrap">
           <button
             onClick={generate}
-            disabled={generating}
+            disabled={generating || (hasPage && keepSet.size === KEEP_SECTIONS.length)}
             className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white rounded-xl text-sm font-semibold disabled:opacity-50 transition-all shadow-sm"
           >
             {generating
               ? <><Loader2 className="w-4 h-4 animate-spin" /> AI 生成中（約 30-60 秒）…</>
               : hasPage
-                ? <><RefreshCw className="w-4 h-4" /> 重新生成行程網頁</>
+                ? <><RefreshCw className="w-4 h-4" /> 重新生成{keepSet.size > 0 ? `（保留 ${keepSet.size} 區塊）` : "行程網頁"}</>
                 : <><Sparkles className="w-4 h-4" /> AI 生成行程網頁</>
             }
           </button>
+          {hasPage && keepSet.size === KEEP_SECTIONS.length && (
+            <span className="text-xs text-slate-400">已全部保留，沒有需要生成的區塊</span>
+          )}
           {error && (
             <span className="flex items-center gap-1.5 text-xs text-red-500">
               <AlertCircle className="w-3.5 h-3.5" /> {error}
