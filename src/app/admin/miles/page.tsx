@@ -34,13 +34,30 @@ export default function AdminMilesPage() {
   const [expanded, setExpanded]   = useState<Set<string>>(new Set());
   const [acting, setActing]       = useState<string | null>(null);
 
+  const [loadErr, setLoadErr] = useState("");
+
   const load = async () => {
+    setLoadErr("");
     // mileage_listings_admin：含聯絡資訊的後台專用 view，僅 staff/admin 回傳資料
-    const [{ data: ls }, { data: iq }] = await Promise.all([
-      supabase.from("mileage_listings_admin").select("*").order("created_at", { ascending: false }),
-      supabase.from("mileage_inquiries").select("*").order("created_at", { ascending: false }),
-    ]);
-    setListings((ls || []) as MileageListing[]);
+    let ls: MileageListing[] | null = null;
+    const viewRes = await supabase.from("mileage_listings_admin").select("*").order("created_at", { ascending: false });
+    if (!viewRes.error) {
+      ls = (viewRes.data || []) as MileageListing[];
+    } else {
+      // view 尚未建立（migration 未執行）→ 降級讀原表（聯絡資訊欄位可能受限）
+      const baseRes = await supabase.from("mileage_listings")
+        .select("id,type,airline,miles,price_per_k,expiry_date,route,travel_date,cabin,notes,contact_name,status,created_at,updated_at")
+        .order("created_at", { ascending: false });
+      if (!baseRes.error) {
+        ls = (baseRes.data || []).map(r => ({ ...r, contact_info: "（請執行 supabase_mileage_privacy2.sql 後顯示）" })) as MileageListing[];
+        setLoadErr("提醒：mileage_listings_admin view 尚未建立，請在 Supabase 執行 supabase_mileage_privacy2.sql，聯絡資訊才會顯示。");
+      } else {
+        setLoadErr("讀取失敗：" + viewRes.error.message);
+      }
+    }
+    const { data: iq, error: iqErr } = await supabase.from("mileage_inquiries").select("*").order("created_at", { ascending: false });
+    if (iqErr && !loadErr) setLoadErr(prev => prev || ("媒合意願讀取失敗：" + iqErr.message));
+    setListings(ls || []);
     setInquiries((iq || []) as MileageInquiry[]);
     setLoading(false);
   };
@@ -97,6 +114,12 @@ export default function AdminMilesPage() {
           查看前台頁面 ↗
         </a>
       </div>
+
+      {loadErr && (
+        <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 text-xs text-amber-700 dark:text-amber-300">
+          ⚠️ {loadErr}
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex border-b border-slate-200 dark:border-slate-700 gap-0.5 overflow-x-auto scrollbar-none">
