@@ -4,7 +4,7 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Map, Users, Globe,
   ChevronLeft, ChevronRight, Sun, Moon,
-  LogOut, UserCog, ShieldCheck, User, Newspaper, FilePen, RefreshCw,
+  LogOut, UserCog, ShieldCheck, User, Newspaper, FilePen, RefreshCw, Coins,
 } from "lucide-react";
 import { APP_VERSION } from "@/lib/version";
 import { useTheme } from "./ThemeProvider";
@@ -17,6 +17,7 @@ const NAV_ITEMS = [
   { href: "/admin/crm",         label: "旅客 CRM", icon: Users,           roles: ["staff", "admin"] as UserRole[] },
   { href: "/admin/contracts",   label: "線上簽約", icon: FilePen,         roles: ["staff", "admin"] as UserRole[] },
   { href: "/admin/blog",        label: "旅遊誌",   icon: Newspaper,       roles: ["staff", "admin"] as UserRole[] },
+  { href: "/admin/miles",       label: "哩程交易", icon: Coins,           roles: ["staff", "admin"] as UserRole[] },
   { href: "/admin/users",       label: "用戶管理", icon: UserCog,         roles: ["admin"]          as UserRole[] },
 ];
 

@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Map, Users, FilePen, Newspaper, UserCog } from "lucide-react";
+import { LayoutDashboard, Map, Users, FilePen, Newspaper, UserCog, Coins } from "lucide-react";
 import { UserRole } from "@/lib/supabase";
 
 const NAV = [
@@ -10,6 +10,7 @@ const NAV = [
   { href: "/admin/crm",       label: "旅客",   icon: Users,           roles: ["staff","admin"] as UserRole[] },
   { href: "/admin/contracts", label: "簽約",   icon: FilePen,         roles: ["staff","admin"] as UserRole[] },
   { href: "/admin/blog",      label: "旅遊誌", icon: Newspaper,       roles: ["staff","admin"] as UserRole[] },
+  { href: "/admin/miles",     label: "哩程",   icon: Coins,           roles: ["staff","admin"] as UserRole[] },
   { href: "/admin/users",     label: "用戶",   icon: UserCog,         roles: ["admin"]          as UserRole[] },
 ];
 

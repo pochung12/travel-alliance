@@ -227,6 +227,59 @@ export interface TourPage {
   updated_at: string;
 }
 
+// ─── 哩程交易媒合平台 ──────────────────────────────────────────────────────────
+
+export const MILEAGE_AIRLINES = [
+  { key: 'eva',     label: '長榮航空 無限萬哩遊',   short: '長榮 EVA',   color: 'bg-green-100 text-green-800' },
+  { key: 'cal',     label: '中華航空 華夏會員',     short: '華航 CAL',   color: 'bg-rose-100 text-rose-700' },
+  { key: 'starlux', label: '星宇航空 COSMILE',      short: '星宇 JX',    color: 'bg-amber-100 text-amber-800' },
+  { key: 'cathay',  label: '國泰航空 Asia Miles',   short: '國泰 CX',    color: 'bg-teal-100 text-teal-700' },
+  { key: 'jal',     label: '日本航空 JAL Mileage',  short: '日航 JL',    color: 'bg-red-100 text-red-700' },
+  { key: 'ana',     label: '全日空 ANA Mileage',    short: '全日空 NH',  color: 'bg-blue-100 text-blue-700' },
+  { key: 'sq',      label: '新加坡航空 KrisFlyer',  short: '新航 SQ',    color: 'bg-indigo-100 text-indigo-700' },
+  { key: 'other',   label: '其他航空哩程',           short: '其他',       color: 'bg-slate-100 text-slate-600' },
+] as const;
+
+export type MileageAirline = typeof MILEAGE_AIRLINES[number]['key'];
+
+export const MILEAGE_CABINS = [
+  { key: 'economy',  label: '經濟艙' },
+  { key: 'premium',  label: '豪華經濟艙' },
+  { key: 'business', label: '商務艙' },
+  { key: 'first',    label: '頭等艙' },
+] as const;
+
+export type MileageListingType   = 'sell' | 'buy';
+export type MileageListingStatus = 'pending' | 'open' | 'matched' | 'closed';
+
+export interface MileageListing {
+  id: string;
+  type: MileageListingType;
+  airline: MileageAirline | string;
+  miles: number;
+  price_per_k: number;      // 每 1,000 哩 NT$
+  expiry_date: string | null;
+  route: string;
+  travel_date: string;
+  cabin: string;
+  notes: string;
+  contact_name: string;
+  contact_info: string;
+  status: MileageListingStatus;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MileageInquiry {
+  id: string;
+  listing_id: string;
+  name: string;
+  contact_info: string;
+  message: string;
+  handled: boolean;
+  created_at: string;
+}
+
 // ─── Tour Flights ─────────────────────────────────────────────────────────────
 export interface TourFlight {
   id: string;
