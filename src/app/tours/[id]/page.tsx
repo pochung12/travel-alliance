@@ -165,6 +165,24 @@ function PriceRows({ tour }: { tour: Tour }) {
           <span className="font-bold text-[#b04a3a]">NT${tour.deposit_per_person.toLocaleString()}</span>
         </div>
       ) : null}
+      {(tour.tip_per_day ?? 0) > 0 ? (
+        <div className="flex justify-between items-center py-3.5 gap-3 flex-wrap">
+          <span className="text-sm font-medium flex items-center gap-2 flex-wrap">
+            司機/導遊/領隊小費
+            <span className={`text-[11px] px-2 py-0.5 rounded-full font-semibold ${
+              tour.tip_included
+                ? "bg-emerald-100 text-emerald-700"
+                : "bg-orange-100 text-orange-600"
+            }`}>
+              {tour.tip_included ? "已含於團費" : "未含・另行支付"}
+            </span>
+          </span>
+          <span className="font-bold">
+            NT${(tour.tip_per_day ?? 0).toLocaleString()}
+            <span className="text-xs font-normal" style={{ color: "#8a8268" }}>/天</span>
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -923,9 +941,7 @@ export default function TourDetailPage() {
     Promise.all([
       supabase
         .from("tours")
-        .select(
-          "id,name,destination,start_date,end_date,pax,pax_adult,pax_child,pax_infant,pax_tour_only,selling_price,price_tour_only,price_child,price_infant,status,notes,deposit_per_person,custom_price_tiers"
-        )
+        .select("*")
         .eq("id", id)
         .single(),
       supabase

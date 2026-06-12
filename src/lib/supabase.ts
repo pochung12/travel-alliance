@@ -56,6 +56,8 @@ export interface Tour {
   price_infant: number;     // 嬰兒售價 (NT$)
   custom_price_tiers?: CustomPriceTier[]; // 自訂類別（JSONB）
   deposit_per_person?: number;            // 每人訂金金額
+  tip_per_day?: number;                   // 司機/導遊/領隊小費（元/天）
+  tip_included?: boolean;                 // 前台標示：true=已含於團費 / false=不含
   status: TourStatus;
   notes: string;
   is_public?: boolean;                    // 是否在前台公開顯示

@@ -296,6 +296,8 @@ export default function GroupDetailPage() {
       price_infant:    form.price_infant    || 0,
       custom_price_tiers: form.custom_price_tiers || [],
       deposit_per_person: form.deposit_per_person || 0,
+      tip_per_day:  form.tip_per_day || 0,
+      tip_included: !!form.tip_included,
       status: form.status, notes: form.notes,
     }).eq("id", id);
 
@@ -324,7 +326,7 @@ export default function GroupDetailPage() {
         }).eq("id", id);
         setSaving(false);
         if (e2) { alert("儲存失敗：" + e2.message); return; }
-        alert("基本資料已儲存（訂金金額欄位尚未建立）。\n\n請在 Supabase SQL Editor 執行：\n\nALTER TABLE tours\n  ADD COLUMN IF NOT EXISTS deposit_per_person NUMERIC(10,2) NOT NULL DEFAULT 0;");
+        alert("基本資料已儲存（部分新欄位尚未建立）。\n\n請在 Supabase SQL Editor 執行：\n\nALTER TABLE tours\n  ADD COLUMN IF NOT EXISTS deposit_per_person NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS tip_per_day NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS tip_included BOOLEAN NOT NULL DEFAULT false;");
         await loadTour();
         return;
       }
@@ -775,6 +777,45 @@ export default function GroupDetailPage() {
                   </p>
                 );
               })()}
+            </div>
+            <div className="col-span-2">
+              <label className={lbl}>司機/導遊/領隊小費</label>
+              <div className="flex items-center gap-3 mt-1 flex-wrap">
+                <div className="relative w-40">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 select-none">NT$</span>
+                  <input type="number" min="0"
+                    className="w-full pl-9 pr-12 border border-slate-200 dark:border-slate-600 rounded-lg py-2 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400 text-right"
+                    value={form.tip_per_day || 0}
+                    onChange={e => setForm({ ...form, tip_per_day: +e.target.value })} />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 select-none">/天</span>
+                </div>
+                {/* 前台標示切換 */}
+                <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-700 p-0.5 rounded-lg">
+                  <button type="button"
+                    onClick={() => setForm({ ...form, tip_included: true })}
+                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                      form.tip_included
+                        ? "bg-emerald-600 text-white shadow-sm"
+                        : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                    }`}>
+                    含於團費
+                  </button>
+                  <button type="button"
+                    onClick={() => setForm({ ...form, tip_included: false })}
+                    className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                      !form.tip_included
+                        ? "bg-orange-500 text-white shadow-sm"
+                        : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                    }`}>
+                    不含（另支付）
+                  </button>
+                </div>
+                <span className="text-xs text-slate-400 dark:text-slate-500">
+                  {(form.tip_per_day || 0) > 0
+                    ? `前台將顯示：小費 NT$${(form.tip_per_day || 0).toLocaleString()}/天・${form.tip_included ? "已含於團費" : "未含，另行支付"}`
+                    : "填 0 則前台不顯示小費資訊"}
+                </span>
+              </div>
             </div>
             <div className="col-span-2">
               <label className={lbl}>備註</label>
