@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { pushTravelLead } from "@/lib/autowinBridge";
 
 // ── Supabase client ───────────────────────────────────────────────────────────
 function getAdmin(): SupabaseClient {
@@ -176,7 +177,7 @@ export async function POST(
   const { tourId } = await context.params;
   const sb = getAdmin();
 
-  const { data: tour } = await sb.from("tours").select("id").eq("id", tourId).single();
+  const { data: tour } = await sb.from("tours").select("id,name,destination").eq("id", tourId).single();
   if (!tour) {
     return NextResponse.json({ error: "行程不存在" }, { status: 404 });
   }
@@ -294,6 +295,23 @@ export async function POST(
     await autoAssignRoom(sb, tourId, customerId,
       roommate_name?.trim() || "", single_room === "true");
   }
+
+  // ── 橋接：報名事件推入 autowin-os travel 租戶 CRM（不影響主流程）──
+  await pushTravelLead({
+    name: name.trim(),
+    phone: phone.trim(),
+    email: email?.trim() || "",
+    source: "travel_join",
+    source_details: `報名「${tour.name}」`,
+    tags: ["行程報名", tour.destination].filter(Boolean),
+    interests: ["旅遊", tour.destination].filter(Boolean),
+    custom_fields: {
+      tour_id: tourId,
+      tour_name: tour.name,
+      destination: tour.destination,
+      participant_type: participant_type || "adult",
+    },
+  });
 
   return NextResponse.json({ success: true, message: "報名成功！", customerId });
 }

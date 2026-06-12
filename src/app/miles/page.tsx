@@ -110,6 +110,19 @@ export default function MilesPage() {
     setPosting(false);
     if (error) { setPostErr("送出失敗：" + error.message); return; }
     setPostDone(true);
+    // 橋接：刊登者進 CRM（fire-and-forget，不影響流程）
+    fetch("/api/bridge/lead", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: "mileage_listing",
+        name: post.contact_name.trim(),
+        contact: post.contact_info.trim(),
+        airline: airlineOf(post.airline).label,
+        miles: post.miles || 0,
+        listing_type: post.type,
+      }),
+    }).catch(() => {});
   };
 
   const submitInquiry = async () => {
@@ -128,6 +141,20 @@ export default function MilesPage() {
     setInquiring(false);
     if (error) { setInqErr("送出失敗：" + error.message); return; }
     setInqDone(true);
+    // 橋接：意願者進 CRM（fire-and-forget，不影響流程）
+    fetch("/api/bridge/lead", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: "mileage_inquiry",
+        name: inq.name.trim(),
+        contact: inq.contact_info.trim(),
+        airline: airlineOf(inquiryFor.airline).label,
+        miles: inquiryFor.miles || 0,
+        listing_type: inquiryFor.type,
+        message: inq.message.trim(),
+      }),
+    }).catch(() => {});
   };
 
   const inputCls = "w-full border border-slate-200 rounded-xl px-3.5 py-2.5 text-sm bg-white text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-400";
