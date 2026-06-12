@@ -35,8 +35,9 @@ export default function AdminMilesPage() {
   const [acting, setActing]       = useState<string | null>(null);
 
   const load = async () => {
+    // mileage_listings_admin：含聯絡資訊的後台專用 view，僅 staff/admin 回傳資料
     const [{ data: ls }, { data: iq }] = await Promise.all([
-      supabase.from("mileage_listings").select("*").order("created_at", { ascending: false }),
+      supabase.from("mileage_listings_admin").select("*").order("created_at", { ascending: false }),
       supabase.from("mileage_inquiries").select("*").order("created_at", { ascending: false }),
     ]);
     setListings((ls || []) as MileageListing[]);
