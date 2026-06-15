@@ -50,7 +50,8 @@ export interface Tour {
   pax_tour_only: number;    // 只參團人數
   pax_child: number;        // 兒童人數
   pax_infant: number;       // 嬰兒人數
-  selling_price: number;    // 成人售價 (NT$)
+  selling_price: number;    // 成人售價（現價 / 折扣後）(NT$)
+  original_price?: number;  // 成人原價（行銷劃線價，> selling_price 時前台顯示折扣）(NT$)
   price_tour_only: number;  // 只參團售價 (NT$)
   price_child: number;      // 兒童售價 (NT$)
   price_infant: number;     // 嬰兒售價 (NT$)

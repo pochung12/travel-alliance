@@ -48,6 +48,11 @@ export default function TourCard({
           />
         )}
         <div className={`absolute inset-0 ${image ? "bg-gradient-to-t from-black/70 via-black/20 to-transparent" : "bg-black/10"}`} />
+        {(tour.original_price ?? 0) > tour.selling_price && (
+          <span className="absolute top-3 right-3 z-10 text-[11px] bg-red-500 text-white font-bold px-2 py-0.5 rounded-full shadow-sm">
+            省 NT${((tour.original_price ?? 0) - tour.selling_price).toLocaleString()}
+          </span>
+        )}
         <div className="absolute top-3 left-3 z-10 flex items-center gap-1.5 flex-wrap">
           {isChina && (
             <span className="text-[11px] bg-rose-600 text-white font-semibold px-2 py-0.5 rounded-full shadow-sm">
@@ -88,7 +93,12 @@ export default function TourCard({
         </div>
         <div className="flex items-center justify-between">
           <div>
-            <span className="text-[11px] text-slate-400 block">成人售價</span>
+            <span className="text-[11px] text-slate-400 flex items-center gap-1.5">
+              成人售價
+              {(tour.original_price ?? 0) > tour.selling_price && (
+                <span className="text-slate-400 line-through">NT${(tour.original_price ?? 0).toLocaleString()}</span>
+              )}
+            </span>
             <div className="text-lg font-bold text-cyan-600 leading-tight">
               NT${tour.selling_price.toLocaleString()}
               <span className="text-xs font-normal text-slate-400 ml-1">起</span>

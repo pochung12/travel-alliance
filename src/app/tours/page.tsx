@@ -27,7 +27,7 @@ function ToursContent() {
     Promise.all([
       supabase
         .from("tours")
-        .select("id,name,destination,start_date,end_date,pax,selling_price,status")
+        .select("id,name,destination,start_date,end_date,pax,selling_price,original_price,status")
         .in("status", ["confirmed", "ongoing"])
         .eq("is_public", true)
         .order("start_date", { ascending: true }),

@@ -291,6 +291,7 @@ export default function GroupDetailPage() {
       pax_child:       paxChild,
       pax_infant:      paxInfant,
       selling_price:   form.selling_price   || 0,
+      original_price:  form.original_price  || 0,
       price_tour_only: form.price_tour_only || 0,
       price_child:     form.price_child     || 0,
       price_infant:    form.price_infant    || 0,
@@ -326,7 +327,7 @@ export default function GroupDetailPage() {
         }).eq("id", id);
         setSaving(false);
         if (e2) { alert("儲存失敗：" + e2.message); return; }
-        alert("基本資料已儲存（部分新欄位尚未建立）。\n\n請在 Supabase SQL Editor 執行：\n\nALTER TABLE tours\n  ADD COLUMN IF NOT EXISTS deposit_per_person NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS tip_per_day NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS tip_included BOOLEAN NOT NULL DEFAULT false;");
+        alert("基本資料已儲存（部分新欄位尚未建立）。\n\n請在 Supabase SQL Editor 執行：\n\nALTER TABLE tours\n  ADD COLUMN IF NOT EXISTS deposit_per_person NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS tip_per_day NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS tip_included BOOLEAN NOT NULL DEFAULT false,\n  ADD COLUMN IF NOT EXISTS original_price NUMERIC(10,2) NOT NULL DEFAULT 0;");
         await loadTour();
         return;
       }
@@ -748,6 +749,37 @@ export default function GroupDetailPage() {
                       <span />
                     </div>
                   );
+                })()}
+              </div>
+            </div>
+            <div className="col-span-2">
+              <label className={lbl}>團費原價（行銷劃線價）</label>
+              <div className="flex items-center gap-3 mt-1 flex-wrap">
+                <div className="relative w-44">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 select-none">NT$</span>
+                  <input type="number" min="0"
+                    className="w-full pl-9 pr-3 border border-slate-200 dark:border-slate-600 rounded-lg py-2 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400 text-right"
+                    placeholder="例：45800"
+                    value={form.original_price || 0}
+                    onChange={e => setForm({ ...form, original_price: +e.target.value })} />
+                </div>
+                {(() => {
+                  const orig = form.original_price || 0;
+                  const now  = form.selling_price || 0;
+                  if (orig > 0 && orig <= now) {
+                    return <span className="text-xs text-orange-500">原價需大於成人售價（現價 NT${now.toLocaleString()}）才會顯示折扣</span>;
+                  }
+                  if (orig > now && now > 0) {
+                    const off = Math.round((now / orig) * 100) / 10;
+                    return (
+                      <span className="text-xs text-emerald-600 dark:text-emerald-400">
+                        前台顯示：<span className="line-through text-slate-400">NT${orig.toLocaleString()}</span> →
+                        <span className="font-semibold"> NT${now.toLocaleString()}</span>
+                        ・省 NT${(orig - now).toLocaleString()}（約 {off.toFixed(1).replace(/\.0$/, "")} 折）
+                      </span>
+                    );
+                  }
+                  return <span className="text-xs text-slate-400 dark:text-slate-500">填 0 或留空則不顯示折扣；現價以「成人售價」為準</span>;
                 })()}
               </div>
             </div>

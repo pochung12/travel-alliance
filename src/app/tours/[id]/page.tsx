@@ -97,16 +97,37 @@ function Reveal({
   );
 }
 
+// ── 折扣資訊（原價劃線 / 現價 / 省多少）─────────────────────────────────────────
+function discountOf(tour: Tour) {
+  const orig = tour.original_price ?? 0;
+  const now  = tour.selling_price ?? 0;
+  const has  = orig > now && now > 0;
+  return { has, orig, now, save: has ? orig - now : 0 };
+}
+
 // ── Booking sidebar（Basic 版用；價格/日期來自 tours，與後台綁定）──────────────
 function BookingSidebar({ tour, days }: { tour: Tour; days: number }) {
   const canJoin = tour.status === "confirmed" || tour.status === "ongoing";
   return (
     <div className="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm sticky top-24">
       <div className="text-center mb-5">
-        <div className="text-4xl font-bold text-cyan-600">
-          NT${tour.selling_price.toLocaleString()}
-        </div>
-        <div className="text-sm text-slate-400 mt-1">成人費用 / 人</div>
+        {(() => {
+          const d = discountOf(tour);
+          return (
+            <>
+              {d.has && (
+                <div className="flex items-center justify-center gap-2 mb-1">
+                  <span className="text-base text-slate-400 line-through">NT${d.orig.toLocaleString()}</span>
+                  <span className="text-[11px] font-bold text-white bg-red-500 px-2 py-0.5 rounded-full">省 NT${d.save.toLocaleString()}</span>
+                </div>
+              )}
+              <div className="text-4xl font-bold text-cyan-600">
+                NT${tour.selling_price.toLocaleString()}
+              </div>
+              <div className="text-sm text-slate-400 mt-1">成人費用 / 人{d.has && <span className="text-red-500 font-medium">・限時優惠</span>}</div>
+            </>
+          );
+        })()}
       </div>
       <div className="space-y-2.5 text-sm mb-5 pb-5 border-b border-slate-100">
         {[
@@ -143,20 +164,27 @@ function BookingSidebar({ tour, days }: { tour: Tour; days: number }) {
 
 // ── Price table（資料來自 tours，綁定後台）────────────────────────────────────
 function PriceRows({ tour }: { tour: Tour }) {
+  const d = discountOf(tour);
   const prices = [
-    { label: "成人", price: tour.selling_price, pax: tour.pax_adult },
-    { label: "只參團（不含機票）", price: tour.price_tour_only || 0, pax: tour.pax_tour_only },
-    { label: "兒童", price: tour.price_child || 0, pax: tour.pax_child },
-    { label: "嬰兒", price: tour.price_infant || 0, pax: tour.pax_infant },
-    ...(tour.custom_price_tiers || []).filter(isTierPublic).map((ct) => ({ label: ct.label, price: ct.price, pax: ct.pax })),
+    { label: "成人", price: tour.selling_price, pax: tour.pax_adult, original: d.has ? d.orig : 0 },
+    { label: "只參團（不含機票）", price: tour.price_tour_only || 0, pax: tour.pax_tour_only, original: 0 },
+    { label: "兒童", price: tour.price_child || 0, pax: tour.pax_child, original: 0 },
+    { label: "嬰兒", price: tour.price_infant || 0, pax: tour.pax_infant, original: 0 },
+    ...(tour.custom_price_tiers || []).filter(isTierPublic).map((ct) => ({ label: ct.label, price: ct.price, pax: ct.pax, original: 0 })),
   ].filter((p) => p.price > 0);
 
   return (
     <div className="divide-y divide-[#ece4d0]">
       {prices.map((p) => (
         <div key={p.label} className="flex justify-between items-center py-3.5">
-          <span className="text-sm font-medium">{p.label}</span>
-          <span className="font-bold text-lg">NT${p.price.toLocaleString()}</span>
+          <span className="text-sm font-medium">
+            {p.label}
+            {p.original > 0 && <span className="ml-2 text-[11px] font-bold text-white bg-red-500 px-1.5 py-0.5 rounded-full">限時優惠</span>}
+          </span>
+          <span className="flex items-baseline gap-2">
+            {p.original > 0 && <span className="text-sm text-slate-400 line-through">NT${p.original.toLocaleString()}</span>}
+            <span className="font-bold text-lg">NT${p.price.toLocaleString()}</span>
+          </span>
         </div>
       ))}
       {tour.deposit_per_person && tour.deposit_per_person > 0 ? (
@@ -381,6 +409,7 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
 
   // 已設定結構化小費欄位時，小費資訊一律以該欄位（團費價格區）為準，
   // 過濾掉 AI 生成內容裡的小費／服務費行，避免「已含於團費」卻又列在費用不含的矛盾
+  const disc = discountOf(tour);
   const hasTipField = (tour.tip_per_day ?? 0) > 0;
   const includes = hasTipField ? c.includes.filter(x => !isTipLine(x)) : c.includes;
   const excludes = hasTipField ? c.excludes.filter(x => !isTipLine(x)) : c.excludes;
@@ -430,7 +459,8 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
             </a>
           ))}
           <div className="ml-auto hidden md:flex items-center gap-3 shrink-0 pl-4">
-            <span className="serif-tc font-bold text-lg" style={{ color: RED }}>
+            <span className="serif-tc font-bold text-lg flex items-baseline gap-1.5" style={{ color: RED }}>
+              {disc.has && <span className="text-sm font-normal line-through" style={{ color: "#b3ac98" }}>NT${disc.orig.toLocaleString()}</span>}
               NT${tour.selling_price.toLocaleString()}<span className="text-xs font-normal ml-0.5" style={{ color: "#8a8268" }}>起</span>
             </span>
             {canJoin && (
@@ -497,7 +527,11 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
               </div>
               <div className="mt-7 pt-6 border-t border-white/15 flex items-end justify-between">
                 <div>
-                  <div className="text-[11px] opacity-55 mb-0.5">成人費用</div>
+                  <div className="text-[11px] opacity-55 mb-0.5 flex items-center gap-1.5">
+                    成人費用
+                    {disc.has && <span className="text-[10px] font-bold text-white bg-red-500 px-1.5 py-0.5 rounded-full">限時優惠</span>}
+                  </div>
+                  {disc.has && <div className="text-sm opacity-60 line-through -mb-0.5">NT${disc.orig.toLocaleString()}</div>}
                   <div className="serif-tc text-3xl font-black text-amber-300">
                     NT${tour.selling_price.toLocaleString()}
                   </div>
@@ -825,8 +859,9 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
           <p className="opacity-70 mb-2 text-sm md:text-base">
             {fmtFull(tour.start_date)} 出發 ・ {days} 天 {days - 1} 夜 ・ {tour.pax} 人成行
           </p>
-          <div className="serif-tc text-amber-300 text-3xl md:text-4xl font-black mb-8">
-            NT${tour.selling_price.toLocaleString()}<span className="text-base font-normal opacity-70 ml-1">/人 起</span>
+          <div className="serif-tc text-amber-300 text-3xl md:text-4xl font-black mb-8 flex items-center justify-center gap-3">
+            {disc.has && <span className="text-xl md:text-2xl font-normal opacity-50 line-through">NT${disc.orig.toLocaleString()}</span>}
+            <span>NT${tour.selling_price.toLocaleString()}<span className="text-base font-normal opacity-70 ml-1">/人 起</span></span>
           </div>
           {canJoin ? (
             <Link href={`/join/${tour.id}`}
@@ -855,7 +890,10 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
         <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 flex items-center justify-between gap-3 px-5 py-3 backdrop-blur-md border-t"
           style={{ background: "rgba(253,250,242,.95)", borderColor: "#e7ddc6" }}>
           <div>
-            <div className="text-[10px]" style={{ color: "#8a8268" }}>成人費用 / 人</div>
+            <div className="text-[10px] flex items-center gap-1" style={{ color: "#8a8268" }}>
+              成人費用 / 人
+              {disc.has && <span className="line-through">NT${disc.orig.toLocaleString()}</span>}
+            </div>
             <div className="serif-tc font-black text-xl" style={{ color: RED }}>
               NT${tour.selling_price.toLocaleString()}
             </div>
