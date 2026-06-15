@@ -364,12 +364,27 @@ function SectionHead({
   );
 }
 
+// 偵測小費／服務費相關的文字行（領隊/司機/導遊小費或服務費）
+function isTipLine(text: string): boolean {
+  const t = text || "";
+  if (t.includes("小費")) return true;
+  if (t.includes("服務費") && (t.includes("領隊") || t.includes("司機") || t.includes("導遊"))) return true;
+  return false;
+}
+
 function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: number }) {
   const c = page.content as TourPageContent;
   const cat = TOUR_PAGE_CATEGORIES.find(x => x.key === page.category);
   const canJoin = tour.status === "confirmed" || tour.status === "ongoing";
   const isChina = isChinaTour(`${tour.name} ${tour.destination}`, page.category);
   const [lightbox, setLightbox] = useState<string | null>(null);
+
+  // 已設定結構化小費欄位時，小費資訊一律以該欄位（團費價格區）為準，
+  // 過濾掉 AI 生成內容裡的小費／服務費行，避免「已含於團費」卻又列在費用不含的矛盾
+  const hasTipField = (tour.tip_per_day ?? 0) > 0;
+  const includes = hasTipField ? c.includes.filter(x => !isTipLine(x)) : c.includes;
+  const excludes = hasTipField ? c.excludes.filter(x => !isTipLine(x)) : c.excludes;
+  const notes    = hasTipField ? c.notes.filter(x => !isTipLine(x))    : c.notes;
 
   // 旅館清單（從每日行程彙整）
   const hotels = Array.from(new Set(
@@ -384,7 +399,7 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
     { id: "days",      label: "每日行程" },
     ...(gallery.length > 0 ? [{ id: "gallery", label: "景點美照" }] : []),
     { id: "price",     label: "費用說明" },
-    { id: "notes",     label: "旅遊須知" },
+    ...(notes.length > 0 ? [{ id: "notes", label: "旅遊須知" }] : []),
   ];
 
   return (
@@ -746,14 +761,14 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
             </div>
           </Reveal>
           <div className="space-y-5">
-            {c.includes.length > 0 && (
+            {includes.length > 0 && (
               <Reveal delay={100}>
                 <div className="rounded-3xl p-7 shadow-sm" style={{ background: CARD, border: "1px solid #ece3cd" }}>
                   <h3 className="flex items-center gap-2 font-bold mb-4" style={{ color: "#2e7d4f" }}>
                     <CircleCheck className="w-4.5 h-4.5" /> 費用包含
                   </h3>
                   <ul className="space-y-2 text-sm" style={{ color: "#5c5a4c" }}>
-                    {c.includes.map((x, i) => (
+                    {includes.map((x, i) => (
                       <li key={i} className="flex gap-2 items-start">
                         <span className="shrink-0 mt-0.5" style={{ color: "#2e7d4f" }}>✓</span>{x}
                       </li>
@@ -762,14 +777,14 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
                 </div>
               </Reveal>
             )}
-            {c.excludes.length > 0 && (
+            {excludes.length > 0 && (
               <Reveal delay={200}>
                 <div className="rounded-3xl p-7 shadow-sm" style={{ background: CARD, border: "1px solid #ece3cd" }}>
                   <h3 className="flex items-center gap-2 font-bold mb-4" style={{ color: RED }}>
                     <CircleX className="w-4.5 h-4.5" /> 費用不含
                   </h3>
                   <ul className="space-y-2 text-sm" style={{ color: "#5c5a4c" }}>
-                    {c.excludes.map((x, i) => (
+                    {excludes.map((x, i) => (
                       <li key={i} className="flex gap-2 items-start">
                         <span className="shrink-0 mt-0.5" style={{ color: RED }}>✕</span>{x}
                       </li>
@@ -783,13 +798,13 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
       </section>
 
       {/* ── 旅遊須知 ── */}
-      {c.notes.length > 0 && (
+      {notes.length > 0 && (
         <section id="notes" className="scroll-mt-32 max-w-6xl mx-auto px-5 md:px-8 pb-14 md:pb-20">
           <SectionHead kicker="Notice" title="旅遊須知" />
           <Reveal>
             <div className="rounded-3xl p-7 md:p-8 shadow-sm" style={{ background: CARD, border: "1px solid #ece3cd" }}>
               <ul className="grid md:grid-cols-2 gap-x-10 gap-y-3.5 text-sm" style={{ color: "#5c5a4c" }}>
-                {c.notes.map((x, i) => (
+                {notes.map((x, i) => (
                   <li key={i} className="flex gap-2.5 items-start">
                     <Info className="w-4 h-4 shrink-0 mt-0.5" style={{ color: RED }} />{x}
                   </li>
