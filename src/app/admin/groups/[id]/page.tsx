@@ -94,6 +94,7 @@ export default function GroupDetailPage() {
   const router  = useRouter();
   const [tour, setTour]               = useState<Tour | null>(null);
   const [form, setForm]               = useState<Partial<Tour>>({});
+  const [surchargeMode, setSurchargeMode] = useState<"percent" | "amount">("percent");
   const [participants, setParticipants] = useState<(CustomerTour & { customer: Customer })[]>([]);
   const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -180,6 +181,7 @@ export default function GroupDetailPage() {
     if (!data) { router.push("/admin/groups"); return; }
     setTour(data);
     setForm(data);
+    setSurchargeMode((data.card_surcharge_amount || 0) > 0 ? "amount" : "percent");
   };
 
   const loadParticipants = async () => {
@@ -293,6 +295,8 @@ export default function GroupDetailPage() {
       selling_price:   form.selling_price   || 0,
       original_price:  form.original_price  || 0,
       price_type:      form.price_type      || "",
+      card_surcharge_percent: form.card_surcharge_percent || 0,
+      card_surcharge_amount:  form.card_surcharge_amount  || 0,
       price_tour_only: form.price_tour_only || 0,
       price_child:     form.price_child     || 0,
       price_infant:    form.price_infant    || 0,
@@ -328,7 +332,7 @@ export default function GroupDetailPage() {
         }).eq("id", id);
         setSaving(false);
         if (e2) { alert("儲存失敗：" + e2.message); return; }
-        alert("基本資料已儲存（部分新欄位尚未建立）。\n\n請在 Supabase SQL Editor 執行：\n\nALTER TABLE tours\n  ADD COLUMN IF NOT EXISTS deposit_per_person NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS tip_per_day NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS tip_included BOOLEAN NOT NULL DEFAULT false,\n  ADD COLUMN IF NOT EXISTS original_price NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS price_type TEXT NOT NULL DEFAULT '';");
+        alert("基本資料已儲存（部分新欄位尚未建立）。\n\n請在 Supabase SQL Editor 執行：\n\nALTER TABLE tours\n  ADD COLUMN IF NOT EXISTS deposit_per_person NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS tip_per_day NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS tip_included BOOLEAN NOT NULL DEFAULT false,\n  ADD COLUMN IF NOT EXISTS original_price NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS price_type TEXT NOT NULL DEFAULT '',\n  ADD COLUMN IF NOT EXISTS card_surcharge_percent NUMERIC(6,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS card_surcharge_amount NUMERIC(10,2) NOT NULL DEFAULT 0;");
         await loadTour();
         return;
       }
@@ -805,6 +809,67 @@ export default function GroupDetailPage() {
                     : (form.price_type === "card") ? "前台價格旁顯示「刷卡價」標籤"
                     : "前台不顯示現金/刷卡標示"}
                 </span>
+              </div>
+            </div>
+            <div className="col-span-2">
+              <label className={lbl}>刷卡加價（以團費為現金價，前台另顯示刷卡價）</label>
+              <div className="mt-1 space-y-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* 加價方式 */}
+                  <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-700 p-0.5 rounded-lg">
+                    <button type="button"
+                      onClick={() => { setSurchargeMode("percent"); setForm({ ...form, card_surcharge_amount: 0 }); }}
+                      className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${surchargeMode === "percent" ? "bg-white dark:bg-slate-600 text-slate-800 dark:text-white shadow-sm" : "text-slate-500"}`}>
+                      ％ 百分比
+                    </button>
+                    <button type="button"
+                      onClick={() => { setSurchargeMode("amount"); setForm({ ...form, card_surcharge_percent: 0 }); }}
+                      className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${surchargeMode === "amount" ? "bg-white dark:bg-slate-600 text-slate-800 dark:text-white shadow-sm" : "text-slate-500"}`}>
+                      NT$ 固定金額
+                    </button>
+                  </div>
+                  {surchargeMode === "percent" ? (
+                    <div className="relative w-28">
+                      <input type="number" min="0" step="0.1"
+                        className="w-full pr-7 pl-3 border border-slate-200 dark:border-slate-600 rounded-lg py-2 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400 text-right"
+                        placeholder="2"
+                        value={form.card_surcharge_percent || 0}
+                        onChange={e => setForm({ ...form, card_surcharge_percent: +e.target.value, card_surcharge_amount: 0 })} />
+                      <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 select-none">%</span>
+                    </div>
+                  ) : (
+                    <div className="relative w-36">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 select-none">NT$</span>
+                      <input type="number" min="0"
+                        className="w-full pl-9 pr-3 border border-slate-200 dark:border-slate-600 rounded-lg py-2 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400 text-right"
+                        placeholder="例：900"
+                        value={form.card_surcharge_amount || 0}
+                        onChange={e => setForm({ ...form, card_surcharge_amount: +e.target.value, card_surcharge_percent: 0 })} />
+                    </div>
+                  )}
+                  {/* 建議 2% 一鍵套用 */}
+                  <button type="button"
+                    onClick={() => { setSurchargeMode("percent"); setForm({ ...form, card_surcharge_percent: 2, card_surcharge_amount: 0 }); }}
+                    className="text-xs px-2.5 py-1.5 border border-dashed border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors">
+                    💡 建議 +2%
+                  </button>
+                </div>
+                {(() => {
+                  const cash = form.selling_price || 0;
+                  const amt  = form.card_surcharge_amount || 0;
+                  const pct  = form.card_surcharge_percent || 0;
+                  const fee  = amt > 0 ? amt : (pct > 0 ? Math.round(cash * pct / 100) : 0);
+                  if (fee <= 0 || cash <= 0) {
+                    return <p className="text-xs text-slate-400 dark:text-slate-500">填 0 則前台不顯示刷卡價；建議刷卡加收 2% 手續費</p>;
+                  }
+                  const card = cash + fee;
+                  const pctShow = amt > 0 ? ((fee / cash) * 100).toFixed(1).replace(/\.0$/, "") : pct;
+                  return (
+                    <p className="text-xs text-emerald-600 dark:text-emerald-400">
+                      前台顯示：現金價 <span className="font-semibold">NT${cash.toLocaleString()}</span> ・ 刷卡價 <span className="font-semibold">NT${card.toLocaleString()}</span>（+{pctShow}%，手續費 NT${fee.toLocaleString()}）
+                    </p>
+                  );
+                })()}
               </div>
             </div>
             <div className="col-span-2">

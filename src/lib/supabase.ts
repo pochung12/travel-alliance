@@ -53,6 +53,8 @@ export interface Tour {
   selling_price: number;    // 成人售價（現價 / 折扣後）(NT$)
   original_price?: number;  // 成人原價（行銷劃線價，> selling_price 時前台顯示折扣）(NT$)
   price_type?: 'cash' | 'card' | '' | string; // 團費標示：現金價 / 刷卡價 / 不標示
+  card_surcharge_percent?: number; // 刷卡加價百分比（以團費為現金價，> 0 時前台顯示刷卡價）
+  card_surcharge_amount?: number;  // 刷卡加價固定金額（優先於百分比）
   price_tour_only: number;  // 只參團售價 (NT$)
   price_child: number;      // 兒童售價 (NT$)
   price_infant: number;     // 嬰兒售價 (NT$)

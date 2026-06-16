@@ -111,6 +111,26 @@ function PriceTypeBadge({ tour, className = "" }: { tour: Tour; className?: stri
   );
 }
 
+// ── 刷卡價（以團費為現金價，加成計算）─────────────────────────────────────────
+function cardPriceOf(tour: Tour) {
+  const cash = tour.selling_price || 0;
+  const amt  = tour.card_surcharge_amount || 0;
+  const pct  = tour.card_surcharge_percent || 0;
+  const fee  = amt > 0 ? amt : (pct > 0 ? Math.round(cash * pct / 100) : 0);
+  const pctShow = amt > 0 ? Math.round((fee / Math.max(cash, 1)) * 1000) / 10 : pct;
+  return { has: fee > 0 && cash > 0, cash, card: cash + fee, fee, pct: pctShow };
+}
+
+function CardPriceNote({ tour, className = "" }: { tour: Tour; className?: string }) {
+  const cp = cardPriceOf(tour);
+  if (!cp.has) return null;
+  return (
+    <span className={`inline-flex items-center gap-1 text-[11px] text-sky-700 bg-sky-50 px-2 py-0.5 rounded-full ${className}`}>
+      💳 刷卡價 NT${cp.card.toLocaleString()}（+{cp.pct}%）
+    </span>
+  );
+}
+
 // ── 折扣資訊（原價劃線 / 現價 / 省多少）─────────────────────────────────────────
 function discountOf(tour: Tour) {
   const orig = tour.original_price ?? 0;
@@ -142,6 +162,7 @@ function BookingSidebar({ tour, days }: { tour: Tour; days: number }) {
                 成人費用 / 人{d.has && <span className="text-red-500 font-medium">・限時優惠</span>}
                 <PriceTypeBadge tour={tour} />
               </div>
+              <div className="mt-1.5 flex justify-center"><CardPriceNote tour={tour} /></div>
             </>
           );
         })()}
@@ -204,6 +225,24 @@ function PriceRows({ tour }: { tour: Tour }) {
           </span>
         </div>
       ))}
+      {(() => {
+        const cp = cardPriceOf(tour);
+        if (!cp.has) return null;
+        return (
+          <div className="flex justify-between items-center py-3.5 gap-3 flex-wrap">
+            <span className="text-sm font-medium flex items-center gap-2 flex-wrap">
+              成人刷卡價
+              <span className="text-[11px] px-2 py-0.5 rounded-full font-semibold bg-sky-100 text-sky-700">
+                現金價 +{cp.pct}% 手續費
+              </span>
+            </span>
+            <span className="flex items-baseline gap-2">
+              <span className="text-xs text-slate-400">現金 NT${cp.cash.toLocaleString()}</span>
+              <span className="font-bold text-lg text-sky-700">NT${cp.card.toLocaleString()}</span>
+            </span>
+          </div>
+        );
+      })()}
       {tour.deposit_per_person && tour.deposit_per_person > 0 ? (
         <div className="flex justify-between items-center py-3.5">
           <span className="text-sm font-medium">訂金（每人）</span>
@@ -673,6 +712,11 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
                   <div className="serif-tc text-3xl font-black text-amber-300">
                     NT${tour.selling_price.toLocaleString()}
                   </div>
+                  {(() => {
+                    const cp = cardPriceOf(tour);
+                    if (!cp.has) return null;
+                    return <div className="text-[11px] text-white/65 mt-1">刷卡價 NT${cp.card.toLocaleString()}（+{cp.pct}%）</div>;
+                  })()}
                 </div>
                 {canJoin && (
                   <Link href={`/join/${tour.id}`}
