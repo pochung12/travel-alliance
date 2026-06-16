@@ -226,14 +226,18 @@ const CARD = "#fdfaf2";
 
 // 圖片收集（向下相容單圖版）
 function dayImgs(d: { image: string; images?: string[] }): string[] {
-  if (d.images && d.images.length > 0) return d.images;
+  if (d.images && d.images.length > 0) {
+    const filtered = d.images.filter(Boolean);
+    if (filtered.length > 0) return filtered;
+  }
   return d.image ? [d.image] : [];
 }
 
 // ── 三圖拼貼 ──────────────────────────────────────────────────────────────────
 function PhotoCollage({
-  images, caption, onView, hClass = "h-[340px] md:h-[480px]",
+  images: rawImages, caption, onView, hClass = "h-[340px] md:h-[480px]",
 }: { images: string[]; caption?: string; onView: (url: string) => void; hClass?: string }) {
+  const images = (rawImages || []).filter(Boolean);
   if (images.length === 0) return null;
 
   if (images.length === 1) {
