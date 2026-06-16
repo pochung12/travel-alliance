@@ -26,6 +26,64 @@ async function searchPexelsMulti(
   }
 }
 
+// ── Wikimedia Commons 圖片搜尋（依「真實地名」找名勝實景照）─────────────────────
+// Pexels 等圖庫對中港台日的具名景點覆蓋極差；Wikimedia Commons 有全球幾乎每個
+// 具名景點的 CC 授權實景照，且可用中文／當地語言名稱搜尋 —— 這是讓照片「對」的關鍵。
+const JUNK_RE = /(map|locator|logo|diagram|icon|svg|coat of arms|flag|seal|chart|\bplan\b|panorama cropped|stamp|emblem|signature|qr)/i;
+async function searchWikimedia(query: string, count = 3): Promise<string[]> {
+  if (!query) return [];
+  try {
+    const url = "https://commons.wikimedia.org/w/api.php"
+      + "?action=query&format=json&generator=search&gsrnamespace=6"
+      + `&gsrsearch=${encodeURIComponent(query + " filetype:bitmap")}`
+      + `&gsrlimit=${Math.max(count * 5, 20)}`
+      + "&prop=imageinfo&iiprop=url|size|mime&iiurlwidth=1600";
+    const res = await fetch(url, {
+      headers: { "User-Agent": "TravelAlliance/1.0 (https://1trip.com.tw; tour pages image lookup)" },
+    });
+    if (!res.ok) return [];
+    const data = await res.json() as {
+      query?: { pages?: Record<string, {
+        title?: string; index?: number;
+        imageinfo?: Array<{ url?: string; thumburl?: string; width?: number; height?: number; thumbwidth?: number; thumbheight?: number; mime?: string }>;
+      }> };
+    };
+    const pages = Object.values(data.query?.pages || {});
+    pages.sort((a, b) => (a.index ?? 999) - (b.index ?? 999)); // 保持搜尋相關度排序
+    const urls: string[] = [];
+    for (const p of pages) {
+      const ii = p.imageinfo?.[0];
+      if (!ii) continue;
+      if (JUNK_RE.test(p.title || "")) continue;                       // 排除地圖/logo/圖表
+      if (ii.mime && !/image\/(jpeg|png|jpg)/i.test(ii.mime)) continue; // 只要照片
+      const w = ii.thumbwidth || ii.width || 0;
+      const h = ii.thumbheight || ii.height || 0;
+      if (w && h && w < h * 1.05) continue;                            // 偏好橫幅大圖
+      const u = ii.thumburl || ii.url;
+      if (u && !urls.includes(u)) urls.push(u);
+      if (urls.length >= count) break;
+    }
+    return urls;
+  } catch {
+    return [];
+  }
+}
+
+// ── 統一圖片搜尋：具名景點先查 Wikimedia 實景，再用 Pexels 補足／處理通用概念 ─────
+async function searchImages(
+  place: string, keywords: string, count: number, pexelsKey: string
+): Promise<string[]> {
+  const out: string[] = [];
+  if (place) {
+    out.push(...await searchWikimedia(place, count));
+  }
+  if (out.length < count) {
+    const px = await searchPexelsMulti(keywords || place, pexelsKey, count - out.length + 1);
+    for (const u of px) { if (!out.includes(u)) out.push(u); }
+  }
+  return out.slice(0, count);
+}
+
 // ── System prompt ─────────────────────────────────────────────────────────────
 const SYSTEM_PROMPT = `你是暖心旅行社的資深行程企劃與旅遊文案設計師，擅長打造雜誌級的行程網頁。
 根據提供的出團基本資料與行程素材，產出一份精美行程網頁的完整內容。
@@ -35,11 +93,11 @@ JSON 欄位定義：
 - subtitle: 行程副標語（15-25字，有畫面感與感染力，像雜誌標語）
 - intro: 行程總介紹（180-280字，文字優美有溫度，依素材撰寫，不可捏造素材中沒有的承諾）
 - category: 分類，依目的地與行程性質從以下擇一：group（一般團體）/ island（海島度假）/ family（親子）/ japan（日本）/ china（中國大陸）/ sea（東南亞）/ europe（歐美長線）/ custom（客製包團）
-- posters: 海報陣列，固定 4 個物件 [{title: 海報大標（8-14字，磅礡有力如電影海報）, subtitle: 海報副標（12-22字）, image_keywords: 英文圖片搜尋關鍵字（3-5個英文單字，具體描述該海報主題的景色）}]
+- posters: 海報陣列，固定 4 個物件 [{title: 海報大標（8-14字，磅礡有力如電影海報）, subtitle: 海報副標（12-22字）, place: 該海報主視覺對應的「真實具名景點」名稱（用當地語言：中港台用繁體中文、日本用日文漢字、韓國用韓文、歐美用英文，例「梵淨山」「Eiffel Tower」；若是抽象主題無具體景點則填空字串 ""）, image_keywords: 英文圖片搜尋關鍵字（3-5個英文單字，具體描述該海報主題的景色）}]
   四張海報主題建議：1. 行程總覽主視覺 2. 最具代表性景點 3. 美食或文化體驗 4. 住宿或自然風光
-- highlights: 行程特色陣列，固定 6 個 [{icon: 單一emoji, title: 特色標題（6-10字）, desc: 說明（25-45字）, image_keywords: 該特色對應的英文圖片搜尋關鍵字（3-5個英文單字，要具體呈現該特色的畫面，例如住宿特色用「luxury hotel river view night」、美食特色用「chongqing hotpot spicy food」）}]
-- days: 每日行程陣列，天數必須與出團天數一致 [{day: 天數（整數，從1開始）, title: 當日標題（例「台北 ✈ 東京 → 淺草雷門・晴空塔」）, description: 當日詳細描述（100-180字，有畫面感）, spots: 當日景點名稱陣列（2-6個）, meals: {breakfast, lunch, dinner}（素材沒提到就合理安排：搭機時段的餐食寫「機上」、飯店早餐寫「飯店內用」、自由活動寫「敬請自理」）, hotel: 當晚住宿（最後一天填「溫暖的家」）, image_keywords: 當日最具代表性景色的英文搜尋關鍵字（3-5個英文單字，要具體）, meal_keywords: {breakfast, lunch, dinner}（各餐對應的英文圖片搜尋關鍵字，3-5個英文單字，依餐點名稱具體描述，例如午餐是重慶火鍋就寫「chongqing hotpot spicy food」；若該餐是機上/敬請自理/飯店內用等非特色餐，輸出空字串 ""）, hotel_keywords: 當晚飯店的英文圖片搜尋關鍵字（依飯店等級與特色描述，例「luxury hotel room city night view」；最後一天回家輸出空字串 ""）}]
-- gallery_spots: 全程最具代表性的景點精選，6-9 個 [{name: 景點名稱（中文，例「天門山國家森林公園」）, subtitle: 一句氛圍副標（8-18字，例「雲霧峰林・世界自然遺產」）, image_keywords: 該景點的英文搜尋關鍵字（3-5個英文單字，要非常具體，例「tianmen mountain cliff walkway fog」）}]
+- highlights: 行程特色陣列，固定 6 個 [{icon: 單一emoji, title: 特色標題（6-10字）, desc: 說明（25-45字）, place: 該特色若是「具名景點/自然地標」則填其當地語言真實名稱（例「黃果樹瀑布」「西江千戶苗寨」）；若是美食/住宿/服務/購物等抽象主題則填空字串 "", image_keywords: 該特色對應的英文圖片搜尋關鍵字（3-5個英文單字，例美食「chongqing hotpot spicy food」、住宿「luxury hotel river view night」）}]
+- days: 每日行程陣列，天數必須與出團天數一致 [{day: 天數（整數，從1開始）, title: 當日標題（例「台北 ✈ 東京 → 淺草雷門・晴空塔」）, description: 當日詳細描述（100-180字，有畫面感）, spots: 當日景點名稱陣列（2-6個）, place: 當日「最具代表性的具名景點」當地語言真實名稱（例「淺草寺」「梵淨山」；用於搜尋實景照，務必精準），meals: {breakfast, lunch, dinner}（素材沒提到就合理安排：搭機時段的餐食寫「機上」、飯店早餐寫「飯店內用」、自由活動寫「敬請自理」）, hotel: 當晚住宿（最後一天填「溫暖的家」）, image_keywords: 當日最具代表性景色的英文搜尋關鍵字（3-5個英文單字，要具體）, meal_keywords: {breakfast, lunch, dinner}（各餐對應的英文圖片搜尋關鍵字，3-5個英文單字，依餐點名稱具體描述，例如午餐是重慶火鍋就寫「chongqing hotpot spicy food」；若該餐是機上/敬請自理/飯店內用等非特色餐，輸出空字串 ""）, hotel_keywords: 當晚飯店的英文圖片搜尋關鍵字（依飯店等級與特色描述，例「luxury hotel room city night view」；最後一天回家輸出空字串 ""）}]
+- gallery_spots: 全程最具代表性的景點精選，6-9 個 [{name: 景點名稱（當地語言真實名稱，例「天門山國家森林公園」，此名稱會直接用於搜尋實景照，務必是正確的官方／通用地名）, subtitle: 一句氛圍副標（8-18字，例「雲霧峰林・世界自然遺產」）, image_keywords: 該景點的英文搜尋關鍵字（3-5個英文單字，要非常具體，例「tianmen mountain cliff walkway fog」）}]
 - flights: 航班陣列（素材中有航班資訊才填，否則空陣列）[{flight_no, date, from, to, depart, arrive}]
 - includes: 費用包含項目陣列（4-8項，依素材與常理）
 - excludes: 費用不含項目陣列（3-6項）
@@ -162,13 +220,14 @@ ${keepHints.map(h => `- ${h}`).join("\n")}` : ""}`;
 
     const [posterImages, dayImages, spotImages, hlImages, dayMealHotelImages] = await Promise.all([
       Promise.all(posters.map(p =>
-        searchPexelsMulti(String(p.image_keywords || fallbackKw), pexelsKey, 1))),
+        searchImages(String(p.place || ""), String(p.image_keywords || fallbackKw), 1, pexelsKey))),
       Promise.all(days.map(d =>
-        searchPexelsMulti(String(d.image_keywords || fallbackKw), pexelsKey, 3))),
+        searchImages(String(d.place || ""), String(d.image_keywords || fallbackKw), 3, pexelsKey))),
+      // 景點美照：景點名稱（當地語言）直接查 Wikimedia 實景，最關鍵
       Promise.all(spots.map(s =>
-        searchPexelsMulti(String(s.image_keywords || fallbackKw), pexelsKey, 3))),
+        searchImages(String(s.name || ""), String(s.image_keywords || fallbackKw), 3, pexelsKey))),
       Promise.all(hls.map(h =>
-        searchPexelsMulti(String(h.image_keywords || fallbackKw), pexelsKey, 1))),
+        searchImages(String(h.place || ""), String(h.image_keywords || fallbackKw), 1, pexelsKey))),
       // 餐點 + 飯店照片（依名稱關鍵字，無關鍵字則跳過不浪費搜尋）
       Promise.all(days.map(async d => {
         const mk = d.meal_keywords || {};
