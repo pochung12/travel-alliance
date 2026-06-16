@@ -292,6 +292,7 @@ export default function GroupDetailPage() {
       pax_infant:      paxInfant,
       selling_price:   form.selling_price   || 0,
       original_price:  form.original_price  || 0,
+      price_type:      form.price_type      || "",
       price_tour_only: form.price_tour_only || 0,
       price_child:     form.price_child     || 0,
       price_infant:    form.price_infant    || 0,
@@ -327,7 +328,7 @@ export default function GroupDetailPage() {
         }).eq("id", id);
         setSaving(false);
         if (e2) { alert("儲存失敗：" + e2.message); return; }
-        alert("基本資料已儲存（部分新欄位尚未建立）。\n\n請在 Supabase SQL Editor 執行：\n\nALTER TABLE tours\n  ADD COLUMN IF NOT EXISTS deposit_per_person NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS tip_per_day NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS tip_included BOOLEAN NOT NULL DEFAULT false,\n  ADD COLUMN IF NOT EXISTS original_price NUMERIC(10,2) NOT NULL DEFAULT 0;");
+        alert("基本資料已儲存（部分新欄位尚未建立）。\n\n請在 Supabase SQL Editor 執行：\n\nALTER TABLE tours\n  ADD COLUMN IF NOT EXISTS deposit_per_person NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS tip_per_day NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS tip_included BOOLEAN NOT NULL DEFAULT false,\n  ADD COLUMN IF NOT EXISTS original_price NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS price_type TEXT NOT NULL DEFAULT '';");
         await loadTour();
         return;
       }
@@ -781,6 +782,29 @@ export default function GroupDetailPage() {
                   }
                   return <span className="text-xs text-slate-400 dark:text-slate-500">填 0 或留空則不顯示折扣；現價以「成人售價」為準</span>;
                 })()}
+              </div>
+            </div>
+            <div className="col-span-2">
+              <label className={lbl}>團費標示（前台價格旁顯示）</label>
+              <div className="flex items-center gap-3 mt-1 flex-wrap">
+                <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-700 p-0.5 rounded-lg">
+                  {([["", "不標示"], ["cash", "💵 現金價"], ["card", "💳 刷卡價"]] as const).map(([val, label]) => (
+                    <button key={val} type="button"
+                      onClick={() => setForm({ ...form, price_type: val })}
+                      className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                        (form.price_type || "") === val
+                          ? (val === "cash" ? "bg-emerald-600 text-white shadow-sm" : val === "card" ? "bg-sky-600 text-white shadow-sm" : "bg-white dark:bg-slate-600 text-slate-700 dark:text-white shadow-sm")
+                          : "text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
+                      }`}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <span className="text-xs text-slate-400 dark:text-slate-500">
+                  {(form.price_type === "cash") ? "前台價格旁顯示「現金價」標籤"
+                    : (form.price_type === "card") ? "前台價格旁顯示「刷卡價」標籤"
+                    : "前台不顯示現金/刷卡標示"}
+                </span>
               </div>
             </div>
             <div className="col-span-2">

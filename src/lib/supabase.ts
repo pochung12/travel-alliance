@@ -52,6 +52,7 @@ export interface Tour {
   pax_infant: number;       // 嬰兒人數
   selling_price: number;    // 成人售價（現價 / 折扣後）(NT$)
   original_price?: number;  // 成人原價（行銷劃線價，> selling_price 時前台顯示折扣）(NT$)
+  price_type?: 'cash' | 'card' | '' | string; // 團費標示：現金價 / 刷卡價 / 不標示
   price_tour_only: number;  // 只參團售價 (NT$)
   price_child: number;      // 兒童售價 (NT$)
   price_infant: number;     // 嬰兒售價 (NT$)

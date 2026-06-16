@@ -97,6 +97,20 @@ function Reveal({
   );
 }
 
+// ── 團費標示（現金價 / 刷卡價）─────────────────────────────────────────────────
+function PriceTypeBadge({ tour, className = "" }: { tour: Tour; className?: string }) {
+  const t = tour.price_type;
+  if (t !== "cash" && t !== "card") return null;
+  const isCash = t === "cash";
+  return (
+    <span className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full ${
+      isCash ? "bg-emerald-100 text-emerald-700" : "bg-sky-100 text-sky-700"
+    } ${className}`}>
+      {isCash ? "💵 現金價" : "💳 刷卡價"}
+    </span>
+  );
+}
+
 // ── 折扣資訊（原價劃線 / 現價 / 省多少）─────────────────────────────────────────
 function discountOf(tour: Tour) {
   const orig = tour.original_price ?? 0;
@@ -124,7 +138,10 @@ function BookingSidebar({ tour, days }: { tour: Tour; days: number }) {
               <div className="text-4xl font-bold text-cyan-600">
                 NT${tour.selling_price.toLocaleString()}
               </div>
-              <div className="text-sm text-slate-400 mt-1">成人費用 / 人{d.has && <span className="text-red-500 font-medium">・限時優惠</span>}</div>
+              <div className="text-sm text-slate-400 mt-1 flex items-center justify-center gap-1.5 flex-wrap">
+                成人費用 / 人{d.has && <span className="text-red-500 font-medium">・限時優惠</span>}
+                <PriceTypeBadge tour={tour} />
+              </div>
             </>
           );
         })()}
@@ -646,8 +663,10 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
               </div>
               <div className="mt-7 pt-6 border-t border-white/15 flex items-end justify-between">
                 <div>
-                  <div className="text-[11px] opacity-55 mb-0.5 flex items-center gap-1.5">
+                  <div className="text-[11px] opacity-55 mb-0.5 flex items-center gap-1.5 flex-wrap">
                     成人費用
+                    {tour.price_type === "cash" && <span className="text-[10px] font-bold text-emerald-900 bg-emerald-300 px-1.5 py-0.5 rounded-full">現金價</span>}
+                    {tour.price_type === "card" && <span className="text-[10px] font-bold text-sky-900 bg-sky-300 px-1.5 py-0.5 rounded-full">刷卡價</span>}
                     {disc.has && <span className="text-[10px] font-bold text-white bg-red-500 px-1.5 py-0.5 rounded-full">限時優惠</span>}
                   </div>
                   {disc.has && <div className="text-sm opacity-60 line-through -mb-0.5">NT${disc.orig.toLocaleString()}</div>}
@@ -880,7 +899,9 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
         <div className="grid md:grid-cols-2 gap-5">
           <Reveal>
             <div className="rounded-3xl p-7 md:p-8 shadow-sm h-full" style={{ background: CARD, border: "1px solid #ece3cd" }}>
-              <h3 className="font-bold mb-3" style={{ color: RED }}>團費價格</h3>
+              <h3 className="font-bold mb-3 flex items-center gap-2 flex-wrap" style={{ color: RED }}>
+                團費價格 <PriceTypeBadge tour={tour} />
+              </h3>
               <PriceRows tour={tour} />
             </div>
           </Reveal>
