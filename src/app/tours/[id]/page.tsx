@@ -396,6 +396,118 @@ function SectionHead({
   );
 }
 
+// ── 閱讀進度條 ────────────────────────────────────────────────────────────────
+function ScrollProgress() {
+  const [p, setP] = useState(0);
+  useEffect(() => {
+    let raf = 0;
+    const on = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        const h = document.documentElement;
+        const max = h.scrollHeight - h.clientHeight;
+        setP(max > 0 ? (h.scrollTop / max) * 100 : 0);
+      });
+    };
+    window.addEventListener("scroll", on, { passive: true });
+    on();
+    return () => { window.removeEventListener("scroll", on); if (raf) cancelAnimationFrame(raf); };
+  }, []);
+  return (
+    <div className="fixed top-0 left-0 right-0 z-[60] h-[3px] pointer-events-none" style={{ background: "rgba(0,0,0,.06)" }}>
+      <div className="h-full" style={{ width: `${p}%`, background: `linear-gradient(90deg, ${RED}, #d98a3d)`, transition: "width .12s linear" }} />
+    </div>
+  );
+}
+
+// ── 行程特色：整頁大圖 + 視差 ──────────────────────────────────────────────────
+function HighlightBand({
+  h, idx, flip, onView,
+}: {
+  h: { icon: string; title: string; desc: string; image?: string };
+  idx: number; flip: boolean; onView: (u: string) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+  const [vis, setVis] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      ([e]) => { if (e.isIntersecting) setVis(true); },
+      { threshold: 0.2 }
+    );
+    io.observe(el);
+    let raf = 0;
+    const onScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        const e2 = ref.current, im = imgRef.current;
+        if (!e2 || !im) return;
+        const r = e2.getBoundingClientRect();
+        const vh = window.innerHeight || 1;
+        if (r.bottom < -240 || r.top > vh + 240) return;
+        const prog = (r.top + r.height / 2 - vh / 2) / vh; // 約 -1 .. 0 .. 1
+        im.style.transform = `translate3d(0, ${(-prog * 7).toFixed(2)}%, 0) scale(1.2)`;
+      });
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+    return () => { io.disconnect(); window.removeEventListener("scroll", onScroll); if (raf) cancelAnimationFrame(raf); };
+  }, []);
+
+  const num = String(idx + 1).padStart(2, "0");
+  const grad = CARD_GRADIENTS[idx % CARD_GRADIENTS.length];
+  const ease = "cubic-bezier(.2,.65,.3,1)";
+
+  return (
+    <div ref={ref} className="relative w-full h-[88vh] min-h-[540px] overflow-hidden">
+      {h.image ? (
+        <img ref={imgRef} src={h.image} alt={h.title} loading="lazy"
+          onClick={() => onView(h.image!)}
+          className="absolute inset-0 w-full h-full object-cover cursor-zoom-in will-change-transform"
+          style={{ transform: "scale(1.2)" }} />
+      ) : (
+        <div className={`absolute inset-0 bg-gradient-to-br ${grad}`} />
+      )}
+      {/* 方向性遮罩 */}
+      <div className="absolute inset-0" style={{
+        background: flip
+          ? "linear-gradient(to left, rgba(15,20,16,.78) 0%, rgba(15,20,16,.30) 48%, rgba(15,20,16,.02) 78%)"
+          : "linear-gradient(to right, rgba(15,20,16,.78) 0%, rgba(15,20,16,.30) 48%, rgba(15,20,16,.02) 78%)",
+      }} />
+      <div className="absolute inset-0" style={{ background: "linear-gradient(to top, rgba(15,20,16,.6), transparent 42%)" }} />
+
+      <div className="absolute inset-0 flex items-end md:items-center">
+        <div className="max-w-6xl mx-auto w-full px-6 md:px-10 pb-14 md:pb-0">
+          <div className={`max-w-xl ${flip ? "md:ml-auto md:text-right" : ""}`}>
+            <div className={`flex items-center gap-4 mb-4 ${flip ? "md:justify-end" : ""}`}
+              style={{ opacity: vis ? 1 : 0, transform: vis ? "none" : "translateY(28px)", transition: `opacity .9s ${ease}, transform .9s ${ease}` }}>
+              <span className="serif-tc text-amber-300 text-5xl md:text-8xl font-black leading-none drop-shadow-lg">{num}</span>
+              <span className="text-3xl md:text-5xl">{h.icon}</span>
+            </div>
+            <h3 className="serif-tc text-white text-3xl md:text-6xl font-black leading-[1.12] mb-4 md:mb-6 drop-shadow-2xl"
+              style={{ opacity: vis ? 1 : 0, transform: vis ? "none" : "translateY(36px)", transition: `opacity 1s ${ease} .1s, transform 1s ${ease} .1s` }}>
+              {h.title}
+            </h3>
+            <p className="text-white/85 text-sm md:text-lg leading-relaxed drop-shadow max-w-lg md:inline-block"
+              style={{ opacity: vis ? 1 : 0, transform: vis ? "none" : "translateY(36px)", transition: `opacity 1s ${ease} .2s, transform 1s ${ease} .2s` }}>
+              {h.desc}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className={`absolute bottom-5 ${flip ? "left-6 md:left-10" : "right-6 md:right-10"} text-white/45 text-[11px] tracking-[0.3em] uppercase select-none hidden md:block`}>
+        Highlight {num}
+      </div>
+    </div>
+  );
+}
+
 // 偵測小費／服務費相關的文字行（領隊/司機/導遊小費或服務費）
 function isTipLine(text: string): boolean {
   const t = text || "";
@@ -444,8 +556,11 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
         .kb-zoom { animation: kbZoom 9s ease-out both; }
         .scrollbar-none::-webkit-scrollbar { display: none; }
         .scrollbar-none { scrollbar-width: none; }
+        html { scroll-behavior: smooth; }
+        @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } .kb-zoom { animation: none; } }
       `}</style>
 
+      <ScrollProgress />
       <PublicNavbar />
 
       {/* ── Hero ── */}
@@ -601,45 +716,16 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
         )}
       </section>
 
-      {/* ── 行程特色 ── */}
+      {/* ── 行程特色：整頁大圖視差 ── */}
       {c.highlights.length > 0 && (
-        <section id="highlights" className="scroll-mt-32 max-w-6xl mx-auto px-5 md:px-8 py-12 md:py-20">
-          <SectionHead kicker="Highlights" title="行程特色" />
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5 md:gap-7">
+        <section id="highlights" className="scroll-mt-32 pt-12 md:pt-20">
+          <div className="max-w-6xl mx-auto px-5 md:px-8">
+            <SectionHead kicker="Highlights" title="行程特色"
+              desc="一頁一風景——把這趟旅程最值得期待的畫面，放到最大。" />
+          </div>
+          <div>
             {c.highlights.map((h, i) => (
-              <Reveal key={i} delay={i * 90}>
-                <div className="group rounded-3xl overflow-hidden h-full shadow-md hover:shadow-2xl transition-all duration-500 hover:-translate-y-1.5"
-                  style={{ background: CARD, border: "1px solid #ece3cd" }}>
-                  {h.image ? (
-                    <>
-                      {/* 大圖 */}
-                      <div className="relative h-56 md:h-64 overflow-hidden cursor-zoom-in"
-                        onClick={() => setLightbox(h.image!)}>
-                        <img src={h.image} alt={h.title} loading="lazy"
-                          className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/5 to-transparent" />
-                        {/* emoji 圓徽章（跨在圖片與內容交界）*/}
-                        <div className="absolute -bottom-0 left-6 translate-y-1/2 w-14 h-14 rounded-full flex items-center justify-center text-2xl shadow-lg z-10"
-                          style={{ background: CARD, border: "1px solid #ece3cd" }}>
-                          {h.icon}
-                        </div>
-                      </div>
-                      {/* 內容 */}
-                      <div className="px-6 pt-11 pb-6">
-                        <div className="serif-tc font-black text-xl mb-2.5">{h.title}</div>
-                        <div className="text-sm leading-[1.8]" style={{ color: "#6b6a5c" }}>{h.desc}</div>
-                      </div>
-                    </>
-                  ) : (
-                    /* 無圖 fallback（舊版資料）*/
-                    <div className="p-6 md:p-7 h-full">
-                      <div className="text-4xl mb-4">{h.icon}</div>
-                      <div className="serif-tc font-bold text-lg mb-2">{h.title}</div>
-                      <div className="text-sm leading-relaxed" style={{ color: "#6b6a5c" }}>{h.desc}</div>
-                    </div>
-                  )}
-                </div>
-              </Reveal>
+              <HighlightBand key={i} h={h} idx={i} flip={i % 2 === 1} onView={setLightbox} />
             ))}
           </div>
         </section>
