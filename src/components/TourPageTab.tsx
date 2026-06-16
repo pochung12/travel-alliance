@@ -62,6 +62,7 @@ function compressToBlob(file: File, maxPx = 1600, quality = 0.85): Promise<Blob>
 
 // ── 換圖目標描述 ──────────────────────────────────────────────────────────────
 type PickerTarget =
+  | { kind: "poster"; idx: number; label: string }
   | { kind: "highlight"; idx: number; label: string }
   | { kind: "dayImage"; dayNum: number; slot: number; label: string }
   | { kind: "meal"; dayNum: number; mealKey: "breakfast" | "lunch" | "dinner"; label: string }
@@ -253,6 +254,24 @@ export default function TourPageTab({ tour }: Props) {
   const applyImageToTarget = async (url: string) => {
     if (!page || !picker) return;
     setApplyingImg(url);
+
+    // 海報存在 hero_posters 欄位（非 content）— 獨立處理
+    if (picker.kind === "poster") {
+      const posters = JSON.parse(JSON.stringify(page.hero_posters || [])) as TourPagePoster[];
+      if (posters[picker.idx]) posters[picker.idx].image = url;
+      const { error: e } = await supabase.from("tour_pages")
+        .update({ hero_posters: posters, updated_at: new Date().toISOString() })
+        .eq("id", page.id);
+      if (!e) {
+        setPage(prev => prev ? { ...prev, hero_posters: posters } : prev);
+        setPicker(null);
+      } else {
+        alert("儲存失敗：" + e.message);
+      }
+      setApplyingImg("");
+      return;
+    }
+
     const content = JSON.parse(JSON.stringify(page.content)) as TourPageContent;
     if (picker.kind === "highlight") {
       if (content.highlights[picker.idx]) content.highlights[picker.idx].image = url;
@@ -517,26 +536,33 @@ Day2 箱根一日遊，蘆之湖海賊船、大涌谷，溫泉飯店會席料理
             </div>
           </div>
 
-          {/* 海報預覽（可換圖） */}
+          {/* 海報預覽（可換圖/上傳） */}
           {posters.length > 0 && (
             <div className="p-4 md:p-5 border-b border-slate-100 dark:border-slate-700">
               <h4 className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase mb-3 flex items-center gap-1.5">
                 <ImageIcon className="w-3.5 h-3.5" /> 行程海報（{posters.length} 張）
+                <span className="normal-case font-normal text-slate-300 dark:text-slate-500 tracking-normal">— 點海報可上傳或更換照片</span>
               </h4>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 {posters.map((p, i) => (
-                  <div key={i} className="relative aspect-[3/4] rounded-xl overflow-hidden bg-slate-200 dark:bg-slate-700 group">
+                  <button key={i} type="button"
+                    onClick={() => openPicker({ kind: "poster", idx: i, label: `行程海報 ${i + 1}：${p.title}` }, `${tour.destination} ${p.title}`)}
+                    className="relative aspect-[3/4] rounded-xl overflow-hidden bg-slate-200 dark:bg-slate-700 group text-left">
                     {p.image ? (
                       <img src={p.image} alt={p.title} className="absolute inset-0 w-full h-full object-cover" />
                     ) : (
                       <div className="absolute inset-0 bg-gradient-to-br from-cyan-500 to-blue-600" />
                     )}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent" />
-                    <div className="absolute bottom-0 left-0 right-0 p-3">
+                    <span className="absolute top-2 left-2 text-[10px] font-bold text-white bg-black/45 px-1.5 py-0.5 rounded-full">{i + 1}</span>
+                    <span className="absolute top-2 right-2 flex items-center gap-1 text-[10px] px-2 py-1 bg-black/55 group-hover:bg-violet-600 text-white rounded-full backdrop-blur-sm transition-colors opacity-0 group-hover:opacity-100">
+                      <RefreshCw className="w-2.5 h-2.5" /> 換圖
+                    </span>
+                    <div className="absolute bottom-0 left-0 right-0 p-3 pointer-events-none">
                       <div className="text-white font-bold text-sm leading-snug drop-shadow">{p.title}</div>
                       <div className="text-white/75 text-[10px] mt-0.5 leading-tight">{p.subtitle}</div>
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
