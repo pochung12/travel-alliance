@@ -877,9 +877,16 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
                                 </div>
                               )}
                               <div className="space-y-1 text-sm" style={{ color: "#5c5a4c" }}>
-                                {mealRows.map((m, i) => (
-                                  <div key={i}>{m.label}：{m.name}</div>
-                                ))}
+                                {mealRows.map((m, i) => {
+                                  const notIncluded = /^(x|×|✕|無|敬請自理|自理|-|—)$/i.test((m.name || "").trim());
+                                  return (
+                                    <div key={i}>
+                                      {m.label}：{notIncluded
+                                        ? <span style={{ color: "#b3ac98" }}>{/^x$/i.test((m.name || "").trim()) ? "X（敬請自理）" : m.name}</span>
+                                        : m.name}
+                                    </div>
+                                  );
+                                })}
                               </div>
                             </>
                           );
