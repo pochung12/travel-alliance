@@ -760,7 +760,9 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="font-bold text-[15px]">{f.flight_no}</div>
-                          <div className="text-xs mt-0.5" style={{ color: "#8a8268" }}>{f.from} → {f.to}</div>
+                          <div className="text-xs mt-0.5" style={{ color: "#8a8268" }}>
+                            {f.from}{f.from_terminal ? ` ${f.from_terminal}` : ""} → {f.to}{f.to_terminal ? ` ${f.to_terminal}` : ""}
+                          </div>
                         </div>
                         <div className="font-semibold text-sm whitespace-nowrap shrink-0">{f.depart}–{f.arrive}</div>
                       </div>

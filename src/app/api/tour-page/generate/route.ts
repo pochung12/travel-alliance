@@ -103,7 +103,7 @@ JSON 欄位定義：
     • 搭機時段的正餐填「機上」。
     「X」代表該餐不含於行程；若素材有航班時間請嚴格據此判斷，若無則依國際團常見習慣合理推估（去程日早餐多為 X）。, hotel: 當晚住宿（最後一天填「溫暖的家」）, image_keywords: 當日最具代表性景色的英文搜尋關鍵字（3-5個英文單字，要具體）, meal_keywords: {breakfast, lunch, dinner}（各餐對應的英文圖片搜尋關鍵字，3-5個英文單字，依餐點名稱具體描述，例如午餐是重慶火鍋就寫「chongqing hotpot spicy food」；若該餐是 X／機上／敬請自理／飯店內用 等非特色餐，輸出空字串 ""）, hotel_keywords: 當晚飯店的英文圖片搜尋關鍵字（依飯店等級與特色描述，例「luxury hotel room city night view」；最後一天回家輸出空字串 ""）}]
 - gallery_spots: 全程最具代表性的景點精選，6-9 個 [{name: 景點名稱（當地語言真實名稱，例「天門山國家森林公園」，此名稱會直接用於搜尋實景照，務必是正確的官方／通用地名）, subtitle: 一句氛圍副標（8-18字，例「雲霧峰林・世界自然遺產」）, image_keywords: 該景點的英文搜尋關鍵字（3-5個英文單字，要非常具體，例「tianmen mountain cliff walkway fog」）}]
-- flights: 航班陣列（素材中有航班資訊才填，否則空陣列）[{flight_no, date, from, to, depart, arrive}]
+- flights: 航班陣列（素材中有航班資訊才填，否則空陣列）[{flight_no, date, from(出發地/機場), from_terminal(出發航廈，如 T1/T2，無則空字串), to(抵達地/機場), to_terminal(抵達航廈), depart(出發時間 HH:MM), arrive(抵達時間 HH:MM)}]
 - includes: 費用包含項目陣列（4-8項，依素材與常理）
 - excludes: 費用不含項目陣列（3-6項）
 - notes: 注意事項陣列（4-8項，實用的旅遊提醒）

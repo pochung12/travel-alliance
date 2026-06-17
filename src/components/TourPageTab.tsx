@@ -1,12 +1,14 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
 import {
-  supabase, Tour, TourPage, TourPagePoster, TourPageContent, TourPageDay, TOUR_PAGE_CATEGORIES,
+  supabase, Tour, TourPage, TourPagePoster, TourPageContent, TourPageDay,
+  TourPageFlightInfo, TOUR_PAGE_CATEGORIES,
 } from "@/lib/supabase";
 import {
   Sparkles, Globe, Eye, Loader2, CheckCircle2, AlertCircle,
   RefreshCw, EyeOff, ExternalLink, Image as ImageIcon, Pencil, X, Save, Upload, Search,
 } from "lucide-react";
+import FlightEditor from "@/components/FlightEditor";
 
 interface Props { tour: Tour }
 
@@ -111,6 +113,10 @@ export default function TourPageTab({ tour }: Props) {
   const [loading, setLoading]   = useState(true);
   const [rawInput, setRawInput] = useState("");
   const [generating, setGenerating] = useState(false);
+  // 從別家行程網址自動抓取
+  const [scrapeUrl, setScrapeUrl] = useState("");
+  const [scraping, setScraping]   = useState(false);
+  const [scrapeErr, setScrapeErr] = useState("");
   const [saving, setSaving]     = useState(false);
   const [error, setError]       = useState("");
   // 保留區塊（重新生成時不變動）
@@ -147,6 +153,30 @@ export default function TourPageTab({ tour }: Props) {
         setLoading(false);
       });
   }, [tour.id]);
+
+  // ── 從別家行程網址抓取 → 萃取成素材（去除品牌）──────────────────────────────
+  const scrapeFromUrl = async () => {
+    const u = scrapeUrl.trim();
+    if (!u) return;
+    setScraping(true);
+    setScrapeErr("");
+    try {
+      const res = await fetch("/api/tour-page/scrape", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: u }),
+      });
+      const json = await res.json();
+      if (!res.ok) { setScrapeErr(json.error || "抓取失敗"); return; }
+      const material = (json.material || "").trim();
+      if (!material) { setScrapeErr("未能萃取到行程內容"); return; }
+      setRawInput(prev => prev.trim() ? prev.trim() + "\n\n" + material : material);
+      setScrapeUrl("");
+    } catch {
+      setScrapeErr("抓取失敗，請重試或改用複製貼上");
+    } finally {
+      setScraping(false);
+    }
+  };
 
   // ── AI 生成 ──────────────────────────────────────────────────────────────────
   const generate = async () => {
@@ -395,6 +425,17 @@ export default function TourPageTab({ tour }: Props) {
     setSavingDay(false);
   };
 
+  // 儲存航班（寫入 content.flights）
+  const saveFlights = async (flights: TourPageFlightInfo[]) => {
+    if (!page) return;
+    const newContent = { ...(page.content as TourPageContent), flights };
+    const { error: e } = await supabase.from("tour_pages")
+      .update({ content: newContent, updated_at: new Date().toISOString() })
+      .eq("id", page.id);
+    if (!e) setPage(prev => prev ? { ...prev, content: newContent } : prev);
+    else alert("儲存失敗：" + e.message);
+  };
+
   const changeCategory = async (cat: string) => {
     if (!page) return;
     await supabase.from("tour_pages").update({ category: cat }).eq("id", page.id);
@@ -435,6 +476,35 @@ export default function TourPageTab({ tour }: Props) {
           的雜誌級行程網頁。日期與價格自動帶入本團資料。
           <span className="text-emerald-600 dark:text-emerald-400 font-medium">所有照片皆可個別「上傳自己的照片」替換。</span>
         </p>
+
+        {/* 從別家行程網址自動抓取 */}
+        <div className="rounded-xl border border-sky-200 dark:border-sky-800 bg-sky-50/50 dark:bg-sky-900/10 p-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-semibold text-sky-700 dark:text-sky-300 shrink-0">🔗 貼上別家行程網址</span>
+            <input
+              className="flex-1 min-w-[180px] text-sm border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-sky-400"
+              placeholder="例：喜鴻、攜程等行程頁網址 https://…"
+              value={scrapeUrl}
+              onChange={e => setScrapeUrl(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && !scraping && scrapeFromUrl()}
+            />
+            <button onClick={scrapeFromUrl} disabled={scraping || !scrapeUrl.trim()}
+              className="flex items-center gap-1.5 text-sm px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white rounded-lg font-medium disabled:opacity-50 transition-colors shrink-0">
+              {scraping ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4" />}
+              {scraping ? "抓取中…" : "抓取行程"}
+            </button>
+          </div>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
+            AI 會自動萃取每日行程、餐食、飯店、景點、航班並填入下方素材框，
+            <span className="text-sky-600 dark:text-sky-400 font-medium">並自動移除對方旅行社／平台的名稱與報價</span>。
+            照片一律由系統重新搜尋實景照（不使用對方的圖，避免浮水印與版權）。動態載入的網站（如部分攜程頁）若抓不到，可改用複製貼上。
+          </p>
+          {scrapeErr && (
+            <p className="flex items-center gap-1.5 text-xs text-red-500 mt-1.5">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {scrapeErr}
+            </p>
+          )}
+        </div>
 
         <textarea
           className="w-full h-48 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-400 resize-y font-mono"
@@ -771,6 +841,9 @@ Day2 箱根一日遊，蘆之湖海賊船、大涌谷，溫泉飯店會席料理
               </div>
             </div>
           )}
+
+          {/* 航班資訊（單獨列出，可手填或航班號自動帶入）*/}
+          <FlightEditor flights={content?.flights || []} onSave={saveFlights} />
         </div>
       )}
 

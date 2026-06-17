@@ -209,7 +209,10 @@ export interface TourPageDay {
 }
 
 export interface TourPageFlightInfo {
-  flight_no: string; date: string; from: string; to: string; depart: string; arrive: string;
+  flight_no: string; date: string;
+  from: string; from_terminal?: string;   // 出發地、出發航廈
+  to: string;   to_terminal?: string;     // 抵達地、抵達航廈
+  depart: string; arrive: string;          // 出發 / 抵達時間
 }
 
 /** 景點美照：每個景點 3 張精美照片 */
