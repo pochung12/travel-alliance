@@ -23,6 +23,15 @@ function fmtFull(d: string) {
 function fmtShort(d: string) {
   return new Date(d).toLocaleDateString("zh-TW", { month: "numeric", day: "numeric", weekday: "short" });
 }
+// 月/日（航班日期字串可能是 2026-09-20 或 9/20，解析失敗則原樣顯示）
+function fmtMD(d: string | Date): string {
+  const date = typeof d === "string" ? new Date(d) : d;
+  if (isNaN(date.getTime())) return typeof d === "string" ? d : "";
+  return `${date.getMonth() + 1}/${date.getDate()}`;
+}
+function weekdayOf(d: Date): string {
+  return d.toLocaleDateString("zh-TW", { weekday: "short" });
+}
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { label: string; icon: React.ElementType; cls: string }> = {
@@ -586,10 +595,14 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
   const excludes = hasTipField ? c.excludes.filter(x => !isTipLine(x)) : c.excludes;
   const notes    = hasTipField ? c.notes.filter(x => !isTipLine(x))    : c.notes;
 
-  // 旅館清單（從每日行程彙整）
-  const hotels = Array.from(new Set(
-    c.days.map(d => d.hotel).filter(h => h && h !== "溫暖的家")
-  ));
+  // 住宿安排：逐日列出（每天的飯店 + 日期）
+  const dayHotels = c.days
+    .filter(d => d.hotel && d.hotel.trim() !== "" && d.hotel !== "溫暖的家")
+    .map(d => ({
+      day: d.day,
+      date: new Date(new Date(tour.start_date).getTime() + (d.day - 1) * 86400000),
+      hotel: d.hotel,
+    }));
 
   const gallery = c.gallery || [];
 
@@ -730,7 +743,7 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
         </div>
 
         {/* 航班 + 旅館 */}
-        {(c.flights.length > 0 || hotels.length > 0) && (
+        {(c.flights.length > 0 || dayHotels.length > 0) && (
           <div className="grid md:grid-cols-2 gap-5 mt-12 md:mt-16">
             {c.flights.length > 0 && (
               <Reveal>
@@ -740,34 +753,38 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
                   </h3>
                   <div className="divide-y" style={{ borderColor: "#ece4d0" }}>
                     {c.flights.map((f, i) => (
-                      <div key={i} className="py-3.5 flex items-center justify-between gap-3">
-                        <div>
-                          <div className="font-bold text-[15px]">{f.flight_no}</div>
-                          <div className="text-xs mt-0.5" style={{ color: "#8a8268" }}>
-                            {f.from} → {f.to}　{f.date}
-                          </div>
+                      <div key={i} className="py-3.5 flex items-center gap-4">
+                        {/* 日期：大字＋紅色，置於最前 */}
+                        <div className="shrink-0 w-16 text-center">
+                          <div className="serif-tc font-black text-2xl leading-none" style={{ color: RED }}>{fmtMD(f.date)}</div>
                         </div>
-                        <div className="font-semibold text-sm whitespace-nowrap">{f.depart}–{f.arrive}</div>
+                        <div className="flex-1 min-w-0">
+                          <div className="font-bold text-[15px]">{f.flight_no}</div>
+                          <div className="text-xs mt-0.5" style={{ color: "#8a8268" }}>{f.from} → {f.to}</div>
+                        </div>
+                        <div className="font-semibold text-sm whitespace-nowrap shrink-0">{f.depart}–{f.arrive}</div>
                       </div>
                     ))}
                   </div>
                 </div>
               </Reveal>
             )}
-            {hotels.length > 0 && (
+            {dayHotels.length > 0 && (
               <Reveal delay={120}>
                 <div className="rounded-3xl p-7 h-full shadow-sm" style={{ background: CARD, border: "1px solid #ece3cd" }}>
                   <h3 className="flex items-center gap-2 font-bold mb-5" style={{ color: RED }}>
                     <BedDouble className="w-4.5 h-4.5" /> 住宿安排
                   </h3>
                   <div className="space-y-2.5">
-                    {hotels.map((h, i) => (
-                      <div key={i} className="flex items-center gap-3 rounded-2xl px-4 py-3"
+                    {dayHotels.map((dh) => (
+                      <div key={dh.day} className="flex items-center gap-3.5 rounded-2xl px-4 py-3"
                         style={{ background: "#f3ecda" }}>
-                        <span className="serif-tc font-bold text-sm shrink-0" style={{ color: RED }}>
-                          {String(i + 1).padStart(2, "0")}
-                        </span>
-                        <span className="text-sm font-medium">{h}</span>
+                        {/* 日期：大字＋紅色，置於最前 */}
+                        <div className="shrink-0 w-14 text-center">
+                          <div className="serif-tc font-black text-xl leading-none" style={{ color: RED }}>{fmtMD(dh.date)}</div>
+                          <div className="text-[10px] mt-0.5" style={{ color: "#8a8268" }}>第{dh.day}天</div>
+                        </div>
+                        <span className="text-sm font-medium flex-1">{dh.hotel}</span>
                       </div>
                     ))}
                   </div>
@@ -816,13 +833,17 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
 
                   {/* 行程內容 */}
                   <Reveal className="flex-1" delay={flip ? 0 : 120}>
-                    <div className="flex items-center gap-3 mb-4">
-                      <span className="serif-tc w-14 h-14 rounded-full border-2 flex items-center justify-center font-black text-lg shrink-0"
+                    <div className="flex items-center gap-3.5 mb-4">
+                      {/* 日期：大字＋紅色，置於最前 */}
+                      <div className="shrink-0 text-center leading-none">
+                        <div className="serif-tc font-black text-3xl md:text-4xl" style={{ color: RED }}>
+                          {fmtMD(dateOfDay)}
+                        </div>
+                        <div className="text-[11px] mt-1" style={{ color: "#8a8268" }}>{weekdayOf(dateOfDay)}</div>
+                      </div>
+                      <span className="serif-tc px-3 py-1 rounded-full border-2 font-black text-sm shrink-0"
                         style={{ borderColor: RED, color: RED }}>
-                        D{d.day}
-                      </span>
-                      <span className="text-sm font-medium" style={{ color: "#8a8268" }}>
-                        {dateOfDay.toLocaleDateString("zh-TW", { month: "numeric", day: "numeric", weekday: "short" })}
+                        第 {d.day} 天
                       </span>
                     </div>
                     <h3 className="serif-tc text-2xl md:text-[34px] font-black leading-snug mb-4">
