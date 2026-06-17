@@ -766,6 +766,9 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
                       </div>
                     ))}
                   </div>
+                  <p className="text-[11px] mt-4 leading-relaxed" style={{ color: "#a89e86" }}>
+                    ※ 此航班為參考航班時間，實際航班時間與航班號可能有所變動。
+                  </p>
                 </div>
               </Reveal>
             )}

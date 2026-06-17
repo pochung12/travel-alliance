@@ -38,6 +38,19 @@ function dayImagesOf(d: TourPageDay): string[] {
   return [];
 }
 
+// 日期：出發日 + (day-1)
+function dayDateOf(start: string, day: number): Date {
+  return new Date(new Date(start).getTime() + (day - 1) * 86400000);
+}
+// 把航班 date 字串正規化為 M/D（支援 2026-09-20 或 9/20 等）
+function mdKey(s: string): string {
+  if (!s) return "";
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return `${d.getMonth() + 1}/${d.getDate()}`;
+  const m = s.match(/(\d{1,2})[\/\-月.](\d{1,2})/);
+  return m ? `${+m[1]}/${+m[2]}` : "";
+}
+
 // 壓縮圖片成 JPEG Blob（上傳前縮圖）
 function compressToBlob(file: File, maxPx = 1600, quality = 0.85): Promise<Blob> {
   return new Promise((resolve, reject) => {
@@ -617,11 +630,24 @@ Day2 箱根一日遊，蘆之湖海賊船、大涌谷，溫泉飯店會席料理
                       const dImgs = dayImagesOf(d);
                       const imgCount = dImgs.length;
                       const isEditing = editingDay === d.day;
+                      const date = dayDateOf(tour.start_date, d.day);
+                      const dmd = `${date.getMonth() + 1}/${date.getDate()}`;
+                      const dayFlights = (content.flights || []).filter(f => mdKey(f.date) === dmd);
                       return (
                         <div key={d.day}>
                           <div className="flex items-center gap-2 text-xs group">
-                            <span className="shrink-0 w-12 text-center font-bold text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-900/20 rounded-full py-0.5">D{d.day}</span>
-                            <span className="text-slate-600 dark:text-slate-300 truncate">{d.title}</span>
+                            <span className="shrink-0 text-center font-bold text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-900/20 rounded-lg px-2 py-1 leading-tight">
+                              <span className="block text-[13px]">{date.getMonth() + 1}/{date.getDate()}</span>
+                              <span className="block text-[9px] font-normal text-violet-400">D{d.day}・{date.toLocaleDateString("zh-TW", { weekday: "short" })}</span>
+                            </span>
+                            <div className="flex-1 min-w-0">
+                              <span className="text-slate-600 dark:text-slate-300 truncate block">{d.title}</span>
+                              {dayFlights.length > 0 && (
+                                <span className="text-[10px] text-sky-600 dark:text-sky-400 block truncate">
+                                  ✈️ {dayFlights.map(f => `${f.flight_no} ${f.depart}-${f.arrive} ${f.from}→${f.to}`).join("　/　")}
+                                </span>
+                              )}
+                            </div>
                             {imgCount > 0 && (
                               <span className="flex items-center gap-0.5 text-emerald-600 shrink-0">
                                 <ImageIcon className="w-3 h-3" /> {imgCount}
