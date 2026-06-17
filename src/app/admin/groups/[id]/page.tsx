@@ -626,14 +626,14 @@ export default function GroupDetailPage() {
                       className="grid items-center px-3 py-2 border-t border-slate-100 dark:border-slate-700/50 gap-x-2"
                       style={{ gridTemplateColumns: "5.5rem 1fr 0.75rem 1fr 5.5rem 1.5rem" }}>
                       <span className="text-xs font-medium text-slate-600 dark:text-slate-300">{t.icon} {t.label}</span>
-                      <input type="number" min="0"
+                      <input type="number" min="0" placeholder="0"
                         className="w-full text-center border border-slate-200 dark:border-slate-600 rounded-lg px-2 py-1.5 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                        value={paxVal}
+                        value={paxVal || ""}
                         onChange={e => setForm({ ...form, [t.paxKey]: +e.target.value })} />
                       <span className="text-center text-slate-300 dark:text-slate-600 text-xs select-none">×</span>
-                      <input type="number" min="0"
+                      <input type="number" min="0" placeholder="0"
                         className="w-full text-right border border-slate-200 dark:border-slate-600 rounded-lg px-2 py-1.5 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                        value={priceVal}
+                        value={priceVal || ""}
                         onChange={e => setForm({ ...form, [t.priceKey]: +e.target.value })} />
                       <span className={`text-right text-xs font-medium tabular-nums ${
                         sub > 0 ? "text-emerald-700 dark:text-emerald-400" : "text-slate-300 dark:text-slate-600"
@@ -670,14 +670,14 @@ export default function GroupDetailPage() {
                         value={ct.label}
                         onChange={e => updateCustomTier({ label: e.target.value })}
                       />
-                      <input type="number" min="0"
+                      <input type="number" min="0" placeholder="0"
                         className="w-full text-center border border-slate-200 dark:border-slate-600 rounded-lg px-2 py-1.5 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                        value={ct.pax}
+                        value={ct.pax || ""}
                         onChange={e => updateCustomTier({ pax: +e.target.value })} />
                       <span className="text-center text-slate-300 dark:text-slate-600 text-xs select-none">×</span>
-                      <input type="number" min="0"
+                      <input type="number" min="0" placeholder="0"
                         className="w-full text-right border border-slate-200 dark:border-slate-600 rounded-lg px-2 py-1.5 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                        value={ct.price}
+                        value={ct.price || ""}
                         onChange={e => updateCustomTier({ price: +e.target.value })} />
                       <span className={`text-right text-xs font-medium tabular-nums ${
                         sub > 0 ? "text-emerald-700 dark:text-emerald-400" : "text-slate-300 dark:text-slate-600"
@@ -765,7 +765,7 @@ export default function GroupDetailPage() {
                   <input type="number" min="0"
                     className="w-full pl-9 pr-3 border border-slate-200 dark:border-slate-600 rounded-lg py-2 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400 text-right"
                     placeholder="例：45800"
-                    value={form.original_price || 0}
+                    value={form.original_price || ""}
                     onChange={e => setForm({ ...form, original_price: +e.target.value })} />
                 </div>
                 {(() => {
@@ -833,7 +833,7 @@ export default function GroupDetailPage() {
                       <input type="number" min="0" step="0.1"
                         className="w-full pr-7 pl-3 border border-slate-200 dark:border-slate-600 rounded-lg py-2 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400 text-right"
                         placeholder="2"
-                        value={form.card_surcharge_percent || 0}
+                        value={form.card_surcharge_percent || ""}
                         onChange={e => setForm({ ...form, card_surcharge_percent: +e.target.value, card_surcharge_amount: 0 })} />
                       <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 select-none">%</span>
                     </div>
@@ -843,7 +843,7 @@ export default function GroupDetailPage() {
                       <input type="number" min="0"
                         className="w-full pl-9 pr-3 border border-slate-200 dark:border-slate-600 rounded-lg py-2 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400 text-right"
                         placeholder="例：900"
-                        value={form.card_surcharge_amount || 0}
+                        value={form.card_surcharge_amount || ""}
                         onChange={e => setForm({ ...form, card_surcharge_amount: +e.target.value, card_surcharge_percent: 0 })} />
                     </div>
                   )}
@@ -877,9 +877,9 @@ export default function GroupDetailPage() {
               <div className="flex items-center gap-2 mt-1">
                 <div className="relative w-40">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 select-none">NT$</span>
-                  <input type="number" min="0"
+                  <input type="number" min="0" placeholder="0"
                     className="w-full pl-9 pr-3 border border-slate-200 dark:border-slate-600 rounded-lg py-2 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400 text-right"
-                    value={form.deposit_per_person || 0}
+                    value={form.deposit_per_person || ""}
                     onChange={e => setForm({ ...form, deposit_per_person: +e.target.value })} />
                 </div>
                 <span className="text-xs text-slate-400 dark:text-slate-500">不含招待／領隊等售價為 0 的名額</span>
@@ -904,9 +904,9 @@ export default function GroupDetailPage() {
               <div className="flex items-center gap-3 mt-1 flex-wrap">
                 <div className="relative w-40">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 select-none">NT$</span>
-                  <input type="number" min="0"
+                  <input type="number" min="0" placeholder="0"
                     className="w-full pl-9 pr-12 border border-slate-200 dark:border-slate-600 rounded-lg py-2 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400 text-right"
-                    value={form.tip_per_day || 0}
+                    value={form.tip_per_day || ""}
                     onChange={e => setForm({ ...form, tip_per_day: +e.target.value })} />
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 select-none">/天</span>
                 </div>
