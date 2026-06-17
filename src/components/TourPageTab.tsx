@@ -9,6 +9,8 @@ import {
   RefreshCw, EyeOff, ExternalLink, Image as ImageIcon, Pencil, X, Save, Upload, Search,
 } from "lucide-react";
 import FlightEditor from "@/components/FlightEditor";
+import ShareKit from "@/components/ShareKit";
+import { Megaphone } from "lucide-react";
 
 interface Props { tour: Tour }
 
@@ -143,6 +145,7 @@ export default function TourPageTab({ tour }: Props) {
   const [savingDay, setSavingDay] = useState(false);
   // 景點美照展開
   const [galleryOpen, setGalleryOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
 
   // 載入某個版本的完整內容
   const loadPage = async (id: string) => {
@@ -728,6 +731,10 @@ Day2 箱根一日遊，蘆之湖海賊船、大涌谷，溫泉飯店會席料理
               </select>
             </div>
             <div className="flex items-center gap-2">
+              <button onClick={() => setShareOpen(true)}
+                className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition-colors">
+                <Megaphone className="w-3.5 h-3.5" /> 揪團圖卡/短片
+              </button>
               <a href={`/tours/${tour.id}`} target="_blank" rel="noopener noreferrer"
                 className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:border-cyan-400 hover:text-cyan-600 rounded-lg transition-colors">
                 <Eye className="w-3.5 h-3.5" /> 預覽頁面 <ExternalLink className="w-3 h-3" />
@@ -1112,6 +1119,20 @@ Day2 箱根一日遊，蘆之湖海賊船、大涌谷，溫泉飯店會席料理
           </div>
         </div>
       )}
+
+      {/* 揪團圖卡/短片 */}
+      <ShareKit
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        tour={tour}
+        photos={Array.from(new Set([
+          ...((page?.hero_posters || []) as TourPagePoster[]).map(p => p.image),
+          ...((content?.days || []).flatMap(d => dayImagesOf(d))),
+          ...((content?.gallery || []).flatMap(g => g.images)),
+        ].filter(Boolean)))}
+        highlights={content?.highlights || []}
+        pageUrl={`https://1trip.com.tw/tours/${tour.id}`}
+      />
     </div>
   );
 }

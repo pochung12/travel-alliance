@@ -6,12 +6,13 @@ import {
   MapPin, Calendar, Clock, Users, ArrowLeft, PhoneCall,
   CheckCircle2, AlertCircle, ChevronLeft, ChevronRight,
   UtensilsCrossed, BedDouble, Plane, CircleCheck, CircleX, Info,
-  Camera, X, ArrowRight,
+  Camera, X, ArrowRight, Megaphone,
 } from "lucide-react";
 import {
   supabase, Tour, TourPage, TourPageContent, TourPagePoster, TOUR_PAGE_CATEGORIES, isChinaTour, isTierPublic,
 } from "@/lib/supabase";
 import PublicNavbar from "@/components/PublicNavbar";
+import ShareKit from "@/components/ShareKit";
 import { CARD_GRADIENTS, getDays } from "@/components/TourCard";
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -586,6 +587,14 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
   const canJoin = tour.status === "confirmed" || tour.status === "ongoing";
   const isChina = isChinaTour(`${tour.name} ${tour.destination}`, page.category);
   const [lightbox, setLightbox] = useState<string | null>(null);
+  const [shareOpen, setShareOpen] = useState(false);
+
+  // 分享用照片：海報 + 每日 + 景點美照（去重、去空）
+  const sharePhotos = Array.from(new Set([
+    ...page.hero_posters.map(p => p.image),
+    ...c.days.flatMap(d => dayImgs(d)),
+    ...(c.gallery || []).flatMap(g => g.images),
+  ].filter(Boolean)));
 
   // 已設定結構化小費欄位時，小費資訊一律以該欄位（團費價格區）為準，
   // 過濾掉 AI 生成內容裡的小費／服務費行，避免「已含於團費」卻又列在費用不含的矛盾
@@ -1085,11 +1094,18 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
               NT${tour.selling_price.toLocaleString()}
             </div>
           </div>
-          <Link href={`/join/${tour.id}`}
-            className="text-white font-bold px-8 py-3 rounded-full text-sm"
-            style={{ background: RED }}>
-            立即報名
-          </Link>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setShareOpen(true)} aria-label="揪團分享"
+              className="flex items-center justify-center w-11 h-11 rounded-full border-2 shrink-0"
+              style={{ borderColor: RED, color: RED }}>
+              <Megaphone className="w-5 h-5" />
+            </button>
+            <Link href={`/join/${tour.id}`}
+              className="text-white font-bold px-7 py-3 rounded-full text-sm"
+              style={{ background: RED }}>
+              立即報名
+            </Link>
+          </div>
         </div>
       )}
 
@@ -1104,6 +1120,16 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
           </button>
         </div>
       )}
+
+      {/* 揪團分享浮動鈕（桌機；手機底部報名列已佔位）*/}
+      <button onClick={() => setShareOpen(true)}
+        className="hidden md:flex fixed bottom-6 right-6 z-40 items-center gap-2 px-5 py-3 rounded-full text-white font-semibold shadow-xl transition-transform hover:scale-105"
+        style={{ background: RED }}>
+        <Megaphone className="w-4.5 h-4.5" /> 揪團分享
+      </button>
+
+      <ShareKit open={shareOpen} onClose={() => setShareOpen(false)} tour={tour}
+        photos={sharePhotos} highlights={c.highlights} pageUrl={`https://1trip.com.tw/tours/${tour.id}`} />
     </div>
   );
 }
