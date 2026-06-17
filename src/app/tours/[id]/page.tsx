@@ -1095,13 +1095,13 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={() => setShareOpen(true)} aria-label="揪團分享"
-              className="flex items-center justify-center w-11 h-11 rounded-full border-2 shrink-0"
+            <button onClick={() => setShareOpen(true)} aria-label="分享行程"
+              className="flex items-center gap-1 px-4 py-3 rounded-full border-2 text-sm font-bold shrink-0"
               style={{ borderColor: RED, color: RED }}>
-              <Megaphone className="w-5 h-5" />
+              <Megaphone className="w-4 h-4" /> 分享
             </button>
             <Link href={`/join/${tour.id}`}
-              className="text-white font-bold px-7 py-3 rounded-full text-sm"
+              className="text-white font-bold px-6 py-3 rounded-full text-sm"
               style={{ background: RED }}>
               立即報名
             </Link>
@@ -1121,9 +1121,9 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
         </div>
       )}
 
-      {/* 揪團分享浮動鈕（桌機；手機底部報名列已佔位）*/}
+      {/* 分享行程浮動鈕（桌機常駐；手機僅在無底部報名列時顯示，避免重疊）*/}
       <button onClick={() => setShareOpen(true)}
-        className="hidden md:flex fixed bottom-6 right-6 z-40 items-center gap-2 px-5 py-3 rounded-full text-white font-semibold shadow-xl transition-transform hover:scale-105"
+        className={`${canJoin ? "hidden md:flex" : "flex"} fixed bottom-6 right-6 z-40 items-center gap-2 px-5 py-3 rounded-full text-white font-semibold shadow-xl transition-transform hover:scale-105`}
         style={{ background: RED }}>
         <Megaphone className="w-4.5 h-4.5" /> 分享行程
       </button>
