@@ -543,7 +543,6 @@ function HighlightBand({
             <div className={`flex items-center gap-4 mb-4 ${flip ? "md:justify-end" : ""}`}
               style={{ opacity: vis ? 1 : 0, transform: vis ? "none" : "translateY(28px)", transition: `opacity .9s ${ease}, transform .9s ${ease}` }}>
               <span className="serif-tc text-amber-300 text-5xl md:text-8xl font-black leading-none drop-shadow-lg">{num}</span>
-              <span className="text-3xl md:text-5xl">{h.icon}</span>
             </div>
             <h3 className="serif-tc text-white text-3xl md:text-6xl font-black leading-[1.12] mb-4 md:mb-6 drop-shadow-2xl"
               style={{ opacity: vis ? 1 : 0, transform: vis ? "none" : "translateY(36px)", transition: `opacity 1s ${ease} .1s, transform 1s ${ease} .1s` }}>
