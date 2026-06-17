@@ -2,6 +2,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { supabase, TourCost, TourCostVersion, COST_CATEGORIES, CostCategory } from "@/lib/supabase";
 import { useExchangeRate } from "@/lib/useExchangeRate";
+import VersionExtras from "@/components/VersionExtras";
 import {
   Save, Plus, Trash2, Settings, X, Camera, Upload,
   Check, ChevronDown, ChevronRight, Pencil, Copy,
@@ -799,6 +800,9 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
             </div>
           </div>
         )}
+
+        {/* ── 此版本：參考圖片 + 飯店比較表 ──────────────────────────────────── */}
+        {activeVersionId && <VersionExtras versionId={activeVersionId} tourId={tourId} />}
 
         {/* ── OVERALL MODE ─────────────────────────────────────────────────── */}
         {calcMode === 'overall' && (

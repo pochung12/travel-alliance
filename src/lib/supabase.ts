@@ -95,6 +95,16 @@ export interface TourCost {
   reference_url?: string;
 }
 
+/** 飯店比較表的一列 */
+export interface VersionHotel {
+  name: string;       // 飯店名稱
+  nights: string;     // 晚數 / 入住日期說明
+  stars: string;      // 星級（例「5星級」，AI 建議可改）
+  trip_url: string;   // Trip.com 連結
+  ctrip_url: string;  // 攜程連結
+  note: string;       // 備註
+}
+
 export interface TourCostVersion {
   id: string;
   tour_id: string;
@@ -103,6 +113,8 @@ export interface TourCostVersion {
   notes: string;
   calculation_mode: 'overall' | 'daily';
   day_labels: Record<string, string>; // { "1": "第1天 台北出發", "2": "..." }
+  reference_images?: string[];         // 參考圖片（Storage 公開 URL）
+  hotels?: VersionHotel[];             // 飯店比較表
   created_at: string;
 }
 
