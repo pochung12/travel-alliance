@@ -1125,7 +1125,7 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
       <button onClick={() => setShareOpen(true)}
         className="hidden md:flex fixed bottom-6 right-6 z-40 items-center gap-2 px-5 py-3 rounded-full text-white font-semibold shadow-xl transition-transform hover:scale-105"
         style={{ background: RED }}>
-        <Megaphone className="w-4.5 h-4.5" /> 揪團分享
+        <Megaphone className="w-4.5 h-4.5" /> 分享行程
       </button>
 
       <ShareKit open={shareOpen} onClose={() => setShareOpen(false)} tour={tour}

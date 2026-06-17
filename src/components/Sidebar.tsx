@@ -5,6 +5,7 @@ import {
   LayoutDashboard, Map, Users, Globe,
   ChevronLeft, ChevronRight, Sun, Moon,
   LogOut, UserCog, ShieldCheck, User, Newspaper, FilePen, RefreshCw, Coins,
+  Megaphone, ExternalLink,
 } from "lucide-react";
 import { APP_VERSION } from "@/lib/version";
 import { useTheme } from "./ThemeProvider";
@@ -159,6 +160,24 @@ export default function Sidebar({ collapsed, onToggleCollapse, profile }: Props)
             </Link>
           );
         })}
+
+        {/* 行銷 CRM（autowin-os 旅遊租戶，外部連結）*/}
+        <a
+          href={process.env.NEXT_PUBLIC_TRAVEL_CRM_URL || "https://crm.1trip.com.tw"}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={collapsed ? "行銷 CRM" : undefined}
+          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors text-violet-200 hover:bg-violet-900/40 hover:text-white ${
+            collapsed ? "justify-center" : ""
+          }`}
+        >
+          <Megaphone className="w-4 h-4 shrink-0" />
+          {!collapsed && (
+            <span className="truncate flex items-center gap-1">
+              行銷 CRM <ExternalLink className="w-3 h-3 opacity-60" />
+            </span>
+          )}
+        </a>
       </nav>
 
       {/* Bottom: dark mode + logout + version */}
