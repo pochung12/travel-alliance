@@ -117,13 +117,14 @@ export default function TourPageTab({ tour }: Props) {
   const [scrapeUrl, setScrapeUrl] = useState("");
   const [scraping, setScraping]   = useState(false);
   const [scrapeErr, setScrapeErr] = useState("");
+  const [scrapedImages, setScrapedImages] = useState<string[]>([]);
   const [saving, setSaving]     = useState(false);
   const [error, setError]       = useState("");
   // 保留區塊（重新生成時不變動）
   const [keepSet, setKeepSet] = useState<Set<string>>(new Set());
   // 統一換圖／上傳 picker
   const [picker, setPicker]   = useState<PickerTarget | null>(null);
-  const [pickerMode, setPickerMode] = useState<"upload" | "search">("upload");
+  const [pickerMode, setPickerMode] = useState<"upload" | "search" | "scraped">("upload");
   const [imgQuery, setImgQuery]   = useState("");
   const [imgResults, setImgResults] = useState<{ url: string; thumb: string; alt: string }[]>([]);
   const [imgLoading, setImgLoading] = useState(false);
@@ -170,6 +171,7 @@ export default function TourPageTab({ tour }: Props) {
       const material = (json.material || "").trim();
       if (!material) { setScrapeErr("未能萃取到行程內容"); return; }
       setRawInput(prev => prev.trim() ? prev.trim() + "\n\n" + material : material);
+      setScrapedImages(Array.isArray(json.images) ? json.images : []);
       setScrapeUrl("");
     } catch {
       setScrapeErr("抓取失敗，請重試或改用複製貼上");
@@ -377,6 +379,25 @@ export default function TourPageTab({ tour }: Props) {
       setImgError("上傳失敗，請重試");
     } finally {
       setUploading(false);
+    }
+  };
+
+  // 套用來源網頁圖片：先重新存到自家 Storage（永久保存），再套用
+  const applyScrapedImage = async (srcUrl: string) => {
+    if (!picker) return;
+    setApplyingImg(srcUrl);
+    setImgError("");
+    try {
+      const res = await fetch("/api/tour-page/rehost", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: srcUrl, tourId: tour.id }),
+      });
+      const json = await res.json();
+      if (!res.ok || !json.url) { setImgError(json.error || "圖片轉存失敗"); setApplyingImg(""); return; }
+      await applyImageToTarget(json.url);
+    } catch {
+      setImgError("圖片轉存失敗，請改試其他張");
+      setApplyingImg("");
     }
   };
 
@@ -875,6 +896,14 @@ Day2 箱根一日遊，蘆之湖海賊船、大涌谷，溫泉飯店會席料理
                 }`}>
                 <Search className="w-4 h-4" /> 搜尋圖庫
               </button>
+              {scrapedImages.length > 0 && (
+                <button onClick={() => setPickerMode("scraped")}
+                  className={`flex items-center gap-1.5 text-sm px-4 py-2 rounded-t-lg font-medium transition-colors ${
+                    pickerMode === "scraped" ? "bg-violet-50 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 border-b-2 border-violet-600" : "text-slate-500 hover:text-violet-600"
+                  }`}>
+                  🔗 來源網頁圖片 <span className="text-[10px] bg-sky-100 dark:bg-sky-900/40 text-sky-600 dark:text-sky-300 px-1.5 rounded-full">{scrapedImages.length}</span>
+                </button>
+              )}
             </div>
 
             <div className="flex-1 overflow-y-auto p-5">
@@ -946,6 +975,31 @@ Day2 箱根一日遊，蘆之湖海賊船、大涌谷，溫泉飯店會席料理
                       ))}
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* 來源網頁圖片 */}
+              {pickerMode === "scraped" && (
+                <div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mb-3 leading-relaxed">
+                    以下是從來源網頁抓到的照片。<span className="text-amber-600 dark:text-amber-400 font-medium">請挑選「沒有浮水印／旅行社品牌字樣」的照片</span>使用；點選後會自動轉存到自家空間。
+                  </p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                    {scrapedImages.map((url, i) => (
+                      <button key={i} onClick={() => applyScrapedImage(url)} disabled={!!applyingImg}
+                        className="relative aspect-[4/3] rounded-xl overflow-hidden border-2 border-transparent hover:border-violet-500 transition-all group disabled:opacity-60">
+                        <img src={url} alt="" loading="lazy" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          onError={e => { (e.currentTarget.parentElement as HTMLElement).style.display = "none"; }} />
+                        <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-center justify-center">
+                          {applyingImg === url ? (
+                            <Loader2 className="w-5 h-5 animate-spin text-white" />
+                          ) : (
+                            <span className="opacity-0 group-hover:opacity-100 text-white text-xs font-semibold bg-violet-600 px-3 py-1.5 rounded-full transition-opacity">套用這張</span>
+                          )}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>

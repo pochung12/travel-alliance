@@ -2,6 +2,23 @@ import { NextRequest, NextResponse } from "next/server";
 
 export const maxDuration = 90;
 
+// 從 HTML 萃取候選內容圖片（過濾 logo/icon/廣告，解析相對網址）
+function extractImages(html: string, baseUrl: string): string[] {
+  const urls = new Set<string>();
+  const re = /(?:src|data-src|data-original|data-lazy-src)=["']([^"']+)["']/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) && urls.size < 80) {
+    let u = (m[1] || "").trim();
+    if (!u || u.startsWith("data:")) continue;
+    try { u = new URL(u, baseUrl).href; } catch { continue; }
+    if (!/^https?:\/\//i.test(u)) continue;
+    if (!/\.(jpe?g|png|webp|avif)(\?|#|$)/i.test(u)) continue;               // 只要真圖檔
+    if (/(logo|icon|sprite|avatar|pixel|blank|loading|placeholder|qrcode|wechat|weixin|advert|button|btn_|arrow|share|footer|header_)/i.test(u)) continue;
+    urls.add(u);
+  }
+  return Array.from(urls).slice(0, 40);
+}
+
 // 把 HTML 粗略轉成純文字（移除 script/style/標籤，壓縮空白）
 function htmlToText(html: string): string {
   return html
@@ -53,6 +70,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "讀取網址逾時或失敗。該網站可能擋外部抓取（如攜程動態載入），可改用瀏覽器複製行程內容貼到素材框。" }, { status: 502 });
     }
 
+    const images = extractImages(html, target);
     let text = htmlToText(html);
     if (text.length < 80) {
       return NextResponse.json({ error: "此頁面內容很少（可能是動態載入的網站）。建議改用瀏覽器複製行程文字貼到素材框。" }, { status: 422 });
@@ -92,7 +110,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "無法從此頁面萃取行程，建議改用複製貼上。" }, { status: 422 });
     }
 
-    return NextResponse.json({ material });
+    return NextResponse.json({ material, images });
   } catch (e) {
     console.error("[tour-page/scrape] error:", e);
     return NextResponse.json({ error: "伺服器錯誤" }, { status: 500 });
