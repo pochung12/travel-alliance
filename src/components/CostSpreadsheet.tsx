@@ -212,7 +212,7 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
       const existingCats = new Set(overallRows.map(r => r.category));
       const defaultRows: Row[] = COST_CATEGORIES
         .filter(c => !existingCats.has(c.key))
-        .map(c => ({ category: c.key, day_number: null, description: "", unit_price: 0, quantity: 1, notes: "", reference_url: "", custom_data: {}, isNew: true, dirty: false }));
+        .map(c => ({ category: c.key, day_number: null, description: "", unit_price: 0, quantity: pax || 1, notes: "", reference_url: "", custom_data: {}, isNew: true, dirty: false }));
       setRows([...overallRows, ...defaultRows, ...dbRows.filter(r => r.day_number != null)]);
     } else {
       // 按天模式：載入所有日期列
@@ -249,7 +249,7 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
     const newDay = maxDayNumber() + 1;
     const defaultRows: Row[] = DAILY_DEFAULT_CATS.map(cat => ({
       day_number: newDay, category: cat, description: "", unit_price: 0,
-      quantity: 1, notes: "", reference_url: "", custom_data: {}, isNew: true, dirty: true,
+      quantity: pax || 1, notes: "", reference_url: "", custom_data: {}, isNew: true, dirty: true,
     }));
     setRows(prev => [...prev, ...defaultRows]);
     setExpandedDays(prev => new Set(Array.from(prev).concat(newDay)));
@@ -277,7 +277,7 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
   const addRowToDay = (dayNum: number) => {
     setRows(prev => [...prev, {
       day_number: dayNum, category: "misc", description: "",
-      unit_price: 0, quantity: 1, notes: "", reference_url: "",
+      unit_price: 0, quantity: pax || 1, notes: "", reference_url: "",
       custom_data: {}, isNew: true, dirty: true,
     }]);
   };
@@ -296,7 +296,7 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
   const addRow = () => {
     setRows(prev => [...prev, {
       day_number: null, category: "misc", description: "", unit_price: 0,
-      quantity: 1, notes: "", reference_url: "", custom_data: {}, isNew: true, dirty: true,
+      quantity: pax || 1, notes: "", reference_url: "", custom_data: {}, isNew: true, dirty: true,
     }]);
   };
 
@@ -347,14 +347,16 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
       const { data: srcRows } = await supabase.from("tour_costs").select("*")
         .eq("tour_id", tourId).eq("version_id", copyFromId);
       if (srcRows && srcRows.length > 0) {
+        // 注意：tour_costs 沒有 custom_data 欄位，帶入會導致整批 insert 失敗（PGRST204）
+        // 人數一律抓基本資料的總人數（pax）
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await supabase.from("tour_costs").insert(srcRows.map((r: any) => ({
+        const { error: copyErr } = await supabase.from("tour_costs").insert(srcRows.map((r: any) => ({
           tour_id: tourId, version_id: newVer.id, day_number: r.day_number ?? null,
           category: r.category, description: r.description,
-          unit_price: r.unit_price, quantity: r.quantity,
+          unit_price: r.unit_price, quantity: pax || r.quantity || 1,
           notes: r.notes, reference_url: r.reference_url || "",
-          custom_data: r.custom_data || {},
         })));
+        if (copyErr) { alert("複製費用列失敗：" + copyErr.message); }
       }
       // Copy mode and day labels from source
       const srcVer = versions.find(v => v.id === copyFromId);
@@ -363,6 +365,9 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
           calculation_mode: srcVer.calculation_mode,
           day_labels: srcVer.day_labels,
         }).eq("id", newVer.id);
+        // 同步本地物件的模式/天數標籤，避免切到新版本時模式判斷錯誤
+        newVer.calculation_mode = srcVer.calculation_mode;
+        newVer.day_labels = srcVer.day_labels;
       }
     }
 
