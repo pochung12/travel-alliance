@@ -237,6 +237,7 @@ export interface TourPageContent {
 export interface TourPage {
   id: string;
   tour_id: string;
+  version_label?: string;   // 頁面版本名稱（同一團可有多個版本）
   status: 'draft' | 'published';
   category: TourPageCategory | string;
   hero_posters: TourPagePoster[];
