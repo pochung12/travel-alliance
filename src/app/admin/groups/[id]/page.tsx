@@ -8,6 +8,7 @@ import ItineraryTab from "@/components/ItineraryTab";
 import FlightsTab from "@/components/FlightsTab";
 import TourPageTab from "@/components/TourPageTab";
 import TourNameGenerator from "@/components/TourNameGenerator";
+import TradeQuoteDoc from "@/components/TradeQuoteDoc";
 import { ArrowLeft, Save, Trash2, UserPlus, X, Search, BedDouble, Pencil, UtensilsCrossed, SlidersHorizontal, GripVertical, Users, Printer, Plus, Link2, Copy, ExternalLink, CheckCheck, Loader2, ChevronDown, Eye, EyeOff } from "lucide-react";
 
 // ─── Meal options ──────────────────────────────────────────────────────────────
@@ -1882,8 +1883,11 @@ export default function GroupDetailPage() {
       )}
 
       {/* ── Tab: Trade Itinerary ── */}
-      {activeTab === "itin_t" && (
-        <ItineraryTab tourId={id} variant="trade" />
+      {activeTab === "itin_t" && tour && (
+        <div className="space-y-4">
+          <TradeQuoteDoc tour={tour} />
+          <ItineraryTab tourId={id} variant="trade" />
+        </div>
       )}
 
       {/* ── Tab: AI Tour Webpage ── */}
