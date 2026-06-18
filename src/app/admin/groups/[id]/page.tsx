@@ -9,6 +9,7 @@ import FlightsTab from "@/components/FlightsTab";
 import TourPageTab from "@/components/TourPageTab";
 import TourNameGenerator from "@/components/TourNameGenerator";
 import TradeQuoteDoc from "@/components/TradeQuoteDoc";
+import { useSidebarCollapsed } from "@/components/AdminShell";
 import { ArrowLeft, Save, Trash2, UserPlus, X, Search, BedDouble, Pencil, UtensilsCrossed, SlidersHorizontal, GripVertical, Users, Printer, Plus, Link2, Copy, ExternalLink, CheckCheck, Loader2, ChevronDown, Eye, EyeOff } from "lucide-react";
 
 // ─── Meal options ──────────────────────────────────────────────────────────────
@@ -93,6 +94,7 @@ const COL_WIDTHS_DEFAULT: Record<string, number> = {
 export default function GroupDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router  = useRouter();
+  const sidebarCollapsed = useSidebarCollapsed();
   const [tour, setTour]               = useState<Tour | null>(null);
   const [form, setForm]               = useState<Partial<Tour>>({});
   const [surchargeMode, setSurchargeMode] = useState<"percent" | "amount">("percent");
@@ -521,7 +523,7 @@ export default function GroupDetailPage() {
   const unjoined = allCustomers.filter(c => !participants.find(p => p.customer_id === c.id));
 
   return (
-    <div className="p-4 md:p-6 space-y-4 md:space-y-5 max-w-5xl">
+    <div className={`p-4 md:p-6 space-y-4 md:space-y-5 transition-[max-width] duration-300 ${sidebarCollapsed ? "max-w-7xl" : "max-w-5xl"}`}>
       {/* Back + title */}
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-2 md:gap-3 min-w-0">

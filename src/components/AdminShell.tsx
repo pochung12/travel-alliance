@@ -1,10 +1,14 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, createContext, useContext } from "react";
 import { useRouter } from "next/navigation";
 import { supabase, Profile } from "@/lib/supabase";
 import Sidebar from "./Sidebar";
 import BottomNav from "./BottomNav";
 import MobileHeader from "./MobileHeader";
+
+// 側欄折疊狀態（給內頁調整內容寬度用）
+const SidebarCollapseContext = createContext(false);
+export const useSidebarCollapsed = () => useContext(SidebarCollapseContext);
 
 export default function AdminShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -62,7 +66,9 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
       <main className="flex-1 overflow-auto min-w-0
         pt-14 pb-[calc(4rem+env(safe-area-inset-bottom))]
         lg:pt-0 lg:pb-0">
-        {children}
+        <SidebarCollapseContext.Provider value={collapsed}>
+          {children}
+        </SidebarCollapseContext.Provider>
       </main>
 
       {/* Mobile bottom nav — hidden on desktop */}

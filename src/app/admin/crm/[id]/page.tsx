@@ -13,6 +13,7 @@ const MEAL_OPTIONS = [
   { key: "不吃豬", color: "bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300 border border-sky-200 dark:border-sky-700" },
 ];
 import Link from "next/link";
+import { useSidebarCollapsed } from "@/components/AdminShell";
 
 const input = "w-full border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-violet-400 placeholder:text-slate-400";
 const lbl   = "block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1";
@@ -62,6 +63,7 @@ type ScanStatus = { type: "idle" } | { type: "scanning" } | { type: "success"; m
 export default function CustomerDetailPage() {
   const { id }   = useParams<{ id: string }>();
   const router   = useRouter();
+  const sidebarCollapsed = useSidebarCollapsed();
   const [customer, setCustomer] = useState<Customer | null>(null);
   const [form, setForm]         = useState<Partial<Customer>>({});
   const [tours, setTours]       = useState<(Tour & { paid_amount: number })[]>([]);
@@ -245,7 +247,7 @@ export default function CustomerDetailPage() {
       : input;
 
   return (
-    <div className="p-6 space-y-5 max-w-5xl">
+    <div className={`p-6 space-y-5 transition-[max-width] duration-300 ${sidebarCollapsed ? "max-w-7xl" : "max-w-5xl"}`}>
 
       {/* ── Header ── */}
       <div className="flex items-start justify-between">
