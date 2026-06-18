@@ -146,6 +146,9 @@ export default function TourPageTab({ tour }: Props) {
   // 景點美照展開
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  // 住宿一覽（每日飯店）快速編輯
+  const [hotelDraft, setHotelDraft] = useState<Record<number, string>>({});
+  const [savingHotels, setSavingHotels] = useState(false);
 
   // 載入某個版本的完整內容
   const loadPage = async (id: string) => {
@@ -530,6 +533,22 @@ export default function TourPageTab({ tour }: Props) {
       .eq("id", page.id);
     if (!e) setPage(prev => prev ? { ...prev, content: newContent } : prev);
     else alert("儲存失敗：" + e.message);
+  };
+
+  // 住宿一覽：一次儲存所有編輯過的飯店
+  const saveHotels = async () => {
+    if (!page) return;
+    setSavingHotels(true);
+    const c = page.content as TourPageContent;
+    const newContent: TourPageContent = {
+      ...c,
+      days: c.days.map(d => d.day in hotelDraft ? { ...d, hotel: hotelDraft[d.day] } : d),
+    };
+    const { error: e } = await supabase.from("tour_pages")
+      .update({ content: newContent, updated_at: new Date().toISOString() }).eq("id", page.id);
+    if (!e) { setPage(prev => prev ? { ...prev, content: newContent } : prev); setHotelDraft({}); }
+    else alert("儲存失敗：" + e.message);
+    setSavingHotels(false);
   };
 
   const changeCategory = async (cat: string) => {
@@ -925,6 +944,43 @@ Day2 箱根一日遊，蘆之湖海賊船、大涌谷，溫泉飯店會席料理
                               </div>
                             </div>
                           )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* 住宿一覽（每日飯店，可快速編輯）*/}
+              {content.days.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                      🏨 住宿一覽（每日飯店）
+                      <span className="font-normal text-slate-300 dark:text-slate-500">— 在此選定/調整每天飯店，同業報價會用到</span>
+                    </span>
+                    {Object.keys(hotelDraft).length > 0 && (
+                      <button onClick={saveHotels} disabled={savingHotels}
+                        className="flex items-center gap-1 text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-40 transition-colors">
+                        {savingHotels ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />} 儲存住宿
+                      </button>
+                    )}
+                  </div>
+                  <div className="rounded-xl border border-slate-200 dark:border-slate-600 divide-y divide-slate-100 dark:divide-slate-700 overflow-hidden">
+                    {content.days.map(d => {
+                      const dt = dayDateOf(tour.start_date, d.day);
+                      const val = d.day in hotelDraft ? hotelDraft[d.day] : (d.hotel || "");
+                      return (
+                        <div key={d.day} className="flex items-center gap-2 px-2.5 py-1.5 bg-white dark:bg-slate-800">
+                          <span className="shrink-0 w-24 text-[11px] font-semibold text-violet-600 dark:text-violet-400">
+                            第{d.day}天 <span className="font-normal text-slate-400">{dt.getMonth() + 1}/{dt.getDate()}</span>
+                          </span>
+                          <input
+                            className="flex-1 text-xs border border-slate-200 dark:border-slate-600 rounded px-2.5 py-1.5 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                            placeholder="飯店名稱（最後一天可填「溫暖的家」）"
+                            value={val}
+                            onChange={e => setHotelDraft(prev => ({ ...prev, [d.day]: e.target.value }))}
+                          />
                         </div>
                       );
                     })}

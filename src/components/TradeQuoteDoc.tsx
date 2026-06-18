@@ -42,6 +42,16 @@ function buildBodyHtml(tour: Tour, c: TourPageContent): string {
       <td class="h">${esc(d.hotel || "")}</td>
     </tr>`).join("");
 
+  // 住宿一覽（每日飯店單獨列出）
+  const hotelRows = (c.days || [])
+    .filter(d => (d.hotel || "").trim() && d.hotel !== "溫暖的家")
+    .map(d => `
+      <tr>
+        <td class="c">第${d.day}天</td>
+        <td class="c">${dayDate(tour.start_date, d.day)}</td>
+        <td class="hl">${esc(d.hotel)}</td>
+      </tr>`).join("");
+
   return `
   <div class="doc">
     <h1>${esc(tour.name)}</h1>
@@ -53,6 +63,12 @@ function buildBodyHtml(tour: Tour, c: TourPageContent): string {
     <table class="tbl">
       <tr><th>日期</th><th>航班</th><th>航段（含航廈）</th><th>時間</th></tr>
       ${flightRows}
+    </table>` : ""}
+    ${hotelRows ? `
+    <h2>住宿一覽（每日飯店）</h2>
+    <table class="tbl">
+      <tr><th style="width:78px">天數</th><th style="width:120px">日期</th><th>住宿飯店</th></tr>
+      ${hotelRows}
     </table>` : ""}
     <h2>每日行程</h2>
     <table class="tbl itin">
@@ -75,6 +91,7 @@ const DOC_CSS = `
   table.tbl td { border:1px solid #d8cdb8; padding:6px 8px; vertical-align: top; }
   td.c { text-align:center; white-space:nowrap; font-weight:700; }
   td.m, td.h { font-size: 11.5px; }
+  td.hl { font-weight:700; color:#1f3d2f; }
   .t { font-weight:700; margin-bottom:2px; }
   .sub { font-size: 11px; color:#666; }
   .desc { font-size: 11px; color:#444; margin-top:3px; line-height:1.5; }
