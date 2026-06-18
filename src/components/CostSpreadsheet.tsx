@@ -91,6 +91,8 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
   const [activeVersionId,setActiveVersionId]= useState<string | null>(null);
   const [copyMenuIdx,   setCopyMenuIdx]     = useState<number | null>(null);
   const [copyMsg,       setCopyMsg]         = useState<string>("");
+  const cnyColRef = useRef(true);                 // tour_costs.cny 欄位是否存在
+  const [cnyColMissing, setCnyColMissing] = useState(false);
   const [showNewVersion, setShowNewVersion] = useState(false);
   const [newVersionName, setNewVersionName] = useState("");
   const [copyFromId,     setCopyFromId]     = useState<string>("none");
@@ -206,7 +208,8 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
       quantity: d.quantity || 1,
       notes: d.notes,
       reference_url: d.reference_url || "",
-      custom_data: d.custom_data || {},
+      // 載入已保存的人民幣參考金額（cny 欄位）
+      custom_data: { ...(d.custom_data || {}), _cny: Number(d.cny) || Number(d.custom_data?._cny) || 0 },
     }));
 
     if (mode === 'overall') {
@@ -315,22 +318,36 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
     const failedCount = { n: 0 };
     const indexed = rows.map((r, idx) => ({ r, idx })).filter(({ r }) => r.dirty || r.isNew);
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const isMissingCny = (e: any) => !!e && (e.code === "42703" || (/cny/i.test(e.message || "") && /(column|schema|exist|find)/i.test(e.message || "")));
+
     for (const { r: row, idx } of indexed) {
-      const payload: Record<string, unknown> = {
+      const base: Record<string, unknown> = {
         tour_id: tourId, version_id: activeVersionId,
         day_number: row.day_number ?? null,
         category: row.category, description: row.description,
         unit_price: row.unit_price, quantity: row.quantity,
         notes: row.notes, reference_url: row.reference_url || "",
       };
+      // 人民幣參考金額（僅供參考，不計入總額）
+      const payload = cnyColRef.current ? { ...base, cny: Number(row.custom_data._cny) || 0 } : base;
       if (row.id) {
-        const { error } = await supabase.from("tour_costs").update(payload).eq("id", row.id);
+        let { error } = await supabase.from("tour_costs").update(payload).eq("id", row.id);
+        if (error && cnyColRef.current && isMissingCny(error)) {
+          cnyColRef.current = false; setCnyColMissing(true);
+          ({ error } = await supabase.from("tour_costs").update(base).eq("id", row.id));
+        }
         if (error) { failedCount.n++; continue; }
         setRows(prev => prev.map((r, i) => i === idx ? { ...r, dirty: false } : r));
       } else {
-        const { data, error } = await supabase.from("tour_costs").insert([payload]).select("id").single();
-        if (error || !data) { failedCount.n++; continue; }
-        setRows(prev => prev.map((r, i) => i === idx ? { ...r, id: data.id, dirty: false, isNew: false } : r));
+        let res = await supabase.from("tour_costs").insert([payload]).select("id").single();
+        if (res.error && cnyColRef.current && isMissingCny(res.error)) {
+          cnyColRef.current = false; setCnyColMissing(true);
+          res = await supabase.from("tour_costs").insert([base]).select("id").single();
+        }
+        if (res.error || !res.data) { failedCount.n++; continue; }
+        const newId = res.data.id;
+        setRows(prev => prev.map((r, i) => i === idx ? { ...r, id: newId, dirty: false, isNew: false } : r));
       }
     }
     setSaving(false);
@@ -358,6 +375,7 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
           category: r.category, description: r.description,
           unit_price: r.unit_price, quantity: pax || r.quantity || 1,
           notes: r.notes, reference_url: r.reference_url || "",
+          ...(cnyColRef.current && r.cny != null ? { cny: r.cny } : {}),
         })));
         if (copyErr) { alert("複製費用列失敗：" + copyErr.message); }
       }
@@ -595,8 +613,14 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
       category: r.category, description: r.description,
       unit_price: r.unit_price, quantity: r.quantity,
       notes: r.notes, reference_url: r.reference_url || "",
+      ...(cnyColRef.current ? { cny: Number(r.custom_data._cny) || 0 } : {}),
     }));
-    const { error } = await supabase.from("tour_costs").insert(payload);
+    let { error } = await supabase.from("tour_costs").insert(payload);
+    if (error && cnyColRef.current && (error.code === "42703" || /cny/i.test(error.message || ""))) {
+      cnyColRef.current = false;
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      ({ error } = await supabase.from("tour_costs").insert(payload.map(({ cny, ...rest }) => rest)));
+    }
     if (error) { alert("複製失敗：" + error.message); return; }
     const names = versions.filter(v => targetIds.includes(v.id)).map(v => v.name).join("、");
     setCopyMsg(`已複製「${r.description || COST_CATEGORIES.find(c => c.key === r.category)?.label || "費用"}」到：${names}`);
@@ -734,6 +758,13 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
       {copyMsg && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-800 text-white text-xs px-4 py-2.5 rounded-full shadow-xl flex items-center gap-2">
           <Copy className="w-3.5 h-3.5 text-blue-300" /> {copyMsg}
+        </div>
+      )}
+      {cnyColMissing && (
+        <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-4 py-2.5 text-xs text-amber-700 dark:text-amber-300 leading-relaxed">
+          ⚠️ 人民幣參考金額尚無法保存。請在 Supabase SQL Editor 執行：
+          <code className="block mt-1 font-mono text-[11px]">ALTER TABLE tour_costs ADD COLUMN IF NOT EXISTS cny NUMERIC(12,2) NOT NULL DEFAULT 0;</code>
+          （執行後人民幣金額就會保留；總成本一律只算新台幣，不會重複計算）
         </div>
       )}
 
