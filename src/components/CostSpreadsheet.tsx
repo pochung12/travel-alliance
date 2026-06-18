@@ -62,7 +62,7 @@ const DEFAULT_COL_WIDTHS: Record<string, number> = {
   subtotal:    112,
   notes:       104,
   url:         164,
-  del:         36,
+  act:         66,
 };
 
 // ── URL cell helper ────────────────────────────────────────────────────────────
@@ -89,6 +89,8 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
   // ── Versions ─────────────────────────────────────────────────────────────────
   const [versions,       setVersions]       = useState<TourCostVersion[]>([]);
   const [activeVersionId,setActiveVersionId]= useState<string | null>(null);
+  const [copyMenuIdx,   setCopyMenuIdx]     = useState<number | null>(null);
+  const [copyMsg,       setCopyMsg]         = useState<string>("");
   const [showNewVersion, setShowNewVersion] = useState(false);
   const [newVersionName, setNewVersionName] = useState("");
   const [copyFromId,     setCopyFromId]     = useState<string>("none");
@@ -539,7 +541,7 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
       {customColumns.map(col => (
         <col key={col.id} style={{ width: colWidths[`c_${col.id}`] ?? 110 }} />
       ))}
-      <col style={{ width: colWidths.del }} />
+      <col style={{ width: colWidths.act ?? 66 }} />
     </colgroup>
   );
 
@@ -584,6 +586,62 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
   );
 
   // ── Row render (shared) ───────────────────────────────────────────────────────
+  // 複製單列費用到其他版本（佣金/機票等共用項目）
+  const copyRowToVersions = async (r: Row, targetIds: string[]) => {
+    if (targetIds.length === 0) return;
+    const payload = targetIds.map(vid => ({
+      tour_id: tourId, version_id: vid,
+      day_number: r.day_number ?? null,
+      category: r.category, description: r.description,
+      unit_price: r.unit_price, quantity: r.quantity,
+      notes: r.notes, reference_url: r.reference_url || "",
+    }));
+    const { error } = await supabase.from("tour_costs").insert(payload);
+    if (error) { alert("複製失敗：" + error.message); return; }
+    const names = versions.filter(v => targetIds.includes(v.id)).map(v => v.name).join("、");
+    setCopyMsg(`已複製「${r.description || COST_CATEGORIES.find(c => c.key === r.category)?.label || "費用"}」到：${names}`);
+    setTimeout(() => setCopyMsg(""), 2600);
+  };
+
+  // 列尾動作：複製到其他版本 + 刪除
+  const renderRowActions = (r: Row, idx: number) => {
+    const others = versions.filter(v => v.id !== activeVersionId);
+    return (
+      <div className="flex items-center justify-center gap-0.5 relative">
+        {others.length > 0 && (
+          <>
+            <button onClick={e => { e.stopPropagation(); setCopyMenuIdx(copyMenuIdx === idx ? null : idx); }}
+              title="複製此列到其他版本"
+              className="p-1.5 text-slate-400 hover:text-white hover:bg-blue-500 rounded-lg transition-colors">
+              <Copy className="w-3.5 h-3.5" />
+            </button>
+            {copyMenuIdx === idx && (
+              <div className="absolute right-0 top-full mt-1 z-30 w-48 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl py-1 text-xs text-left"
+                onClick={e => e.stopPropagation()}>
+                <div className="px-3 py-1.5 text-slate-400">複製此列到版本：</div>
+                <button onClick={() => { copyRowToVersions(r, others.map(v => v.id)); setCopyMenuIdx(null); }}
+                  className="w-full text-left px-3 py-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 font-medium text-blue-600 dark:text-blue-400">
+                  ＊ 全部其他版本（{others.length}）
+                </button>
+                <div className="border-t border-slate-100 dark:border-slate-700 my-0.5" />
+                {others.map(v => (
+                  <button key={v.id} onClick={() => { copyRowToVersions(r, [v.id]); setCopyMenuIdx(null); }}
+                    className="w-full text-left px-3 py-2 hover:bg-slate-50 dark:hover:bg-slate-700 truncate text-slate-700 dark:text-slate-200">
+                    {v.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+        <button onClick={() => removeRow(idx)} title="刪除此列"
+          className="p-1.5 text-slate-400 hover:text-white hover:bg-red-500 transition-colors rounded-lg">
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
+    );
+  };
+
   const renderRow = (r: Row, idx: number) => {
     // 有效的 CNY 值（> 0 才算有填）
     const cnyVal = Number(r.custom_data._cny) > 0 ? Number(r.custom_data._cny) : null;
@@ -664,9 +722,7 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
           </td>
         ))}
         <td className="px-1 py-1 text-center">
-          <button onClick={() => removeRow(idx)} className="p-1.5 text-slate-400 hover:text-white hover:bg-red-500 transition-colors rounded-lg">
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
+          {renderRowActions(r, idx)}
         </td>
       </tr>
     );
@@ -674,7 +730,12 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
 
   // ── Render ────────────────────────────────────────────────────────────────────
   return (
-    <div className="space-y-4" onClick={() => setVersionMenuId(null)}>
+    <div className="space-y-4" onClick={() => { setVersionMenuId(null); setCopyMenuIdx(null); }}>
+      {copyMsg && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-800 text-white text-xs px-4 py-2.5 rounded-full shadow-xl flex items-center gap-2">
+          <Copy className="w-3.5 h-3.5 text-blue-300" /> {copyMsg}
+        </div>
+      )}
 
       {/* ── Version tabs + mode toggle ─────────────────────────────────────── */}
       <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
@@ -859,7 +920,7 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
                           </td>
                         ))}
                         <td className="px-1 py-1 text-center">
-                          <button onClick={() => removeRow(idx)} className="p-1.5 text-slate-400 hover:text-white hover:bg-red-500 transition-colors rounded-lg"><Trash2 className="w-3.5 h-3.5" /></button>
+                          {renderRowActions(r, idx)}
                         </td>
                       </tr>
                     ));
