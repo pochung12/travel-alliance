@@ -2006,6 +2006,30 @@ export default function GroupDetailPage() {
                         </div>
                       );
                     })}
+                    {/* ── 已訂票統計（顯示「已訂票」欄位時出現在列表底部） ── */}
+                    {partCols.some(c => c.key === "ticket_booked" && c.visible) && participants.length > 0 && (() => {
+                      const booked = participants.filter(p => p.ticket_booked);
+                      const unbooked = participants.filter(p => !p.ticket_booked);
+                      return (
+                        <div className="flex items-center gap-3 flex-wrap bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 px-4 py-2.5 text-xs">
+                          <span className="font-semibold text-slate-500 dark:text-slate-400">✈️ 訂票統計</span>
+                          <span className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
+                            <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                            已訂 <strong className="text-emerald-600 dark:text-emerald-400">{booked.length}</strong> 人
+                          </span>
+                          <span className="flex items-center gap-1.5 text-slate-600 dark:text-slate-300">
+                            <span className="w-2 h-2 rounded-full bg-amber-400" />
+                            未訂 <strong className={unbooked.length > 0 ? "text-amber-500" : "text-slate-300 dark:text-slate-600"}>{unbooked.length}</strong> 人
+                          </span>
+                          <span className="text-slate-300 dark:text-slate-600">共 {participants.length} 人</span>
+                          {unbooked.length > 0 && (
+                            <span className="text-slate-400 dark:text-slate-500 basis-full leading-relaxed">
+                              未訂：{unbooked.map(p => p.customer.name).join("、")}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 );
               })()}

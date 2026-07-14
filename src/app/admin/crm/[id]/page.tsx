@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase, Customer, Tour } from "@/lib/supabase";
-import { ArrowLeft, Save, Trash2, Upload, ScanLine, X, CheckCircle, AlertCircle, Loader2, UtensilsCrossed } from "lucide-react";
+import { ArrowLeft, Save, Trash2, Upload, ScanLine, X, CheckCircle, AlertCircle, Loader2, UtensilsCrossed, RotateCw, Wand2 } from "lucide-react";
 
 // ─── Meal options (same as groups page) ───────────────────────────────────────
 const MEAL_OPTIONS = [
@@ -50,6 +50,24 @@ function compressImage(file: File, maxPx = 1200, quality = 0.88): Promise<string
   });
 }
 
+// 以 canvas 將 base64 圖片順時針旋轉 90/180/270 度
+function rotateBase64(b64: string, deg: 90 | 180 | 270): Promise<string> {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      if (deg === 180) { canvas.width = img.width; canvas.height = img.height; }
+      else { canvas.width = img.height; canvas.height = img.width; }
+      const ctx = canvas.getContext("2d")!;
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate(deg * Math.PI / 180);
+      ctx.drawImage(img, -img.width / 2, -img.height / 2);
+      resolve(canvas.toDataURL("image/jpeg", 0.92));
+    };
+    img.src = b64;
+  });
+}
+
 interface OcrResult {
   name?: string | null; nameEn?: string | null;
   passport?: string | null; birthday?: string | null;
@@ -58,7 +76,7 @@ interface OcrResult {
   idNumber?: string | null; error?: string;
 }
 
-type ScanStatus = { type: "idle" } | { type: "scanning" } | { type: "success"; msg: string } | { type: "error"; msg: string };
+type ScanStatus = { type: "idle" } | { type: "scanning" } | { type: "rotating" } | { type: "success"; msg: string } | { type: "error"; msg: string };
 
 export default function CustomerDetailPage() {
   const { id }   = useParams<{ id: string }>();
@@ -139,6 +157,45 @@ export default function CustomerDetailPage() {
     else if (docType === "taibao") { setForm(prev => ({ ...prev, taibao_image: compressed })); setTaibaoStatus({ type: "idle" }); }
     else { setForm(prev => ({ ...prev, id_card_image: compressed })); setIdCardStatus({ type: "idle" }); }
     e.target.value = "";
+  };
+
+  const setDocImage = (docType: "passport" | "taibao" | "idCard", b64: string) => {
+    if (docType === "passport") setForm(prev => ({ ...prev, passport_image: b64 }));
+    else if (docType === "taibao") setForm(prev => ({ ...prev, taibao_image: b64 }));
+    else setForm(prev => ({ ...prev, id_card_image: b64 }));
+  };
+
+  // AI 智能轉正：判斷方向 → canvas 旋轉 → 更新圖片（按「儲存全部」後寫入 DB）
+  const autoRotate = async (docType: "passport" | "taibao" | "idCard") => {
+    const base64 = docType === "passport" ? form.passport_image : docType === "taibao" ? form.taibao_image : form.id_card_image;
+    if (!base64) return;
+    const setStatus = docType === "passport" ? setPassportStatus : docType === "taibao" ? setTaibaoStatus : setIdCardStatus;
+    setStatus({ type: "rotating" });
+    try {
+      const res = await fetch("/api/ocr/orientation", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageBase64: base64 }),
+      });
+      const result: { rotation?: number; error?: string } = await res.json();
+      if (result.error) throw new Error(result.error);
+      const rotation = result.rotation as 0 | 90 | 180 | 270;
+      if (!rotation) { setStatus({ type: "success", msg: "AI 判斷照片方向已是正的，無需旋轉" }); return; }
+      const rotated = await rotateBase64(base64, rotation);
+      setDocImage(docType, rotated);
+      setStatus({ type: "success", msg: `已自動旋轉 ${rotation}°，請點「儲存全部」保存` });
+    } catch {
+      setStatus({ type: "error", msg: "智能轉正失敗，可改用圖片上的手動旋轉按鈕" });
+    }
+  };
+
+  // 手動順時針轉 90°
+  const manualRotate = async (docType: "passport" | "taibao" | "idCard") => {
+    const base64 = docType === "passport" ? form.passport_image : docType === "taibao" ? form.taibao_image : form.id_card_image;
+    if (!base64) return;
+    const setStatus = docType === "passport" ? setPassportStatus : docType === "taibao" ? setTaibaoStatus : setIdCardStatus;
+    const rotated = await rotateBase64(base64, 90);
+    setDocImage(docType, rotated);
+    setStatus({ type: "success", msg: "已順時針旋轉 90°，請點「儲存全部」保存" });
   };
 
   // 比較效期：new 是否比 existing 更新（existing 為空時視為「新的一定更新」）
@@ -445,15 +502,18 @@ export default function CustomerDetailPage() {
         <DocumentCard title="🪪 身分證" image={form.id_card_image || ""} status={idCardStatus}
           inputRef={idCardInputRef} onUpload={e => handleDocUpload(e, "idCard")}
           onClear={() => { setForm(p => ({ ...p, id_card_image: "" })); setIdCardStatus({ type: "idle" }); }}
-          onScan={() => scanDocument("idCard")} />
+          onScan={() => scanDocument("idCard")}
+          onAutoRotate={() => autoRotate("idCard")} onManualRotate={() => manualRotate("idCard")} />
         <DocumentCard title="🛂 護照" image={form.passport_image || ""} status={passportStatus}
           inputRef={passportInputRef} onUpload={e => handleDocUpload(e, "passport")}
           onClear={() => { setForm(p => ({ ...p, passport_image: "" })); setPassportStatus({ type: "idle" }); }}
-          onScan={() => scanDocument("passport")} />
+          onScan={() => scanDocument("passport")}
+          onAutoRotate={() => autoRotate("passport")} onManualRotate={() => manualRotate("passport")} />
         <DocumentCard title="🪪 台胞證" image={form.taibao_image || ""} status={taibaoStatus}
           inputRef={taibaoInputRef} onUpload={e => handleDocUpload(e, "taibao")}
           onClear={() => { setForm(p => ({ ...p, taibao_image: "" })); setTaibaoStatus({ type: "idle" }); }}
-          onScan={() => scanDocument("taibao")} />
+          onScan={() => scanDocument("taibao")}
+          onAutoRotate={() => autoRotate("taibao")} onManualRotate={() => manualRotate("taibao")} />
       </div>
 
       {/* ── OCR highlight notice ── */}
@@ -487,14 +547,16 @@ export default function CustomerDetailPage() {
 
 // ── DocumentCard ──────────────────────────────────────────────────────────────
 function DocumentCard({
-  title, image, status, inputRef, onUpload, onClear, onScan,
+  title, image, status, inputRef, onUpload, onClear, onScan, onAutoRotate, onManualRotate,
 }: {
   title: string; image: string; status: ScanStatus;
   inputRef: React.RefObject<HTMLInputElement>;
   onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onClear: () => void; onScan: () => void;
+  onAutoRotate: () => void; onManualRotate: () => void;
 }) {
   const scanning = status.type === "scanning";
+  const rotating = status.type === "rotating";
   return (
     <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
       <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-700">
@@ -504,7 +566,13 @@ function DocumentCard({
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-300 rounded-lg transition-colors">
             <Upload className="w-3.5 h-3.5" /> 上傳
           </button>
-          <button onClick={onScan} disabled={!image || scanning}
+          <button onClick={onAutoRotate} disabled={!image || rotating || scanning}
+            title="AI 自動判斷照片方向並轉正"
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg disabled:opacity-40 transition-colors">
+            {rotating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
+            {rotating ? "轉正中…" : "智能轉正"}
+          </button>
+          <button onClick={onScan} disabled={!image || scanning || rotating}
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded-lg disabled:opacity-40 transition-colors">
             {scanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ScanLine className="w-3.5 h-3.5" />}
             {scanning ? "辨識中…" : "AI 辨識"}
@@ -519,6 +587,10 @@ function DocumentCard({
           <div className="relative group">
             <img src={image} alt={title}
               className="w-full rounded-lg border border-slate-200 dark:border-slate-600 object-contain max-h-52 bg-slate-50 dark:bg-slate-700/30" />
+            <button onClick={onManualRotate} title="手動順時針旋轉 90°"
+              className="absolute top-2 right-10 p-1.5 bg-black/50 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-blue-600">
+              <RotateCw className="w-3.5 h-3.5" />
+            </button>
             <button onClick={onClear}
               className="absolute top-2 right-2 p-1.5 bg-black/50 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600">
               <X className="w-3.5 h-3.5" />
@@ -537,13 +609,14 @@ function DocumentCard({
       {status.type !== "idle" && (
         <div className={`mx-4 mb-4 flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium
           ${status.type === "scanning" ? "bg-violet-50 dark:bg-violet-900/20 text-violet-600 dark:text-violet-300" : ""}
+          ${status.type === "rotating" ? "bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-300" : ""}
           ${status.type === "success"  ? "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300" : ""}
           ${status.type === "error"    ? "bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400" : ""}
         `}>
-          {status.type === "scanning" && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
+          {(status.type === "scanning" || status.type === "rotating") && <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />}
           {status.type === "success"  && <CheckCircle className="w-3.5 h-3.5 shrink-0" />}
           {status.type === "error"    && <AlertCircle className="w-3.5 h-3.5 shrink-0" />}
-          {status.type === "scanning" ? "正在辨識證件資訊…" : status.msg}
+          {status.type === "scanning" ? "正在辨識證件資訊…" : status.type === "rotating" ? "AI 正在判斷照片方向…" : status.msg}
         </div>
       )}
     </div>
