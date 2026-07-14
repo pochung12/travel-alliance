@@ -5,7 +5,7 @@ import { supabase, Customer, Tour } from "@/lib/supabase";
 import {
   Plus, Search, Users, ScanLine, Upload, FileSpreadsheet,
   Loader2, CheckCircle, AlertCircle, X, Settings, Tag, Trash2, CheckCircle2, Layers,
-  GitMerge, ChevronRight, ArrowUp, ArrowDown, ChevronsUpDown, Pencil,
+  GitMerge, ChevronRight, ArrowUp, ArrowDown, ChevronsUpDown, Pencil, Copy, Check,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -251,10 +251,8 @@ const ALL_COLS: ColDef[] = [
   { key: "phone",             label: "電話",       width: 140, visible: true  },
   { key: "email",             label: "Email",      width: 180, visible: true  },
   { key: "id_number",         label: "身分證",     width: 140, visible: false },
-  { key: "passport",          label: "護照號碼",   width: 120, visible: true  },
-  { key: "passport_expiry",   label: "護照效期",   width: 110, visible: false },
-  { key: "taibao_number",     label: "台胞證",     width: 140, visible: false },
-  { key: "taibao_expiry",     label: "台胞證效期", width: 120, visible: false },
+  { key: "passport",          label: "護照（號碼＋效期）", width: 170, visible: true  },
+  { key: "taibao_number",     label: "台胞證（號碼＋效期）", width: 170, visible: false },
   { key: "address",           label: "地址",       width: 200, visible: false },
   { key: "emergency_contact", label: "緊急聯絡人", width: 120, visible: false },
   { key: "emergency_phone",   label: "緊急電話",   width: 140, visible: false },
@@ -328,6 +326,28 @@ function getCellValue(c: Customer, key: string): string {
   if (key === "gender") return c.gender === "male" ? "男" : c.gender === "female" ? "女" : "其他";
   if (key === "created_at") return new Date(c.created_at).toLocaleDateString("zh-TW");
   return ((c as unknown as Record<string, unknown>)[key] as string) || "—";
+}
+
+// ─── Copy button（懸停顯示，點擊複製欄位內容） ────────────────────────────────
+function CopyBtn({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  if (!text || text === "—") return null;
+  return (
+    <button
+      onClick={e => {
+        e.stopPropagation();
+        navigator.clipboard.writeText(text).then(() => {
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1200);
+        });
+      }}
+      title={`複製「${text.length > 24 ? text.slice(0, 24) + "…" : text}」`}
+      className={`opacity-0 group-hover/cell:opacity-100 transition-opacity p-0.5 flex-shrink-0 ${
+        copied ? "!opacity-100 text-emerald-500" : "text-slate-300 dark:text-slate-600 hover:text-blue-500"
+      }`}>
+      {copied ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+    </button>
+  );
 }
 
 // ─── Expiry badge ─────────────────────────────────────────────────────────────
@@ -509,8 +529,11 @@ export default function CRMPage() {
       const saved = localStorage.getItem("ta_crm_columns");
       if (saved) {
         const parsed: ColDef[] = JSON.parse(saved);
-        const savedKeys = new Set(parsed.map(c=>c.key));
-        setColumns([...parsed, ...ALL_COLS.filter(c=>!savedKeys.has(c.key))]);
+        // 濾掉已下架的欄位（如舊版獨立的 passport_expiry/taibao_expiry），並套用最新 label
+        const defs = new Map(ALL_COLS.map(c=>[c.key,c]));
+        const valid = parsed.filter(c=>defs.has(c.key)).map(c=>({ ...c, label: defs.get(c.key)!.label }));
+        const savedKeys = new Set(valid.map(c=>c.key));
+        setColumns([...valid, ...ALL_COLS.filter(c=>!savedKeys.has(c.key))]);
       }
       const freeze = localStorage.getItem("ta_crm_freeze");
       if (freeze) {
@@ -1399,6 +1422,7 @@ export default function CRMPage() {
                             className="opacity-0 group-hover/cell:opacity-100 transition-opacity p-0.5 text-slate-400 hover:text-violet-500 flex-shrink-0" title="編輯標籤">
                             <Tag className="w-3 h-3" />
                           </button>
+                          <CopyBtn text={c.name} />
                         </div>
                       ) : col.key==="tours" ? (
                         <div className="group/cell flex flex-wrap gap-1 items-center">
@@ -1418,9 +1442,10 @@ export default function CRMPage() {
                             className="opacity-0 group-hover/cell:opacity-100 transition-opacity p-0.5 text-slate-400 hover:text-blue-500 flex-shrink-0" title="編輯參團">
                             <Pencil className="w-3 h-3" />
                           </button>
+                          <CopyBtn text={(custTours[c.id]||[]).map(t=>t.name).join("、")} />
                         </div>
                       ) : col.key==="meal_preference" ? (
-                        <div className="flex flex-wrap gap-1">
+                        <div className="group/cell flex flex-wrap gap-1 items-center">
                           {!(c.meal_preference||"").trim() ? (
                             <span className="text-xs text-slate-300 dark:text-slate-600">正常餐</span>
                           ) : (c.meal_preference||"").split(",").map(s=>s.trim()).filter(Boolean).map(opt => {
@@ -1435,15 +1460,40 @@ export default function CRMPage() {
                               <span key={opt} className="text-xs text-slate-500 dark:text-slate-400">{opt}</span>
                             );
                           })}
+                          <CopyBtn text={(c.meal_preference||"").trim()} />
                         </div>
-                      ) : col.key==="passport_expiry"||col.key==="taibao_expiry" ? (
-                        <ExpiryBadge dateStr={(c as unknown as Record<string,string>)[col.key]} />
-                      ) : col.key==="passport"||col.key==="id_number"||col.key==="taibao_number" ? (
-                        <span className="text-slate-600 dark:text-slate-300 font-mono text-xs">{getCellValue(c,col.key)}</span>
+                      ) : col.key==="passport"||col.key==="taibao_number" ? (
+                        (() => {
+                          const num = (c as unknown as Record<string,string>)[col.key] || "";
+                          const exp = col.key==="passport" ? (c.passport_expiry||"") : (c.taibao_expiry||"");
+                          return (
+                            <div className="group/cell flex flex-col gap-0.5 min-w-0">
+                              <div className="flex items-center gap-1 min-w-0">
+                                <span className="text-slate-600 dark:text-slate-300 font-mono text-xs truncate">{num || "—"}</span>
+                                <CopyBtn text={num} />
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <ExpiryBadge dateStr={exp || undefined} />
+                                <CopyBtn text={exp} />
+                              </div>
+                            </div>
+                          );
+                        })()
+                      ) : col.key==="id_number" ? (
+                        <div className="group/cell flex items-center gap-1 min-w-0">
+                          <span className="text-slate-600 dark:text-slate-300 font-mono text-xs truncate">{getCellValue(c,col.key)}</span>
+                          <CopyBtn text={c.id_number||""} />
+                        </div>
                       ) : col.key==="created_at" ? (
-                        <span className="text-slate-400 dark:text-slate-500 text-xs">{getCellValue(c,col.key)}</span>
+                        <div className="group/cell flex items-center gap-1 min-w-0">
+                          <span className="text-slate-400 dark:text-slate-500 text-xs truncate">{getCellValue(c,col.key)}</span>
+                          <CopyBtn text={getCellValue(c,col.key)} />
+                        </div>
                       ) : (
-                        <span className="text-slate-600 dark:text-slate-300">{getCellValue(c,col.key)}</span>
+                        <div className="group/cell flex items-center gap-1 min-w-0">
+                          <span className="text-slate-600 dark:text-slate-300 truncate">{getCellValue(c,col.key)}</span>
+                          <CopyBtn text={getCellValue(c,col.key)==="—" ? "" : getCellValue(c,col.key)} />
+                        </div>
                       )}
                     </td>
                   ))}
