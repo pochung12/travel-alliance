@@ -283,21 +283,39 @@ async function compressImage(file: File, maxPx = 2400, quality = 0.92): Promise<
   });
 }
 
+// OCR 是 LLM 輸出，值不保證合規；DB 有 gender CHECK 約束與 DATE 型別，
+// 一筆髒值會讓整批 insert 全部回滾 → 進 DB 前一律先消毒。
+function sanitizeGender(g: unknown): Customer["gender"] {
+  const s = String(g ?? "").trim().toLowerCase();
+  if (s === "male"   || s === "m" || s === "男") return "male";
+  if (s === "female" || s === "f" || s === "女") return "female";
+  return "other";
+}
+function sanitizeDate(d: unknown): string {
+  if (!d) return "";
+  const s = String(d).trim()
+    .replace(/(\d{4})[年./](\d{1,2})[月./](\d{1,2})日?/, "$1-$2-$3");
+  const m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (!m) return "";
+  const iso = `${m[1]}-${m[2].padStart(2, "0")}-${m[3].padStart(2, "0")}`;
+  return isNaN(Date.parse(iso)) ? "" : iso;
+}
+
 function buildFormFromOcr(ocr: OcrResult, imageB64: string): Omit<Customer, "id" | "created_at"> {
   const form = { ...EMPTY };
   form.name     = ocr.name     ?? "";
   form.name_en  = ocr.nameEn   ?? "";
-  form.birthday = ocr.birthday ?? "";
-  form.gender   = (ocr.gender as Customer["gender"]) ?? "other";
+  form.birthday = sanitizeDate(ocr.birthday);
+  form.gender   = sanitizeGender(ocr.gender);
   const dt = ocr.docType;
   if (dt === "passport") {
-    form.passport        = ocr.passport       ?? "";
-    form.passport_expiry = ocr.passportExpiry ?? "";
+    form.passport        = ocr.passport ?? "";
+    form.passport_expiry = sanitizeDate(ocr.passportExpiry);
     form.passport_image  = imageB64;
     if (ocr.idNumber) form.id_number = ocr.idNumber;
   } else if (dt === "taibao") {
     form.taibao_number = ocr.taibaoNumber ?? "";
-    form.taibao_expiry = ocr.taibaoExpiry ?? "";
+    form.taibao_expiry = sanitizeDate(ocr.taibaoExpiry);
     form.taibao_image  = imageB64;
   } else if (dt === "idCard") {
     form.id_number     = ocr.idNumber ?? "";
@@ -757,18 +775,43 @@ export default function CRMPage() {
     const toCreate = bulkItems.filter(it=>it.selected&&it.status==="done"&&it.form.name.trim());
     if (toCreate.length===0) { alert("沒有可建立的旅客（請確認姓名已填寫）"); return; }
     setBulkCreating(true);
-    const payloads = toCreate.map(it=>({
-      ...it.form,
-      birthday: it.form.birthday||null,
-      passport_expiry: it.form.passport_expiry||null,
-      taibao_expiry: it.form.taibao_expiry||null,
+    const entries = toCreate.map(it=>({
+      uid: it.uid,
+      payload: {
+        ...it.form,
+        gender: sanitizeGender(it.form.gender),
+        birthday: sanitizeDate(it.form.birthday)||null,
+        passport_expiry: sanitizeDate(it.form.passport_expiry)||null,
+        taibao_expiry: sanitizeDate(it.form.taibao_expiry)||null,
+      },
     }));
-    let success=0;
-    for (let i=0; i<payloads.length; i+=50) {
-      const { error } = await supabase.from("customers").insert(payloads.slice(i,i+50));
-      if (!error) success += Math.min(50, payloads.length-i);
+    const createdUids = new Set<string>();
+    const failures: {uid:string; msg:string}[] = [];
+    const BATCH = 20; // 每列含證件圖 base64，批次太大會撞請求上限
+    for (let i=0; i<entries.length; i+=BATCH) {
+      const chunk = entries.slice(i,i+BATCH);
+      const { error } = await supabase.from("customers").insert(chunk.map(e=>e.payload));
+      if (!error) { chunk.forEach(e=>createdUids.add(e.uid)); continue; }
+      // 批次失敗（Postgres 整批回滾）→ 逐筆重試，找出真正的壞行
+      for (const e of chunk) {
+        const { error: rowErr } = await supabase.from("customers").insert([e.payload]);
+        if (rowErr) failures.push({uid:e.uid, msg:rowErr.message});
+        else createdUids.add(e.uid);
+      }
     }
-    setBulkCreating(false); setBulkDone({success}); load();
+    setBulkCreating(false);
+    if (failures.length===0) {
+      setBulkDone({success:createdUids.size}); load(); return;
+    }
+    // 有失敗：成功的移出列表，失敗的標記錯誤留在畫面上
+    setBulkItems(prev=>prev
+      .filter(it=>!createdUids.has(it.uid))
+      .map(it=>{
+        const f = failures.find(x=>x.uid===it.uid);
+        return f ? {...it, status:"error" as const, error:`建立失敗：${f.msg}`} : it;
+      }));
+    if (createdUids.size>0) load();
+    alert(`成功建立 ${createdUids.size} 位、失敗 ${failures.length} 位。\n失敗原因（第一筆）：${failures[0].msg}\n失敗的照片已標紅保留在列表中。`);
   };
 
   const closeBulkScan = () => {
@@ -807,15 +850,15 @@ export default function CRMPage() {
       const preForm = {...EMPTY};
       preForm.name    = json.name    ?? "";
       preForm.name_en = json.nameEn  ?? "";
-      preForm.birthday= json.birthday?? "";
-      preForm.gender  = (json.gender as Customer["gender"]) ?? "other";
+      preForm.birthday= sanitizeDate(json.birthday);
+      preForm.gender  = sanitizeGender(json.gender);
       if (docType==="passport") {
-        preForm.passport        = json.passport       ??"";
-        preForm.passport_expiry = json.passportExpiry ??"";
+        preForm.passport        = json.passport ??"";
+        preForm.passport_expiry = sanitizeDate(json.passportExpiry);
         preForm.passport_image  = b64;
       } else if (docType==="taibao") {
         preForm.taibao_number = json.taibaoNumber ??"";
-        preForm.taibao_expiry = json.taibaoExpiry ??"";
+        preForm.taibao_expiry = sanitizeDate(json.taibaoExpiry);
         preForm.taibao_image  = b64;
       } else {
         preForm.id_number     = json.idNumber ??"";
