@@ -35,7 +35,22 @@ const PART_COLS_DEFAULT: PartCol[] = [
   { key: "balance_amount",   label: "尾款",      visible: true  },
   { key: "meal_preference",  label: "餐食偏好",   visible: true  },
   { key: "room_number",      label: "房號",      visible: true  },
+  // ── CRM 直帶欄位（從 customers 表帶入唯讀顯示，欄位選單可勾選） ──
+  { key: "name_en",           label: "英文姓名",       visible: false },
+  { key: "gender",            label: "性別",           visible: false },
+  { key: "birthday",          label: "生日",           visible: false },
+  { key: "id_number",         label: "身分證字號",     visible: false },
+  { key: "address",           label: "地址",           visible: false },
+  { key: "emergency_contact", label: "緊急聯絡人",     visible: false },
+  { key: "emergency_phone",   label: "緊急聯絡電話",   visible: false },
+  { key: "crm_notes",         label: "CRM 備註",       visible: false },
 ];
+// CRM 唯讀文字欄位 → customers 表欄位對應（gender/birthday 另有專屬格式）
+const CRM_TEXT_COLS: Record<string, keyof Customer> = {
+  name_en: "name_en", id_number: "id_number", address: "address",
+  emergency_contact: "emergency_contact", emergency_phone: "emergency_phone",
+  crm_notes: "notes",
+};
 
 // ─── Participant type config ───────────────────────────────────────────────────
 const PARTICIPANT_TYPES = [
@@ -89,6 +104,8 @@ const COL_WIDTHS_DEFAULT: Record<string, number> = {
   taibao_number: 112, taibao_expiry: 96,
   deposit_amount: 110, balance_amount: 110,
   meal_preference: 112, room_number: 112,
+  name_en: 140, gender: 56, birthday: 100, id_number: 120,
+  address: 180, emergency_contact: 100, emergency_phone: 120, crm_notes: 160,
 };
 
 export default function GroupDetailPage() {
@@ -1078,7 +1095,7 @@ export default function GroupDetailPage() {
                   {showColSettings && (
                     <>
                       <div className="fixed inset-0 z-10" onClick={() => setShowColSettings(false)} />
-                      <div className="absolute right-0 top-full mt-2 z-20 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-100 dark:border-slate-700 p-3 min-w-[180px]">
+                      <div className="absolute right-0 top-full mt-2 z-20 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-100 dark:border-slate-700 p-3 min-w-[180px] max-h-[60vh] overflow-y-auto">
                         <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide px-2 pb-2">顯示欄位 · 拖曳排序</p>
                         {partCols.map((col, idx) => (
                           <div key={col.key}
@@ -1829,6 +1846,26 @@ export default function GroupDetailPage() {
                                     )}
                                   </div>
                                 )}
+                              </div>
+                            );
+                          }
+                          if (col.key === "gender") return (
+                            <div key="gender" style={{width: colWidths.gender}} className="flex-shrink-0 text-xs text-slate-500 dark:text-slate-400">
+                              {p.customer.gender === "male" ? "男" : p.customer.gender === "female" ? "女" : <span className="text-slate-300 dark:text-slate-600">—</span>}
+                            </div>
+                          );
+                          if (col.key === "birthday") return (
+                            <div key="birthday" style={{width: colWidths.birthday}} className="flex-shrink-0 text-xs font-mono text-slate-500 dark:text-slate-400">
+                              {p.customer.birthday || <span className="text-slate-300 dark:text-slate-600">—</span>}
+                            </div>
+                          );
+                          if (CRM_TEXT_COLS[col.key]) {
+                            const v = (p.customer[CRM_TEXT_COLS[col.key]] as string) || "";
+                            return (
+                              <div key={col.key} style={{width: colWidths[col.key] ?? 110}}
+                                title={v || undefined}
+                                className="flex-shrink-0 text-xs text-slate-500 dark:text-slate-400 truncate pr-2">
+                                {v || <span className="text-slate-300 dark:text-slate-600">—</span>}
                               </div>
                             );
                           }
