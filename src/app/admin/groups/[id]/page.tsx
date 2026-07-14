@@ -1554,7 +1554,7 @@ export default function GroupDetailPage() {
             ) : (
               <div className="overflow-x-auto -mx-4 md:mx-0 px-4 md:px-0">
               {/* ── 欄位標題列（可拖曳調整寬度）── */}
-              <div className="flex items-center bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-2 py-1.5 mb-2 min-w-[540px] md:min-w-0 select-none">
+              <div className="flex items-center bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-xl px-2 py-1.5 mb-2 w-max min-w-full select-none">
                 {/* drag handle 佔位 */}
                 <div className="w-6 flex-shrink-0" />
                 {/* color bar 佔位 */}
@@ -1612,7 +1612,7 @@ export default function GroupDetailPage() {
                   else roomGroups.push({ roomNum: rn, parts: [p] });
                 });
                 return (
-                  <div className="space-y-2.5 min-w-[540px] md:min-w-0">
+                  <div className="space-y-2.5 w-max min-w-full">
                     {roomGroups.map(group => {
                       const grpPalette = group.roomNum ? paletteMap.get(group.roomNum) ?? ROOM_PALETTES[0] : null;
                       const inner = (
