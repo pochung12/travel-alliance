@@ -549,6 +549,17 @@ export default function CRMPage() {
     localStorage.setItem("ta_crm_freeze", JSON.stringify({ frozenHeader, frozenCols }));
     setColSaved(true); setTimeout(()=>setColSaved(false), 1500);
   };
+
+  // 欄位異動（調寬度/拖排序/勾顯示/凍結）自動儲存，不必按「儲存欄位設定」，重整不再跳回
+  const colsAutoSaveReady = useRef(false);
+  useEffect(() => {
+    if (!colsAutoSaveReady.current) { colsAutoSaveReady.current = true; return; }
+    const t = setTimeout(() => {
+      localStorage.setItem("ta_crm_columns", JSON.stringify(columns));
+      localStorage.setItem("ta_crm_freeze", JSON.stringify({ frozenHeader, frozenCols }));
+    }, 400);
+    return () => clearTimeout(t);
+  }, [columns, frozenHeader, frozenCols]);
   const resetColumns = () => {
     localStorage.removeItem("ta_crm_columns");
     localStorage.removeItem("ta_crm_freeze");

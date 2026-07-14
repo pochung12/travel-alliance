@@ -163,8 +163,20 @@ export default function GroupDetailPage() {
   const [dragPartIdx,   setDragPartIdx]   = useState<number | null>(null);
   // 列印名單
   const [showPrintMenu,   setShowPrintMenu]   = useState(false);
-  // 欄位寬度（可拖曳調整）
+  // 欄位寬度（可拖曳調整，自動存 localStorage，重整不跳回）
   const [colWidths, setColWidths] = useState<Record<string, number>>(COL_WIDTHS_DEFAULT);
+  const widthsLoaded = useRef(false);
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("ta_part_col_widths");
+      if (saved) setColWidths({ ...COL_WIDTHS_DEFAULT, ...JSON.parse(saved) });
+    } catch { /* ignore */ }
+  }, []);
+  useEffect(() => {
+    if (!widthsLoaded.current) { widthsLoaded.current = true; return; }
+    const t = setTimeout(() => localStorage.setItem("ta_part_col_widths", JSON.stringify(colWidths)), 400);
+    return () => clearTimeout(t);
+  }, [colWidths]);
   const resizeDrag = useRef<{ key: string; startX: number; startW: number } | null>(null);
   const startResize = useCallback((key: string, e: React.MouseEvent) => {
     e.preventDefault();
