@@ -35,6 +35,9 @@ const PART_COLS_DEFAULT: PartCol[] = [
   { key: "balance_amount",   label: "尾款",      visible: true  },
   { key: "meal_preference",  label: "餐食偏好",   visible: true  },
   { key: "room_number",      label: "房號",      visible: true  },
+  { key: "ticket_booked",    label: "已訂票",     visible: true  },
+  { key: "ct_notes",         label: "備註",       visible: true  },
+  { key: "id_images",        label: "證件照片",   visible: true  },
   // ── CRM 直帶欄位（從 customers 表帶入唯讀顯示，欄位選單可勾選） ──
   { key: "name_en",           label: "英文姓名",       visible: false },
   { key: "gender",            label: "性別",           visible: false },
@@ -104,6 +107,7 @@ const COL_WIDTHS_DEFAULT: Record<string, number> = {
   taibao_number: 112, taibao_expiry: 96,
   deposit_amount: 110, balance_amount: 110,
   meal_preference: 112, room_number: 112,
+  ticket_booked: 72, ct_notes: 150, id_images: 130,
   name_en: 140, gender: 56, birthday: 100, id_number: 120,
   address: 180, emergency_contact: 100, emergency_phone: 120, crm_notes: 160,
 };
@@ -124,6 +128,9 @@ export default function GroupDetailPage() {
   const [activeTab, setActiveTab]      = useState<"info"|"costs"|"payments"|"participants"|"flights"|"itin_c"|"itin_t"|"webpage">("info");
   const [editingRoomId, setEditingRoomId] = useState<string|null>(null);
   const [roomInput,     setRoomInput]     = useState("");
+  const [editingNoteId, setEditingNoteId] = useState<string|null>(null);
+  const [noteInput,     setNoteInput]     = useState("");
+  const [imgPreview,    setImgPreview]    = useState<{src:string; title:string}|null>(null);
   const [mealPickerId,  setMealPickerId]  = useState<string|null>(null);
   // CRM 標籤（用於加入旅客 Modal）
   const [custLabels,       setCustLabels]       = useState<Record<string, { id: string; name: string; color: string }[]>>({});
@@ -417,6 +424,22 @@ export default function GroupDetailPage() {
     setEditingRoomId(null);
     await supabase.from("customer_tours").update({ room_number: room.trim() }).eq("id", ctId);
     setParticipants(prev => prev.map(p => p.id===ctId ? {...p, room_number: room.trim()} : p));
+  };
+
+  const toggleTicketBooked = async (ctId: string, val: boolean) => {
+    const { error } = await supabase.from("customer_tours").update({ ticket_booked: val }).eq("id", ctId);
+    if (error) {
+      alert("儲存「已訂票」失敗：" + error.message + "\n\n若訊息顯示找不到 ticket_booked 欄位，請先在 Supabase SQL Editor 執行 supabase_ticket_booked.sql");
+      return;
+    }
+    setParticipants(prev => prev.map(p => p.id===ctId ? {...p, ticket_booked: val} : p));
+  };
+
+  const saveCtNote = async (ctId: string, note: string) => {
+    setEditingNoteId(null);
+    const { error } = await supabase.from("customer_tours").update({ notes: note.trim() }).eq("id", ctId);
+    if (error) { alert("儲存備註失敗：" + error.message); return; }
+    setParticipants(prev => prev.map(p => p.id===ctId ? {...p, notes: note.trim()} : p));
   };
 
   const saveAmount = async (ctId: string, field: "deposit_amount" | "balance_amount", val: string) => {
@@ -1849,6 +1872,73 @@ export default function GroupDetailPage() {
                               </div>
                             );
                           }
+                          if (col.key === "ticket_booked") {
+                            const booked = !!p.ticket_booked;
+                            return (
+                              <div key="ticket_booked" style={{width: colWidths.ticket_booked}} className="flex-shrink-0 flex items-center">
+                                <button
+                                  onClick={() => toggleTicketBooked(p.id, !booked)}
+                                  title={booked ? "點擊取消已訂票" : "點擊標記已訂票"}
+                                  className={`flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg border transition-all font-medium ${
+                                    booked
+                                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 border-emerald-200 dark:border-emerald-700"
+                                      : "text-slate-400 dark:text-slate-500 border-dashed border-slate-200 dark:border-slate-600 hover:border-emerald-400 hover:text-emerald-500"
+                                  }`}>
+                                  {booked ? "✓ 已訂" : "未訂"}
+                                </button>
+                              </div>
+                            );
+                          }
+                          if (col.key === "ct_notes") return (
+                            <div key="ct_notes" style={{width: colWidths.ct_notes}} className="flex-shrink-0 pr-2">
+                              {editingNoteId === p.id ? (
+                                <input autoFocus
+                                  className="w-full text-xs border border-blue-400 rounded-lg px-2 py-1 bg-white dark:bg-slate-700 text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                  value={noteInput}
+                                  onChange={e => setNoteInput(e.target.value)}
+                                  onBlur={() => saveCtNote(p.id, noteInput)}
+                                  onKeyDown={e => {
+                                    if (e.key === "Enter") saveCtNote(p.id, noteInput);
+                                    if (e.key === "Escape") setEditingNoteId(null);
+                                  }}
+                                  placeholder="備註…" />
+                              ) : (
+                                <button
+                                  onClick={() => { setEditingNoteId(p.id); setNoteInput(p.notes || ""); }}
+                                  title={p.notes || "點擊新增備註"}
+                                  className={`w-full text-left text-xs px-2 py-1 rounded-lg truncate transition-all ${
+                                    p.notes
+                                      ? "text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700/50"
+                                      : "text-slate-300 dark:text-slate-600 border border-dashed border-slate-200 dark:border-slate-600 hover:border-blue-400 hover:text-blue-500"
+                                  }`}>
+                                  {p.notes || "備註"}
+                                </button>
+                              )}
+                            </div>
+                          );
+                          if (col.key === "id_images") {
+                            const docs = [
+                              { label: "護照",   img: p.customer.passport_image },
+                              { label: "台胞證", img: p.customer.taibao_image },
+                              { label: "身分證", img: p.customer.id_card_image },
+                            ].filter(d => d.img);
+                            return (
+                              <div key="id_images" style={{width: colWidths.id_images}} className="flex-shrink-0 flex items-center gap-1 pr-2">
+                                {docs.length === 0
+                                  ? <span className="text-xs text-slate-300 dark:text-slate-600">—</span>
+                                  : docs.map(d => (
+                                    <button key={d.label}
+                                      onClick={() => setImgPreview({ src: d.img, title: `${p.customer.name} — ${d.label}` })}
+                                      title={`查看${d.label}圖片`}
+                                      className="relative rounded-md overflow-hidden border border-slate-200 dark:border-slate-600 hover:border-blue-400 hover:shadow transition-all flex-shrink-0">
+                                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                                      <img src={d.img} alt={d.label} className="h-9 w-12 object-cover" />
+                                      <span className="absolute bottom-0 inset-x-0 text-[8px] leading-tight bg-black/55 text-white text-center">{d.label}</span>
+                                    </button>
+                                  ))}
+                              </div>
+                            );
+                          }
                           if (col.key === "gender") return (
                             <div key="gender" style={{width: colWidths.gender}} className="flex-shrink-0 text-xs text-slate-500 dark:text-slate-400">
                               {p.customer.gender === "male" ? "男" : p.customer.gender === "female" ? "女" : <span className="text-slate-300 dark:text-slate-600">—</span>}
@@ -2562,6 +2652,24 @@ export default function GroupDetailPage() {
           </div>
         );
       })()}
+
+      {/* ── 證件圖片放大檢視 ── */}
+      {imgPreview && (
+        <div className="fixed inset-0 bg-black/75 z-[70] flex items-center justify-center p-4 sm:p-8"
+          onClick={() => setImgPreview(null)}>
+          <div className="max-w-3xl w-full" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-white text-sm font-medium">{imgPreview.title}</span>
+              <button onClick={() => setImgPreview(null)} className="p-1 text-white/80 hover:text-white">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={imgPreview.src} alt={imgPreview.title}
+              className="w-full max-h-[80vh] object-contain rounded-xl bg-white" />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -159,6 +159,7 @@ export interface CustomerTour {
   notes: string;
   room_number: string;
   meal_preference: string;   // comma-separated: "蛋奶素,不吃牛"
+  ticket_booked?: boolean;   // 已訂票（需先跑 supabase_ticket_booked.sql）
   tour?: Tour;
   customer?: Customer;
 }
