@@ -86,6 +86,9 @@ export default function CustomerDetailPage() {
   const [form, setForm]         = useState<Partial<Customer>>({});
   const [tours, setTours]       = useState<(Tour & { paid_amount: number })[]>([]);
   const [saving, setSaving]     = useState(false);
+  const [autoSavedAt, setAutoSavedAt]     = useState<Date | null>(null);
+  const [autoSaveError, setAutoSaveError] = useState("");
+  const lastSaved = useRef<Partial<Customer>>({});
   const [highlightedFields, setHighlightedFields] = useState<Set<string>>(new Set());
 
   const [passportStatus, setPassportStatus] = useState<ScanStatus>({ type: "idle" });
@@ -101,7 +104,7 @@ export default function CustomerDetailPage() {
     (async () => {
       const { data } = await supabase.from("customers").select("*").eq("id", id).single();
       if (!data) { router.push("/admin/crm"); return; }
-      setCustomer(data); setForm(data);
+      setCustomer(data); setForm(data); lastSaved.current = data;
       const { data: ct } = await supabase
         .from("customer_tours").select("paid_amount, tour:tours(*)").eq("customer_id", id);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -116,25 +119,38 @@ export default function CustomerDetailPage() {
     setTimeout(() => setHighlightedFields(new Set()), 3000);
   }, []);
 
-  const save = async () => {
-    setSaving(true);
-    await supabase.from("customers").update({
-      name: form.name, name_en: form.name_en, phone: form.phone, email: form.email,
-      id_number: form.id_number, id_card_image: form.id_card_image,
-      passport: form.passport, passport_expiry: form.passport_expiry || null,
-      passport_image: form.passport_image, taibao_number: form.taibao_number,
-      taibao_expiry: form.taibao_expiry || null, taibao_image: form.taibao_image,
-      birthday: form.birthday || null, gender: form.gender,
-      address: form.address, emergency_contact: form.emergency_contact,
-      emergency_phone: form.emergency_phone, notes: form.notes,
-      meal_preference: form.meal_preference || "",
-    }).eq("id", id);
-    setSaving(false);
-    // 樂觀更新：直接用 form 狀態，不需要重新 fetch DB
-    const updated = { ...customer!, ...form } as Customer;
-    setCustomer(updated);
-    setForm(updated);
-  };
+  // ── 自動儲存：欄位異動後 1 秒防抖，只送有變動的欄位（避免每次都重傳整張證件圖） ──
+  const AUTOSAVE_FIELDS: (keyof Customer)[] = [
+    "name", "name_en", "phone", "email",
+    "id_number", "id_card_image", "passport", "passport_expiry", "passport_image",
+    "taibao_number", "taibao_expiry", "taibao_image",
+    "birthday", "gender", "address", "emergency_contact", "emergency_phone",
+    "notes", "meal_preference",
+  ];
+  const NULLABLE_DATES = new Set(["birthday", "passport_expiry", "taibao_expiry"]);
+  useEffect(() => {
+    if (!customer) return;
+    const t = setTimeout(async () => {
+      const changed: Record<string, unknown> = {};
+      for (const key of AUTOSAVE_FIELDS) {
+        const cur = form[key] ?? "";
+        const prev = lastSaved.current[key] ?? "";
+        if (cur !== prev) changed[key] = NULLABLE_DATES.has(key) ? (cur || null) : cur;
+      }
+      if (Object.keys(changed).length === 0) return;
+      if (!form.name?.trim()) return; // 姓名必填，空姓名不寫入
+      setSaving(true);
+      const { error } = await supabase.from("customers").update(changed).eq("id", id);
+      setSaving(false);
+      if (error) { setAutoSaveError("自動儲存失敗：" + error.message); return; }
+      lastSaved.current = { ...lastSaved.current, ...form };
+      setAutoSaveError("");
+      setAutoSavedAt(new Date());
+      if (changed.name !== undefined) setCustomer(prevC => prevC ? { ...prevC, name: form.name! } : prevC);
+    }, 1000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form, customer, id]);
 
   const toggleMealPref = (option: string) => {
     const current = (form.meal_preference || "").split(",").map(s => s.trim()).filter(Boolean);
@@ -182,7 +198,7 @@ export default function CustomerDetailPage() {
       if (!rotation) { setStatus({ type: "success", msg: "AI 判斷照片方向已是正的，無需旋轉" }); return; }
       const rotated = await rotateBase64(base64, rotation);
       setDocImage(docType, rotated);
-      setStatus({ type: "success", msg: `已自動旋轉 ${rotation}°，請點「儲存全部」保存` });
+      setStatus({ type: "success", msg: `已自動旋轉 ${rotation}°，將自動儲存` });
     } catch {
       setStatus({ type: "error", msg: "智能轉正失敗，可改用圖片上的手動旋轉按鈕" });
     }
@@ -195,7 +211,7 @@ export default function CustomerDetailPage() {
     const setStatus = docType === "passport" ? setPassportStatus : docType === "taibao" ? setTaibaoStatus : setIdCardStatus;
     const rotated = await rotateBase64(base64, 90);
     setDocImage(docType, rotated);
-    setStatus({ type: "success", msg: "已順時針旋轉 90°，請點「儲存全部」保存" });
+    setStatus({ type: "success", msg: "已順時針旋轉 90°，將自動儲存" });
   };
 
   // 比較效期：new 是否比 existing 更新（existing 為空時視為「新的一定更新」）
@@ -459,12 +475,24 @@ export default function CustomerDetailPage() {
               </div>
             </div>
           </div>
-          <div className="flex justify-end">
-            <button onClick={save} disabled={saving}
-              className="flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-sm rounded-lg disabled:opacity-50 transition-colors">
-              <Save className="w-4 h-4" />
-              {saving ? "儲存中…" : "儲存全部"}
-            </button>
+          <div className="flex justify-end items-center min-h-[28px] text-xs">
+            {autoSaveError ? (
+              <span className="flex items-center gap-1.5 text-red-500">
+                <AlertCircle className="w-3.5 h-3.5" /> {autoSaveError}
+              </span>
+            ) : saving ? (
+              <span className="flex items-center gap-1.5 text-slate-400">
+                <Loader2 className="w-3.5 h-3.5 animate-spin" /> 自動儲存中…
+              </span>
+            ) : autoSavedAt ? (
+              <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                <CheckCircle className="w-3.5 h-3.5" /> 已自動儲存 {autoSavedAt.toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 text-slate-300 dark:text-slate-600">
+                <Save className="w-3.5 h-3.5" /> 修改後會自動儲存
+              </span>
+            )}
           </div>
         </div>
 
@@ -520,7 +548,7 @@ export default function CustomerDetailPage() {
       {highlightedFields.size > 0 && (
         <div className="flex items-center gap-2 px-4 py-3 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800/50 rounded-xl text-emerald-700 dark:text-emerald-300 text-sm">
           <CheckCircle className="w-4 h-4 shrink-0" />
-          AI 已自動填入綠色高亮欄位，請確認後點「儲存全部」
+          AI 已自動填入綠色高亮欄位並自動儲存，請確認內容
         </div>
       )}
 
