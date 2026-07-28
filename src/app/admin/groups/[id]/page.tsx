@@ -1677,11 +1677,21 @@ export default function GroupDetailPage() {
                       <div className="w-5 flex-shrink-0 text-center text-[10px] text-slate-300 dark:text-slate-600 font-mono">{idx+1}</div>
                       {/* main content */}
                       <div className="flex-1 flex items-center gap-0 min-w-0 px-2 py-3">
-                        {/* name */}
-                        <div style={{width: colWidths.name}} className="flex-shrink-0">
-                          <Link href={`/admin/crm/${p.customer_id}`} className="font-medium text-blue-600 dark:text-blue-400 hover:underline text-sm">
+                        {/* name（不跳轉，留在本分頁；需看 CRM 可點右側小圖示開新分頁）*/}
+                        <div style={{width: colWidths.name}} className="flex-shrink-0 group/name flex items-center gap-1 min-w-0">
+                          <span className="font-medium text-slate-800 dark:text-slate-100 text-sm truncate">
                             {p.customer.name}
-                          </Link>
+                          </span>
+                          <a
+                            href={`/admin/crm/${p.customer_id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="在新分頁開啟旅客 CRM 資料"
+                            onClick={e => e.stopPropagation()}
+                            className="opacity-0 group-hover/name:opacity-100 text-slate-300 hover:text-blue-600 transition-opacity shrink-0"
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
                         </div>
                         {/* participant type badge */}
                         {(() => {
