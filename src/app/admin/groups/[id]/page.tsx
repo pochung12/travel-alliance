@@ -1077,7 +1077,15 @@ export default function GroupDetailPage() {
               .map(pid => participants.find(p => p.id === pid))
               .filter((p): p is (CustomerTour & { customer: Customer }) => !!p);
             const extra = participants.filter(p => !rowOrder.includes(p.id));
-            return [...mapped, ...extra];
+            // 去重：同一列 id 或同一位旅客只保留一筆，避免殘留狀態造成「幽靈重複列」
+            // （重複列會插在排序結果中間，看起來像排序失效）
+            const seenRow = new Set<string>();
+            const seenCust = new Set<string>();
+            return [...mapped, ...extra].filter(p => {
+              if (seenRow.has(p.id) || seenCust.has(p.customer_id)) return false;
+              seenRow.add(p.id); seenCust.add(p.customer_id);
+              return true;
+            });
           })();
           if (!partSearch.trim()) return base;
           const q = partSearch.trim().toLowerCase();
@@ -1414,14 +1422,17 @@ export default function GroupDetailPage() {
                             style={{ width: `${Math.round(depositPaid.length / participants.length * 100)}%` }} />
                         </div>
                       )}
-                      {depositUnpaid > 0 && (
-                        <div className="mt-1.5 text-[10px] text-slate-400 leading-relaxed">
-                          {participants.filter(p => {
-                            const linked = getLinkedAmt(p.customer_id, "deposit");
-                            return (linked > 0 ? linked : (p.deposit_amount || 0)) === 0;
-                          }).map(p => p.customer.name).join("、")}
-                        </div>
-                      )}
+                      {depositUnpaid > 0 && (() => {
+                        const names = participants.filter(p => {
+                          const linked = getLinkedAmt(p.customer_id, "deposit");
+                          return (linked > 0 ? linked : (p.deposit_amount || 0)) === 0;
+                        }).map(p => p.customer.name);
+                        return (
+                          <div className="mt-1.5 text-[10px] text-slate-400 truncate" title={names.join("、")}>
+                            {names.slice(0, 3).join("、")}{names.length > 3 ? ` 等 ${names.length} 人` : ""}
+                          </div>
+                        );
+                      })()}
                     </div>
                     {/* 尾款 */}
                     <div className="rounded-lg border border-slate-100 dark:border-slate-700 px-3 py-2.5">
@@ -1446,14 +1457,17 @@ export default function GroupDetailPage() {
                             style={{ width: `${Math.round(balancePaid.length / participants.length * 100)}%` }} />
                         </div>
                       )}
-                      {balanceUnpaid > 0 && (
-                        <div className="mt-1.5 text-[10px] text-slate-400 leading-relaxed">
-                          {participants.filter(p => {
-                            const linked = getLinkedAmt(p.customer_id, "balance");
-                            return (linked > 0 ? linked : (p.balance_amount || 0)) === 0;
-                          }).map(p => p.customer.name).join("、")}
-                        </div>
-                      )}
+                      {balanceUnpaid > 0 && (() => {
+                        const names = participants.filter(p => {
+                          const linked = getLinkedAmt(p.customer_id, "balance");
+                          return (linked > 0 ? linked : (p.balance_amount || 0)) === 0;
+                        }).map(p => p.customer.name);
+                        return (
+                          <div className="mt-1.5 text-[10px] text-slate-400 truncate" title={names.join("、")}>
+                            {names.slice(0, 3).join("、")}{names.length > 3 ? ` 等 ${names.length} 人` : ""}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -1855,9 +1869,9 @@ export default function GroupDetailPage() {
                                   // 未收警示（紅色，點擊可填入）
                                   <button
                                     onClick={() => { setEditingAmtId(p.id); setEditingAmtField(field); setAmtInput(String(hintAmt)); }}
-                                    title={`尚未收款，點擊填入金額`}
+                                    title={`尚未收${label} ${hintAmt.toLocaleString()} 元，點擊填入金額`}
                                     className="text-xs px-2 py-1 rounded-lg border border-red-200 dark:border-red-700 text-red-600 dark:text-red-400 font-semibold bg-red-50 dark:bg-red-900/20 tabular-nums whitespace-nowrap">
-                                    未收{label} {hintAmt.toLocaleString()}元
+                                    未收 {hintAmt.toLocaleString()}
                                   </button>
                                 ) : (
                                   <button
