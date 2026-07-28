@@ -10,6 +10,7 @@ import TourPageTab from "@/components/TourPageTab";
 import TourNameGenerator from "@/components/TourNameGenerator";
 import TradeQuoteDoc from "@/components/TradeQuoteDoc";
 import ScanEnrollTools from "@/components/ScanEnrollTools";
+import MergeParticipants from "@/components/MergeParticipants";
 import { useSidebarCollapsed } from "@/components/AdminShell";
 import { ArrowLeft, Save, Trash2, UserPlus, X, Search, BedDouble, Pencil, UtensilsCrossed, SlidersHorizontal, GripVertical, Users, Printer, Plus, Link2, Copy, ExternalLink, CheckCheck, Loader2, ChevronDown, Eye, EyeOff } from "lucide-react";
 
@@ -1243,6 +1244,12 @@ export default function GroupDetailPage() {
                 <ScanEnrollTools
                   tourId={id}
                   enrolledIds={participants.map(p => p.customer_id)}
+                  onDone={loadParticipants}
+                />
+                {/* 合併本團重複旅客（同一人的護照/台胞證被建成兩筆）*/}
+                <MergeParticipants
+                  tourId={id}
+                  participants={participants}
                   onDone={loadParticipants}
                 />
               </div>
