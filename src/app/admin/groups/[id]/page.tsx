@@ -11,6 +11,7 @@ import TourNameGenerator from "@/components/TourNameGenerator";
 import TradeQuoteDoc from "@/components/TradeQuoteDoc";
 import ScanEnrollTools from "@/components/ScanEnrollTools";
 import MergeParticipants from "@/components/MergeParticipants";
+import ParticipantDetailModal from "@/components/ParticipantDetailModal";
 import { useSidebarCollapsed } from "@/components/AdminShell";
 import { ArrowLeft, Save, Trash2, UserPlus, X, Search, BedDouble, Pencil, UtensilsCrossed, SlidersHorizontal, GripVertical, Users, Printer, Plus, Link2, Copy, ExternalLink, CheckCheck, Loader2, ChevronDown, Eye, EyeOff } from "lucide-react";
 
@@ -133,6 +134,7 @@ export default function GroupDetailPage() {
   const [editingNoteId, setEditingNoteId] = useState<string|null>(null);
   const [noteInput,     setNoteInput]     = useState("");
   const [imgPreview,    setImgPreview]    = useState<{src:string; title:string}|null>(null);
+  const [detailPart,    setDetailPart]    = useState<(CustomerTour & { customer: Customer })|null>(null);
   const [mealPickerId,  setMealPickerId]  = useState<string|null>(null);
   // CRM 標籤（用於加入旅客 Modal）
   const [custLabels,       setCustLabels]       = useState<Record<string, { id: string; name: string; color: string }[]>>({});
@@ -1677,21 +1679,15 @@ export default function GroupDetailPage() {
                       <div className="w-5 flex-shrink-0 text-center text-[10px] text-slate-300 dark:text-slate-600 font-mono">{idx+1}</div>
                       {/* main content */}
                       <div className="flex-1 flex items-center gap-0 min-w-0 px-2 py-3">
-                        {/* name（不跳轉，留在本分頁；需看 CRM 可點右側小圖示開新分頁）*/}
-                        <div style={{width: colWidths.name}} className="flex-shrink-0 group/name flex items-center gap-1 min-w-0">
-                          <span className="font-medium text-slate-800 dark:text-slate-100 text-sm truncate">
-                            {p.customer.name}
-                          </span>
-                          <a
-                            href={`/admin/crm/${p.customer_id}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            title="在新分頁開啟旅客 CRM 資料"
-                            onClick={e => e.stopPropagation()}
-                            className="opacity-0 group-hover/name:opacity-100 text-slate-300 hover:text-blue-600 transition-opacity shrink-0"
+                        {/* name（點擊開啟詳細資料彈窗，不離開本分頁）*/}
+                        <div style={{width: colWidths.name}} className="flex-shrink-0 min-w-0">
+                          <button
+                            onClick={() => setDetailPart(p)}
+                            title="查看旅客詳細資料"
+                            className="font-medium text-blue-600 dark:text-blue-400 hover:underline text-sm truncate max-w-full text-left"
                           >
-                            <ExternalLink className="w-3 h-3" />
-                          </a>
+                            {p.customer.name}
+                          </button>
                         </div>
                         {/* participant type badge */}
                         {(() => {
@@ -2714,6 +2710,14 @@ export default function GroupDetailPage() {
       })()}
 
       {/* ── 證件圖片放大檢視 ── */}
+      {/* ── 旅客詳細資料彈窗 ── */}
+      <ParticipantDetailModal
+        part={detailPart}
+        onClose={() => setDetailPart(null)}
+        onSaved={loadParticipants}
+        onViewImage={(src, title) => setImgPreview({ src, title })}
+      />
+
       {imgPreview && (
         <div className="fixed inset-0 bg-black/75 z-[70] flex items-center justify-center p-4 sm:p-8"
           onClick={() => setImgPreview(null)}>
