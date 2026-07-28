@@ -9,6 +9,7 @@ import FlightsTab from "@/components/FlightsTab";
 import TourPageTab from "@/components/TourPageTab";
 import TourNameGenerator from "@/components/TourNameGenerator";
 import TradeQuoteDoc from "@/components/TradeQuoteDoc";
+import ScanEnrollTools from "@/components/ScanEnrollTools";
 import { useSidebarCollapsed } from "@/components/AdminShell";
 import { ArrowLeft, Save, Trash2, UserPlus, X, Search, BedDouble, Pencil, UtensilsCrossed, SlidersHorizontal, GripVertical, Users, Printer, Plus, Link2, Copy, ExternalLink, CheckCheck, Loader2, ChevronDown, Eye, EyeOff } from "lucide-react";
 
@@ -1238,6 +1239,12 @@ export default function GroupDetailPage() {
                   <UserPlus className="w-3.5 h-3.5" />
                   <span>加入旅客</span>
                 </button>
+                {/* 掃描證件建檔／批量掃描建檔（建檔後自動加入本團）*/}
+                <ScanEnrollTools
+                  tourId={id}
+                  enrolledIds={participants.map(p => p.customer_id)}
+                  onDone={loadParticipants}
+                />
               </div>
             </div>
 
