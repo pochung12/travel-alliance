@@ -13,7 +13,7 @@ import ScanEnrollTools from "@/components/ScanEnrollTools";
 import MergeParticipants from "@/components/MergeParticipants";
 import ParticipantDetailModal from "@/components/ParticipantDetailModal";
 import { useSidebarCollapsed } from "@/components/AdminShell";
-import { ArrowLeft, Save, Trash2, UserPlus, X, Search, BedDouble, Pencil, UtensilsCrossed, SlidersHorizontal, GripVertical, Users, Printer, Plus, Link2, Copy, ExternalLink, CheckCheck, Loader2, ChevronDown, Eye, EyeOff } from "lucide-react";
+import { ArrowLeft, Save, Trash2, UserPlus, X, Search, BedDouble, Pencil, UtensilsCrossed, SlidersHorizontal, GripVertical, Users, Printer, Plus, Link2, Copy, ExternalLink, CheckCheck, Loader2, ChevronDown, Eye, EyeOff, Plane } from "lucide-react";
 
 // ─── Meal options ──────────────────────────────────────────────────────────────
 const MEAL_OPTIONS = [
@@ -164,6 +164,7 @@ export default function GroupDetailPage() {
   const [dragColIdx,    setDragColIdx]    = useState<number | null>(null);
   // 旅客排序
   const [rowOrder,      setRowOrder]      = useState<string[]>([]);
+  const [sortMode,      setSortMode]      = useState<"none"|"room-asc"|"room-desc"|"ticket-yes"|"ticket-no">("none");
   const [dragPartIdx,   setDragPartIdx]   = useState<number | null>(null);
   // 列印名單
   const [showPrintMenu,   setShowPrintMenu]   = useState(false);
@@ -1168,25 +1169,60 @@ export default function GroupDetailPage() {
                     </>
                   )}
                 </div>
-                {/* 按房號排序 */}
+                {/* 按房號排序（未排房者排最後；再按一次反向）*/}
                 {roomNums.length > 0 && (
                   <button
                     onClick={() => {
-                      const sorted = [...orderedParts].sort((a, b) => {
-                        const ra = a.room_number || "";
-                        const rb = b.room_number || "";
-                        if (!ra && !rb) return 0;
-                        if (!ra) return 1;
+                      const desc = sortMode === "room-asc";
+                      // 以「全部旅客」排序（不受搜尋過濾影響），確保順序完整儲存
+                      const sorted = [...participants].sort((a, b) => {
+                        const ra = (a.room_number || "").trim();
+                        const rb = (b.room_number || "").trim();
+                        if (!ra && !rb) return a.customer.name.localeCompare(b.customer.name, "zh-Hant");
+                        if (!ra) return 1;   // 未排房 → 最後
                         if (!rb) return -1;
-                        return ra.localeCompare(rb, undefined, { numeric: true });
+                        const cmp = ra.localeCompare(rb, "zh-Hant", { numeric: true, sensitivity: "base" });
+                        return desc ? -cmp : cmp;
                       });
                       savePartOrder(sorted.map(p => p.id));
+                      setSortMode(desc ? "room-desc" : "room-asc");
                     }}
-                    className="flex items-center gap-1.5 text-xs px-2.5 py-1.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors">
+                    title="依房號排序，再按一次反向"
+                    className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg transition-colors ${
+                      sortMode.startsWith("room")
+                        ? "bg-blue-600 text-white hover:bg-blue-700"
+                        : "bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600"
+                    }`}>
                     <BedDouble className="w-3.5 h-3.5" />
-                    <span>排房號</span>
+                    <span>排房號{sortMode === "room-asc" ? " ↑" : sortMode === "room-desc" ? " ↓" : ""}</span>
                   </button>
                 )}
+                {/* 按有無開票排序（再按一次反向）*/}
+                <button
+                  onClick={() => {
+                    const bookedFirst = sortMode !== "ticket-yes";
+                    const sorted = [...participants].sort((a, b) => {
+                      const ta = a.ticket_booked ? 1 : 0;
+                      const tb = b.ticket_booked ? 1 : 0;
+                      if (ta !== tb) return bookedFirst ? tb - ta : ta - tb;
+                      // 同組內再依房號、姓名排，方便對照
+                      const ra = (a.room_number || "").trim(), rb = (b.room_number || "").trim();
+                      if (ra && rb && ra !== rb) return ra.localeCompare(rb, "zh-Hant", { numeric: true });
+                      if (!!ra !== !!rb) return ra ? -1 : 1;
+                      return a.customer.name.localeCompare(b.customer.name, "zh-Hant");
+                    });
+                    savePartOrder(sorted.map(p => p.id));
+                    setSortMode(bookedFirst ? "ticket-yes" : "ticket-no");
+                  }}
+                  title="依有無開票排序，再按一次反向（已訂票優先 ⇄ 未訂票優先）"
+                  className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg transition-colors ${
+                    sortMode.startsWith("ticket")
+                      ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                      : "bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-600"
+                  }`}>
+                  <Plane className="w-3.5 h-3.5" />
+                  <span>排有/無開票{sortMode === "ticket-yes" ? " ✅先" : sortMode === "ticket-no" ? " ⬜先" : ""}</span>
+                </button>
                 {/* 列印名單 */}
                 <div className="relative">
                   <button
