@@ -1,5 +1,6 @@
 "use client";
 import { TourFlight } from "@/lib/supabase";
+import { airportInfo, terminalLabel } from "@/lib/airports";
 import { PlaneTakeoff, PlaneLanding, Users, ArrowRight } from "lucide-react";
 
 interface Props {
@@ -41,6 +42,56 @@ function legOf(f: TourFlight, start?: string, end?: string): "out" | "back" {
   return Math.abs(ft - st) <= Math.abs(ft - et) ? "out" : "back";
 }
 
+// 機場端點：時間 / 城市+代碼 / 機場全名 / 航廈
+function Endpoint({
+  time, code, terminal, align, accent, overnight,
+}: {
+  time?: string | null; code?: string | null; terminal?: string | null;
+  align: "left" | "right"; accent: string; overnight?: boolean;
+}) {
+  const info = airportInfo(code);
+  const term = terminalLabel(terminal);
+  const right = align === "right";
+  return (
+    <div className={`min-w-0 flex-1 ${right ? "text-right" : "text-left"}`}>
+      <div className="text-2xl font-black leading-none tabular-nums text-slate-800 dark:text-slate-100">
+        {time || "--:--"}
+        {overnight && <sup className="text-[10px] font-bold text-orange-500 ml-0.5">+1</sup>}
+      </div>
+      {/* 城市 + 機場代碼 */}
+      <div className={`flex items-baseline gap-1.5 mt-1.5 flex-wrap ${right ? "justify-end" : ""}`}>
+        {info?.city && (
+          <span className="text-base font-bold text-slate-800 dark:text-slate-100 leading-tight">
+            {info.city}
+          </span>
+        )}
+        <span
+          className="text-[11px] font-bold font-mono px-1.5 py-0.5 rounded"
+          style={{ color: accent, background: `${accent}18` }}
+        >
+          {(code || "—").toUpperCase()}
+        </span>
+      </div>
+      {/* 機場全名 */}
+      {info?.name && (
+        <div className="text-[11px] text-slate-500 dark:text-slate-400 leading-snug mt-0.5">
+          {info.name}
+        </div>
+      )}
+      {/* 航廈 */}
+      <div className={`mt-1 flex ${right ? "justify-end" : ""}`}>
+        {term ? (
+          <span className="text-[11px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">
+            {term}
+          </span>
+        ) : (
+          <span className="text-[11px] text-slate-300 dark:text-slate-600">航廈未定</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // 單一航段（大字顯示）
 function FlightLeg({ f, accent }: { f: TourFlight; accent: string }) {
   const overnight = isOvernight(f.departure_time, f.arrival_time);
@@ -59,31 +110,20 @@ function FlightLeg({ f, accent }: { f: TourFlight; accent: string }) {
         )}
       </div>
       {/* 航段：出發 ──✈── 抵達 */}
-      <div className="flex items-center gap-2">
-        <div className="text-left shrink-0">
-          <div className="text-2xl font-black leading-none tabular-nums text-slate-800 dark:text-slate-100">
-            {f.departure_time || "--:--"}
-          </div>
-          <div className="text-xs font-bold text-slate-600 dark:text-slate-300 mt-1">
-            {f.departure_airport || "—"}
-            {f.departure_terminal && <span className="ml-1 text-[10px] font-normal text-slate-400">{f.departure_terminal}</span>}
-          </div>
-        </div>
-        <div className="flex-1 flex items-center gap-1 px-1 min-w-0">
+      <div className="flex items-start gap-2">
+        <Endpoint
+          time={f.departure_time} code={f.departure_airport} terminal={f.departure_terminal}
+          align="left" accent={accent}
+        />
+        <div className="flex items-center gap-1 px-1 shrink-0 w-12 sm:w-16 pt-2.5">
           <span className="h-px flex-1" style={{ background: `${accent}55` }} />
           <PlaneTakeoff className="w-3.5 h-3.5 shrink-0" style={{ color: accent }} />
           <span className="h-px flex-1" style={{ background: `${accent}55` }} />
         </div>
-        <div className="text-right shrink-0">
-          <div className="text-2xl font-black leading-none tabular-nums text-slate-800 dark:text-slate-100">
-            {f.arrival_time || "--:--"}
-            {overnight && <sup className="text-[10px] font-bold text-orange-500 ml-0.5">+1</sup>}
-          </div>
-          <div className="text-xs font-bold text-slate-600 dark:text-slate-300 mt-1">
-            {f.arrival_airport || "—"}
-            {f.arrival_terminal && <span className="ml-1 text-[10px] font-normal text-slate-400">{f.arrival_terminal}</span>}
-          </div>
-        </div>
+        <Endpoint
+          time={f.arrival_time} code={f.arrival_airport} terminal={f.arrival_terminal}
+          align="right" accent={accent} overnight={overnight}
+        />
       </div>
     </div>
   );
