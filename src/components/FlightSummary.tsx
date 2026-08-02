@@ -149,8 +149,16 @@ export default function FlightSummary({ flights, startDate, endDate, onUpdated }
     (!(f.departure_terminal || "").trim() || !(f.arrival_terminal || "").trim())
   );
 
+  // 有航班資訊的所有航班（重查時的目標）
+  const lookupable = flights.filter(f => f.departure_airport || f.arrival_airport);
+
   const lookupTerminals = async () => {
-    if (missing.length === 0 || looking) return;
+    if (looking || lookupable.length === 0) return;
+    // 已經全部填好 → 視為「重新查詢並覆蓋」，先確認
+    const overwrite = missing.length === 0;
+    if (overwrite && !window.confirm("航廈都已填好，要重新上網查詢並覆蓋現有資料嗎？")) return;
+    const targets = overwrite ? lookupable : missing;
+
     setLooking(true);
     setLookMsg("上網搜尋中…");
     try {
@@ -158,7 +166,7 @@ export default function FlightSummary({ flights, startDate, endDate, onUpdated }
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          flights: missing.map(f => ({
+          flights: targets.map(f => ({
             id: f.id,
             flight_number: f.flight_number,
             flight_date: f.flight_date,
@@ -178,15 +186,22 @@ export default function FlightSummary({ flights, startDate, endDate, onUpdated }
         const f = flights.find(x => x.id === r.id);
         if (!f) { empty++; continue; }
         const patch: Record<string, string> = {};
-        if (!(f.departure_terminal || "").trim() && r.departure_terminal) patch.departure_terminal = r.departure_terminal;
-        if (!(f.arrival_terminal || "").trim() && r.arrival_terminal) patch.arrival_terminal = r.arrival_terminal;
+        const depEmpty = !(f.departure_terminal || "").trim();
+        const arrEmpty = !(f.arrival_terminal || "").trim();
+        if ((depEmpty || overwrite) && r.departure_terminal && r.departure_terminal !== f.departure_terminal) {
+          patch.departure_terminal = r.departure_terminal;
+        }
+        if ((arrEmpty || overwrite) && r.arrival_terminal && r.arrival_terminal !== f.arrival_terminal) {
+          patch.arrival_terminal = r.arrival_terminal;
+        }
         if (Object.keys(patch).length === 0) { empty++; continue; }
         const { error } = await supabase.from("tour_flights").update(patch).eq("id", r.id);
         if (error) { failed++; console.error("[terminal] update failed", r.id, error); } else n++;
       }
       setLookMsg(
-        n > 0 ? `已填入 ${n} 筆航廈，請對照電子機票核對`
+        n > 0 ? `已更新 ${n} 筆航廈，請對照電子機票核對`
         : failed > 0 ? `寫入失敗 ${failed} 筆（見 Console）`
+        : overwrite ? "查詢結果與現有資料相同"
         : `查不到明確航廈資料（${empty} 筆）`
       );
       if (n > 0) onUpdated?.();
@@ -234,14 +249,19 @@ export default function FlightSummary({ flights, startDate, endDate, onUpdated }
         </span>
         <div className="ml-auto flex items-center gap-2">
           {lookMsg && <span className="text-[11px] text-slate-500 dark:text-slate-400">{lookMsg}</span>}
-          {missing.length > 0 && (
+          {lookupable.length > 0 && (
             <button
               onClick={lookupTerminals}
               disabled={looking}
-              className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:opacity-60 text-white shadow-sm transition"
+              title={missing.length > 0 ? "上網查詢缺少的航廈" : "重新上網查詢並覆蓋現有航廈"}
+              className={`flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg shadow-sm transition disabled:opacity-60 text-white ${
+                missing.length > 0
+                  ? "bg-amber-500 hover:bg-amber-600"
+                  : "bg-slate-400 hover:bg-slate-500 dark:bg-slate-600 dark:hover:bg-slate-500"
+              }`}
             >
               {looking ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
-              自動查航廈（{missing.length}）
+              自動查航廈{missing.length > 0 ? `（${missing.length}）` : ""}
             </button>
           )}
         </div>
