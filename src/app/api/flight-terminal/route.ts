@@ -148,7 +148,8 @@ export async function POST(req: NextRequest) {
     }
 
     const clean = (v: unknown) => String(v ?? "").trim().slice(0, 20);
-    const byId = new Map((parsed.results || []).map(r => [clean(r.id), r]));
+    // 注意：id 不可經過 clean()（會被截斷，UUID 對不上）
+    const byId = new Map((parsed.results || []).map(r => [String(r.id ?? "").trim(), r]));
     // 官方對照表為準，AI 只補官方查不到的部分
     const results = list.map((f, i) => {
       const r = byId.get(f.id) || {};

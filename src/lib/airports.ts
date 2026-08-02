@@ -226,11 +226,24 @@ export function airlineCode(flightNumber?: string | null): string {
   return m ? m[1] : "";
 }
 
+// ── 其他機場：航空公司 → 航廈（"*" 為該機場預設）─────────────────────────────
+// intl 為「國際/港澳台航班」專用航廈（該機場有分國內外時）
+const AIRPORT_TERMINAL: Record<string, { intl?: string; byAirline?: Record<string, string>; "*"?: string }> = {
+  // 鄭州新鄭：客運全在 T2（西北指廊為國際及港澳台）
+  CGO: { "*": "2" },
+  // 貴陽龍洞堡：T3 為南航、川航、國航、廈航等國內線；其餘國內線在 T2；國際線在 T2
+  KWE: {
+    intl: "2",
+    byAirline: { CZ: "3", "3U": "3", CA: "3", KY: "3", MF: "3", OQ: "3", SC: "3", TV: "3", ZH: "3" },
+    "*": "2",
+  },
+};
+
 /**
- * 依官方資料推定航廈（目前支援桃園 TPE）
+ * 依官方資料推定航廈
  * @param airport      要查航廈的機場代碼
  * @param flightNumber 航班號
- * @param otherAirport 航線另一端機場代碼（華航分航廈時需要）
+ * @param otherAirport 航線另一端機場代碼（判斷國內/國際線與華航分航廈時需要）
  */
 export function knownTerminal(
   airport?: string | null,
@@ -238,15 +251,25 @@ export function knownTerminal(
   otherAirport?: string | null,
 ): string {
   const ap = (airport || "").trim().toUpperCase();
-  if (ap !== "TPE") return "";
   const al = airlineCode(flightNumber);
-  if (!al) return "";
-  if (al === "CI") {
-    const other = airportInfo(otherAirport);
-    if (!other?.country) return "";
-    return CI_T2_COUNTRIES.has(other.country) ? "2" : "1";
+  if (!ap || !al) return "";
+
+  if (ap === "TPE") {
+    if (al === "CI") {
+      const other = airportInfo(otherAirport);
+      if (!other?.country) return "";
+      return CI_T2_COUNTRIES.has(other.country) ? "2" : "1";
+    }
+    return TPE_TERMINAL[al] || "";
   }
-  return TPE_TERMINAL[al] || "";
+
+  const rule = AIRPORT_TERMINAL[ap];
+  if (!rule) return "";
+  // 兩端國別不同 → 視為國際/港澳台航班
+  const here = airportInfo(ap), there = airportInfo(otherAirport);
+  const isIntl = !!here?.country && !!there?.country && here.country !== there.country;
+  if (isIntl && rule.intl) return rule.intl;
+  return rule.byAirline?.[al] || rule["*"] || "";
 }
 
 /** 查機場資訊（代碼不分大小寫；查無則回傳 null）*/

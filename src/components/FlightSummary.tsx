@@ -173,18 +173,22 @@ export default function FlightSummary({ flights, startDate, endDate, onUpdated }
       };
       if (!res.ok) { setLookMsg(j.error || "查詢失敗"); return; }
 
-      let n = 0;
+      let n = 0, failed = 0, empty = 0;
       for (const r of j.results || []) {
         const f = flights.find(x => x.id === r.id);
-        if (!f) continue;
+        if (!f) { empty++; continue; }
         const patch: Record<string, string> = {};
         if (!(f.departure_terminal || "").trim() && r.departure_terminal) patch.departure_terminal = r.departure_terminal;
         if (!(f.arrival_terminal || "").trim() && r.arrival_terminal) patch.arrival_terminal = r.arrival_terminal;
-        if (Object.keys(patch).length === 0) continue;
+        if (Object.keys(patch).length === 0) { empty++; continue; }
         const { error } = await supabase.from("tour_flights").update(patch).eq("id", r.id);
-        if (!error) n++;
+        if (error) { failed++; console.error("[terminal] update failed", r.id, error); } else n++;
       }
-      setLookMsg(n > 0 ? `已填入 ${n} 筆航廈，請對照電子機票核對` : "查不到明確航廈資料");
+      setLookMsg(
+        n > 0 ? `已填入 ${n} 筆航廈，請對照電子機票核對`
+        : failed > 0 ? `寫入失敗 ${failed} 筆（見 Console）`
+        : `查不到明確航廈資料（${empty} 筆）`
+      );
       if (n > 0) onUpdated?.();
     } catch {
       setLookMsg("查詢失敗，請重試");
