@@ -203,6 +203,52 @@ export const AIRPORTS: Record<string, AirportInfo> = {
   CPT: { city: "開普敦", name: "開普敦國際機場", country: "南非" },
 };
 
+// ── 桃園機場（TPE）航空公司 → 航廈 ────────────────────────────────────────────
+// 來源：桃園國際機場官網「航空公司查詢」https://www.taoyuan-airport.com/airlines
+export const TPE_TERMINAL: Record<string, string> = {
+  HO: "1", CZ: "2", CA: "2", MU: "2", D7: "1", NH: "2", AC: "2", GA: "1", RF: "1",
+  IT: "1", "3U": "1", CX: "1", TK: "2", HB: "1", KE: "1", "9G": "1", "5J": "1",
+  SC: "2", ID: "1", MF: "2", TW: "1", GK: "1", SQ: "2", JL: "2", NU: "2", ZE: "1",
+  JX: "1", "7G": "1", "9C": "1", QD: "1", MM: "1", "4V": "1", BI: "1", NS: "2",
+  FD: "1", TG: "1", SL: "1", VZ: "1", HU: "2", ZH: "2", NX: "1", "7C": "1",
+  LJ: "1", B7: "2", NZ: "2", DL: "2", UA: "2", KL: "2", AE: "1", Z2: "1", RW: "1",
+  PR: "1", S7: "1", BL: "1", VN: "2", VJ: "1", QH: "1", TR: "1", BX: "2", BR: "2",
+  EY: "2", EK: "2", OZ: "2", UO: "1", HX: "2", AK: "1", MH: "1", OD: "1",
+};
+
+// 華航 CI 依航線分航廈：美(含關島)、加、澳、日與兩岸航線在 T2，其餘 T1
+const CI_T2_COUNTRIES = new Set(["美國", "加拿大", "澳洲", "關島", "日本", "中國"]);
+
+/** 由航班號取航空公司代碼（CZ3024 → CZ、3U8888 → 3U）*/
+export function airlineCode(flightNumber?: string | null): string {
+  const s = (flightNumber || "").toUpperCase().replace(/\s+/g, "");
+  const m = s.match(/^([A-Z]{2}|[A-Z]\d|\d[A-Z])/);
+  return m ? m[1] : "";
+}
+
+/**
+ * 依官方資料推定航廈（目前支援桃園 TPE）
+ * @param airport      要查航廈的機場代碼
+ * @param flightNumber 航班號
+ * @param otherAirport 航線另一端機場代碼（華航分航廈時需要）
+ */
+export function knownTerminal(
+  airport?: string | null,
+  flightNumber?: string | null,
+  otherAirport?: string | null,
+): string {
+  const ap = (airport || "").trim().toUpperCase();
+  if (ap !== "TPE") return "";
+  const al = airlineCode(flightNumber);
+  if (!al) return "";
+  if (al === "CI") {
+    const other = airportInfo(otherAirport);
+    if (!other?.country) return "";
+    return CI_T2_COUNTRIES.has(other.country) ? "2" : "1";
+  }
+  return TPE_TERMINAL[al] || "";
+}
+
 /** 查機場資訊（代碼不分大小寫；查無則回傳 null）*/
 export function airportInfo(code?: string | null): AirportInfo | null {
   if (!code) return null;

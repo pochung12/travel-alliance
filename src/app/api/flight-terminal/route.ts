@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { airportInfo, knownTerminal, airlineCode } from "@/lib/airports";
 
 export const maxDuration = 60;
 
@@ -72,24 +73,50 @@ export async function POST(req: NextRequest) {
 
     const tvKey = process.env.TAVILY_API_KEY || "";
 
-    // 上網搜尋（每筆航班一次；無 Tavily key 時退回純 AI 判斷）
-    const contexts = await Promise.all(list.map(async f => {
-      const fn = (f.flight_number || "").toUpperCase().trim();
+    // 官方對照表先判定（目前為桃園機場官網公布的航空公司→航廈）
+    const official = list.map(f => ({
+      dep: knownTerminal(f.departure_airport, f.flight_number, f.arrival_airport),
+      arr: knownTerminal(f.arrival_airport, f.flight_number, f.departure_airport),
+    }));
+
+    // 只對官方表查不到的機場上網搜尋（每個機場一次，同機場共用）
+    const needSearch = new Set<string>();
+    list.forEach((f, i) => {
+      const al = airlineCode(f.flight_number);
       const dep = (f.departure_airport || "").toUpperCase().trim();
       const arr = (f.arrival_airport || "").toUpperCase().trim();
-      if (!tvKey) return "";
-      const q = `${fn} 航班 ${dep} 機場 出發航廈 ${arr} 機場 抵達航廈 terminal`;
-      return await tavily(tvKey, q);
+      if (dep && !official[i].dep) needSearch.add(`${al}@${dep}`);
+      if (arr && !official[i].arr) needSearch.add(`${al}@${arr}`);
+    });
+
+    const searchKeys = Array.from(needSearch).slice(0, 16);
+    const searched = await Promise.all(searchKeys.map(async key => {
+      const [al, ap] = key.split("@");
+      if (!tvKey) return [key, ""] as const;
+      const info = airportInfo(ap);
+      const where = info ? `${info.city}${info.name}` : ap;
+      const q = `${where} ${ap} ${al} 航空 航站樓 航廈 terminal 國內 國際 出發 到達`;
+      return [key, await tavily(tvKey, q)] as const;
     }));
+    const ctx = new Map(searched);
 
     const userMsg = list.map((f, i) => {
       const fn = (f.flight_number || "").toUpperCase().trim() || "（未填航班號）";
-      return [
+      const al = airlineCode(f.flight_number);
+      const dep = (f.departure_airport || "").toUpperCase().trim();
+      const arr = (f.arrival_airport || "").toUpperCase().trim();
+      const nameOf = (c: string) => { const x = airportInfo(c); return x ? `${c}（${x.city}${x.name}）` : c || "未填"; };
+      const lines = [
         `【航班 ${i + 1}】id=${f.id}`,
         `航班號：${fn}　日期：${f.flight_date || "未填"}`,
-        `出發機場：${(f.departure_airport || "").toUpperCase() || "未填"}　抵達機場：${(f.arrival_airport || "").toUpperCase() || "未填"}`,
-        contexts[i] ? `搜尋結果：\n${contexts[i]}` : "搜尋結果：（無，請依你的知識判斷）",
-      ].join("\n");
+        `出發機場：${nameOf(dep)}　抵達機場：${nameOf(arr)}`,
+      ];
+      if (official[i].dep) lines.push(`※ 出發航廈已由機場官網確定為 "${official[i].dep}"，請原樣填回。`);
+      if (official[i].arr) lines.push(`※ 抵達航廈已由機場官網確定為 "${official[i].arr}"，請原樣填回。`);
+      const dc = ctx.get(`${al}@${dep}`), ac = ctx.get(`${al}@${arr}`);
+      if (!official[i].dep && dc) lines.push(`出發機場搜尋結果：\n${dc}`);
+      if (!official[i].arr && ac) lines.push(`抵達機場搜尋結果：\n${ac}`);
+      return lines.join("\n");
     }).join("\n\n");
 
     const res = await fetch(`${baseUrl}/chat/completions`, {
@@ -121,14 +148,17 @@ export async function POST(req: NextRequest) {
     }
 
     const clean = (v: unknown) => String(v ?? "").trim().slice(0, 20);
-    const results = (parsed.results || [])
-      .filter(r => list.some(f => f.id === r.id))
-      .map(r => ({
-        id: clean(r.id),
-        departure_terminal: clean(r.departure_terminal),
-        arrival_terminal: clean(r.arrival_terminal),
-        source: clean(r.source),
-      }));
+    const byId = new Map((parsed.results || []).map(r => [clean(r.id), r]));
+    // 官方對照表為準，AI 只補官方查不到的部分
+    const results = list.map((f, i) => {
+      const r = byId.get(f.id) || {};
+      return {
+        id: f.id,
+        departure_terminal: official[i].dep || clean(r.departure_terminal),
+        arrival_terminal: official[i].arr || clean(r.arrival_terminal),
+        source: official[i].dep || official[i].arr ? "機場官網對照" : clean(r.source),
+      };
+    }).filter(r => r.departure_terminal || r.arrival_terminal);
 
     return NextResponse.json({ results, searched: !!tvKey });
   } catch (e) {

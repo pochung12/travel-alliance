@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { supabase, TourFlight } from "@/lib/supabase";
-import { airportInfo, terminalLabel } from "@/lib/airports";
+import { airportInfo, terminalLabel, knownTerminal } from "@/lib/airports";
 import { PlaneTakeoff, PlaneLanding, Users, ArrowRight, Search, Loader2 } from "lucide-react";
 
 interface Props {
@@ -46,13 +46,16 @@ function legOf(f: TourFlight, start?: string, end?: string): "out" | "back" {
 
 // 機場端點：時間 / 城市+代碼 / 機場全名 / 航廈
 function Endpoint({
-  time, code, terminal, align, accent, overnight,
+  time, code, terminal, align, accent, overnight, flightNo, otherCode,
 }: {
   time?: string | null; code?: string | null; terminal?: string | null;
   align: "left" | "right"; accent: string; overnight?: boolean;
+  flightNo?: string | null; otherCode?: string | null;
 }) {
   const info = airportInfo(code);
-  const term = terminalLabel(terminal);
+  // 沒填航廈時，套用機場官網公布的航空公司→航廈對照
+  const official = (terminal || "").trim() ? "" : knownTerminal(code, flightNo, otherCode);
+  const term = terminalLabel((terminal || "").trim() || official);
   const right = align === "right";
   return (
     <div className={`min-w-0 flex-1 ${right ? "text-right" : "text-left"}`}>
@@ -83,7 +86,10 @@ function Endpoint({
       {/* 航廈 */}
       <div className={`mt-1 flex ${right ? "justify-end" : ""}`}>
         {term ? (
-          <span className="text-[11px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">
+          <span
+            className="text-[11px] font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300"
+            title={official ? "依機場官網航空公司航廈對照推定" : undefined}
+          >
             {term}
           </span>
         ) : (
@@ -116,6 +122,7 @@ function FlightLeg({ f, accent }: { f: TourFlight; accent: string }) {
         <Endpoint
           time={f.departure_time} code={f.departure_airport} terminal={f.departure_terminal}
           align="left" accent={accent}
+          flightNo={f.flight_number} otherCode={f.arrival_airport}
         />
         <div className="flex items-center gap-1 px-1 shrink-0 w-12 sm:w-16 pt-2.5">
           <span className="h-px flex-1" style={{ background: `${accent}55` }} />
@@ -125,6 +132,7 @@ function FlightLeg({ f, accent }: { f: TourFlight; accent: string }) {
         <Endpoint
           time={f.arrival_time} code={f.arrival_airport} terminal={f.arrival_terminal}
           align="right" accent={accent} overnight={overnight}
+          flightNo={f.flight_number} otherCode={f.departure_airport}
         />
       </div>
     </div>
