@@ -5,6 +5,7 @@ import {
   Plane, Upload, ClipboardPaste, Loader2, Trash2, X,
   Save, FileText, CheckCircle, Pencil, Plus, ChevronDown, ChevronUp,
 } from "lucide-react";
+import FlightSummary from "@/components/FlightSummary";
 
 type ParsedFlight = Omit<TourFlight, "id" | "tour_id" | "created_at">;
 
@@ -59,6 +60,7 @@ const FLIGHT_FIELDS: { key: keyof ParsedFlight; label: string; width: string; mo
 export default function FlightsTab({ tourId }: { tourId: string }) {
   const [flights, setFlights]       = useState<TourFlight[]>([]);
   const [loading, setLoading]       = useState(true);
+  const [tourDates, setTourDates]   = useState<{ start?: string; end?: string }>({});
 
   // Input state
   const [inputMode, setInputMode]   = useState<"text" | "image" | "pdf" | null>(null);
@@ -90,7 +92,16 @@ export default function FlightsTab({ tourId }: { tourId: string }) {
     setFlights((data || []) as TourFlight[]);
     setLoading(false);
   };
-  useEffect(() => { load(); }, [tourId]);
+  useEffect(() => {
+    load();
+    // 取團的出發/回程日，用來判斷航班屬於去程或回程
+    supabase.from("tours").select("start_date,end_date").eq("id", tourId).single()
+      .then(({ data }) => {
+        const t = data as { start_date?: string; end_date?: string } | null;
+        if (t) setTourDates({ start: t.start_date, end: t.end_date });
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tourId]);
 
   // ── parse helpers ─────────────────────────────────────────────────────────
   const callOcr = async (body: object) => {
@@ -237,6 +248,11 @@ ALTER TABLE tour_flights ADD COLUMN IF NOT EXISTS arrival_terminal TEXT NOT NULL
   // ── render ─────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-5">
+
+      {/* ── 航班總覽（去程／回程大字）── */}
+      {!loading && (
+        <FlightSummary flights={flights} startDate={tourDates.start} endDate={tourDates.end} />
+      )}
 
       {/* ── Input section ── */}
       <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm overflow-hidden">
