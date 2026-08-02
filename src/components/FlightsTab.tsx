@@ -251,7 +251,7 @@ ALTER TABLE tour_flights ADD COLUMN IF NOT EXISTS arrival_terminal TEXT NOT NULL
 
       {/* ── 航班總覽（去程／回程大字）── */}
       {!loading && (
-        <FlightSummary flights={flights} startDate={tourDates.start} endDate={tourDates.end} />
+        <FlightSummary flights={flights} startDate={tourDates.start} endDate={tourDates.end} onUpdated={load} />
       )}
 
       {/* ── Input section ── */}

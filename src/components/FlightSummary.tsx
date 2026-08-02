@@ -1,12 +1,14 @@
 "use client";
-import { TourFlight } from "@/lib/supabase";
+import { useState } from "react";
+import { supabase, TourFlight } from "@/lib/supabase";
 import { airportInfo, terminalLabel } from "@/lib/airports";
-import { PlaneTakeoff, PlaneLanding, Users, ArrowRight } from "lucide-react";
+import { PlaneTakeoff, PlaneLanding, Users, ArrowRight, Search, Loader2 } from "lucide-react";
 
 interface Props {
   flights: TourFlight[];
   startDate?: string;   // 團出發日（用來判斷去程/回程）
   endDate?: string;     // 團回程日
+  onUpdated?: () => void;  // 自動查航廈寫回 DB 後通知父層重載
 }
 
 function toTime(d?: string | null): number {
@@ -85,7 +87,7 @@ function Endpoint({
             {term}
           </span>
         ) : (
-          <span className="text-[11px] text-slate-300 dark:text-slate-600">航廈未定</span>
+          <span className="text-[11px] text-slate-400 dark:text-slate-500">航廈待查</span>
         )}
       </div>
     </div>
@@ -129,7 +131,61 @@ function FlightLeg({ f, accent }: { f: TourFlight; accent: string }) {
   );
 }
 
-export default function FlightSummary({ flights, startDate, endDate }: Props) {
+export default function FlightSummary({ flights, startDate, endDate, onUpdated }: Props) {
+  const [looking, setLooking] = useState(false);
+  const [lookMsg, setLookMsg] = useState("");
+
+  // 缺航廈的航班
+  const missing = flights.filter(f =>
+    (f.departure_airport || f.arrival_airport) &&
+    (!(f.departure_terminal || "").trim() || !(f.arrival_terminal || "").trim())
+  );
+
+  const lookupTerminals = async () => {
+    if (missing.length === 0 || looking) return;
+    setLooking(true);
+    setLookMsg("上網搜尋中…");
+    try {
+      const res = await fetch("/api/flight-terminal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          flights: missing.map(f => ({
+            id: f.id,
+            flight_number: f.flight_number,
+            flight_date: f.flight_date,
+            departure_airport: f.departure_airport,
+            arrival_airport: f.arrival_airport,
+          })),
+        }),
+      });
+      const j = await res.json() as {
+        results?: Array<{ id: string; departure_terminal: string; arrival_terminal: string }>;
+        error?: string;
+      };
+      if (!res.ok) { setLookMsg(j.error || "查詢失敗"); return; }
+
+      let n = 0;
+      for (const r of j.results || []) {
+        const f = flights.find(x => x.id === r.id);
+        if (!f) continue;
+        const patch: Record<string, string> = {};
+        if (!(f.departure_terminal || "").trim() && r.departure_terminal) patch.departure_terminal = r.departure_terminal;
+        if (!(f.arrival_terminal || "").trim() && r.arrival_terminal) patch.arrival_terminal = r.arrival_terminal;
+        if (Object.keys(patch).length === 0) continue;
+        const { error } = await supabase.from("tour_flights").update(patch).eq("id", r.id);
+        if (!error) n++;
+      }
+      setLookMsg(n > 0 ? `已填入 ${n} 筆航廈，請對照電子機票核對` : "查不到明確航廈資料");
+      if (n > 0) onUpdated?.();
+    } catch {
+      setLookMsg("查詢失敗，請重試");
+    } finally {
+      setLooking(false);
+      setTimeout(() => setLookMsg(""), 6000);
+    }
+  };
+
   if (flights.length === 0) return null;
 
   // 依旅客分組（未填姓名 → 全團共用）
@@ -158,12 +214,25 @@ export default function FlightSummary({ flights, startDate, endDate }: Props) {
 
   return (
     <div className="bg-gradient-to-br from-sky-50 to-white dark:from-slate-800 dark:to-slate-800 rounded-xl border border-sky-100 dark:border-slate-700 shadow-sm p-4 md:p-5 space-y-4">
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 flex-wrap">
         <PlaneTakeoff className="w-4.5 h-4.5 text-sky-600" />
         <h3 className="font-bold text-slate-800 dark:text-slate-100">航班總覽</h3>
         <span className="text-[11px] text-slate-400">
           {cards.length > 1 ? `${cards.length} 組不同航班` : "全團同一航班"}
         </span>
+        <div className="ml-auto flex items-center gap-2">
+          {lookMsg && <span className="text-[11px] text-slate-500 dark:text-slate-400">{lookMsg}</span>}
+          {missing.length > 0 && (
+            <button
+              onClick={lookupTerminals}
+              disabled={looking}
+              className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:opacity-60 text-white shadow-sm transition"
+            >
+              {looking ? <Loader2 className="w-3 h-3 animate-spin" /> : <Search className="w-3 h-3" />}
+              自動查航廈（{missing.length}）
+            </button>
+          )}
+        </div>
       </div>
 
       <div className={cards.length > 1 ? "grid lg:grid-cols-2 gap-4" : ""}>
