@@ -26,10 +26,15 @@ function expiryState(d?: string | null): "none" | "ok" | "soon" | "expired" {
   return days < 0 ? "expired" : days < 180 ? "soon" : "ok";
 }
 
+/** 英文姓名清理：逗號換空白、拿掉連字號（訂票網頁通常不接受標點）*/
+export function cleanNameEn(s?: string | null): string {
+  return (s || "").replace(/,/g, " ").replace(/-/g, "").replace(/\s+/g, " ").trim();
+}
+
 /** 一鍵複製小圖示（給訂票網頁貼上用）*/
-function CopyBtn({ value, title }: { value?: string | null; title: string }) {
+function CopyBtn({ value, title, clean }: { value?: string | null; title: string; clean?: (s?: string | null) => string }) {
   const [ok, setOk] = useState(false);
-  const v = (value || "").trim();
+  const v = clean ? clean(value) : (value || "").trim();
   const copy = async (e: React.MouseEvent) => {
     e.preventDefault();
     if (!v) return;
@@ -216,7 +221,7 @@ export default function ParticipantDetailModal({ part, onClose, onSaved, onViewI
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
               <div><label className={lbl}>中文姓名 *</label><input className={inp} value={form.name || ""} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
               <div>
-                <div className={lblRow}><span>英文姓名</span><CopyBtn value={form.name_en} title="英文姓名" /></div>
+                <div className={lblRow}><span>英文姓名</span><CopyBtn value={form.name_en} title="英文姓名" clean={cleanNameEn} /></div>
                 <input className={inp} value={form.name_en || ""} onChange={e => setForm(f => ({ ...f, name_en: e.target.value }))} />
               </div>
               <div>
