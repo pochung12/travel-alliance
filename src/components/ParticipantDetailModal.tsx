@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { supabase, Customer, CustomerTour } from "@/lib/supabase";
 import {
   X, Save, Loader2, ExternalLink, User, ScanLine, Plane, CreditCard,
-  UtensilsCrossed, BedDouble, Phone, CheckCircle2,
+  UtensilsCrossed, BedDouble, Phone, CheckCircle2, Copy, Check,
 } from "lucide-react";
 
 type Part = CustomerTour & { customer: Customer };
@@ -24,6 +24,46 @@ function expiryState(d?: string | null): "none" | "ok" | "soon" | "expired" {
   if (isNaN(t)) return "none";
   const days = (t - Date.now()) / 86400000;
   return days < 0 ? "expired" : days < 180 ? "soon" : "ok";
+}
+
+/** 一鍵複製小圖示（給訂票網頁貼上用）*/
+function CopyBtn({ value, title }: { value?: string | null; title: string }) {
+  const [ok, setOk] = useState(false);
+  const v = (value || "").trim();
+  const copy = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!v) return;
+    try {
+      await navigator.clipboard.writeText(v);
+    } catch {
+      // 舊瀏覽器 / 非安全環境退回 execCommand
+      const ta = document.createElement("textarea");
+      ta.value = v;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    }
+    setOk(true);
+    setTimeout(() => setOk(false), 1500);
+  };
+  return (
+    <button
+      type="button"
+      onClick={copy}
+      disabled={!v}
+      title={v ? `複製${title}：${v}` : `${title}（沒有資料）`}
+      className={`shrink-0 p-0.5 rounded transition-colors ${
+        !v ? "text-slate-200 dark:text-slate-600 cursor-not-allowed"
+        : ok ? "text-emerald-500"
+        : "text-slate-300 hover:text-blue-500 dark:text-slate-500 dark:hover:text-blue-400"
+      }`}
+    >
+      {ok ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
+    </button>
+  );
 }
 
 export default function ParticipantDetailModal({ part, onClose, onSaved, onViewImage }: Props) {
@@ -74,6 +114,7 @@ export default function ParticipantDetailModal({ part, onClose, onSaved, onViewI
 
   const inp = "w-full border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400";
   const lbl = "block text-[11px] font-medium text-slate-400 mb-0.5";
+  const lblRow = "flex items-center justify-between gap-1 text-[11px] font-medium text-slate-400 mb-0.5";
 
   const docs = [
     { key: "passport", label: "護照",   num: c.passport,      exp: c.passport_expiry, img: c.passport_image },
@@ -149,12 +190,16 @@ export default function ParticipantDetailModal({ part, onClose, onSaved, onViewI
                       )}
                       <div className="min-w-0 flex-1">
                         <div className="text-[11px] text-slate-400">{d.label}</div>
-                        <div className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">{d.num || "—"}</div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-sm font-medium text-slate-800 dark:text-slate-100 truncate">{d.num || "—"}</span>
+                          <CopyBtn value={d.num} title={`${d.label}號碼`} />
+                        </div>
                         {d.exp && (
-                          <div className={`text-[11px] mt-0.5 ${
+                          <div className={`text-[11px] mt-0.5 flex items-center gap-1 ${
                             st === "expired" ? "text-red-500 font-semibold"
                             : st === "soon" ? "text-orange-500 font-semibold" : "text-slate-400"}`}>
-                            效期 {d.exp}{st === "expired" ? "（已過期）" : st === "soon" ? "（半年內到期）" : ""}
+                            <span className="truncate">效期 {d.exp}{st === "expired" ? "（已過期）" : st === "soon" ? "（半年內到期）" : ""}</span>
+                            <CopyBtn value={d.exp} title={`${d.label}效期`} />
                           </div>
                         )}
                       </div>
@@ -170,8 +215,14 @@ export default function ParticipantDetailModal({ part, onClose, onSaved, onViewI
             <div className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1.5">基本資料（可直接修改）</div>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
               <div><label className={lbl}>中文姓名 *</label><input className={inp} value={form.name || ""} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></div>
-              <div><label className={lbl}>英文姓名</label><input className={inp} value={form.name_en || ""} onChange={e => setForm(f => ({ ...f, name_en: e.target.value }))} /></div>
-              <div><label className={lbl}>生日</label><input className={inp} value={form.birthday || ""} onChange={e => setForm(f => ({ ...f, birthday: e.target.value }))} placeholder="YYYY-MM-DD" /></div>
+              <div>
+                <div className={lblRow}><span>英文姓名</span><CopyBtn value={form.name_en} title="英文姓名" /></div>
+                <input className={inp} value={form.name_en || ""} onChange={e => setForm(f => ({ ...f, name_en: e.target.value }))} />
+              </div>
+              <div>
+                <div className={lblRow}><span>生日</span><CopyBtn value={form.birthday} title="生日" /></div>
+                <input className={inp} value={form.birthday || ""} onChange={e => setForm(f => ({ ...f, birthday: e.target.value }))} placeholder="YYYY-MM-DD" />
+              </div>
               <div><label className={lbl}>電話</label><input className={inp} value={form.phone || ""} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} /></div>
               <div><label className={lbl}>Email</label><input className={inp} value={form.email || ""} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} /></div>
               <div>
@@ -181,10 +232,22 @@ export default function ParticipantDetailModal({ part, onClose, onSaved, onViewI
                 </select>
               </div>
               <div><label className={lbl}>身分證字號</label><input className={inp} value={form.id_number || ""} onChange={e => setForm(f => ({ ...f, id_number: e.target.value }))} /></div>
-              <div><label className={lbl}>護照號碼</label><input className={inp} value={form.passport || ""} onChange={e => setForm(f => ({ ...f, passport: e.target.value }))} /></div>
-              <div><label className={lbl}>護照效期</label><input className={inp} value={form.passport_expiry || ""} onChange={e => setForm(f => ({ ...f, passport_expiry: e.target.value }))} placeholder="YYYY-MM-DD" /></div>
-              <div><label className={lbl}>台胞證號碼</label><input className={inp} value={form.taibao_number || ""} onChange={e => setForm(f => ({ ...f, taibao_number: e.target.value }))} /></div>
-              <div><label className={lbl}>台胞證效期</label><input className={inp} value={form.taibao_expiry || ""} onChange={e => setForm(f => ({ ...f, taibao_expiry: e.target.value }))} placeholder="YYYY-MM-DD" /></div>
+              <div>
+                <div className={lblRow}><span>護照號碼</span><CopyBtn value={form.passport} title="護照號碼" /></div>
+                <input className={inp} value={form.passport || ""} onChange={e => setForm(f => ({ ...f, passport: e.target.value }))} />
+              </div>
+              <div>
+                <div className={lblRow}><span>護照效期</span><CopyBtn value={form.passport_expiry} title="護照效期" /></div>
+                <input className={inp} value={form.passport_expiry || ""} onChange={e => setForm(f => ({ ...f, passport_expiry: e.target.value }))} placeholder="YYYY-MM-DD" />
+              </div>
+              <div>
+                <div className={lblRow}><span>台胞證號碼</span><CopyBtn value={form.taibao_number} title="台胞證號碼" /></div>
+                <input className={inp} value={form.taibao_number || ""} onChange={e => setForm(f => ({ ...f, taibao_number: e.target.value }))} />
+              </div>
+              <div>
+                <div className={lblRow}><span>台胞證效期</span><CopyBtn value={form.taibao_expiry} title="台胞證效期" /></div>
+                <input className={inp} value={form.taibao_expiry || ""} onChange={e => setForm(f => ({ ...f, taibao_expiry: e.target.value }))} placeholder="YYYY-MM-DD" />
+              </div>
               <div className="col-span-2 sm:col-span-3"><label className={lbl}>地址</label><input className={inp} value={form.address || ""} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} /></div>
             </div>
           </div>
