@@ -2,13 +2,14 @@
 import { useState } from "react";
 import { supabase, TourFlight } from "@/lib/supabase";
 import { airportInfo, terminalLabel, knownTerminal } from "@/lib/airports";
-import { PlaneTakeoff, PlaneLanding, Users, ArrowRight, Search, Loader2 } from "lucide-react";
+import { PlaneTakeoff, PlaneLanding, Users, ArrowRight, Search, Loader2, UserPlus, X, Check } from "lucide-react";
 
 interface Props {
   flights: TourFlight[];
+  tourId: string;
   startDate?: string;   // 團出發日（用來判斷去程/回程）
   endDate?: string;     // 團回程日
-  onUpdated?: () => void;  // 自動查航廈寫回 DB 後通知父層重載
+  onUpdated?: () => void;  // 自動查航廈/指派旅客寫回 DB 後通知父層重載
 }
 
 function toTime(d?: string | null): number {
@@ -139,9 +140,14 @@ function FlightLeg({ f, accent }: { f: TourFlight; accent: string }) {
   );
 }
 
-export default function FlightSummary({ flights, startDate, endDate, onUpdated }: Props) {
+export default function FlightSummary({ flights, tourId, startDate, endDate, onUpdated }: Props) {
   const [looking, setLooking] = useState(false);
   const [lookMsg, setLookMsg] = useState("");
+  // 指派旅客到航班組
+  const [assignIdx, setAssignIdx] = useState<number | null>(null);
+  const [partNames, setPartNames] = useState<string[]>([]);
+  const [selNames, setSelNames] = useState<Set<string>>(new Set());
+  const [assignSaving, setAssignSaving] = useState(false);
 
   // 缺航廈的航班
   const missing = flights.filter(f =>
@@ -236,6 +242,68 @@ export default function FlightSummary({ flights, startDate, endDate, onUpdated }
   });
 
   const cards = Array.from(merged.values());
+
+  // ── 指派旅客 ──────────────────────────────────────────────
+  // 每位旅客目前所屬的組（依 passenger_name 分組的卡片索引；不在任何組 = 預設）
+  const groupOf = (name: string): number | null => {
+    const i = cards.findIndex(c => c.names.includes(name));
+    return i >= 0 ? i : null;
+  };
+
+  const openAssign = async (ci: number) => {
+    setAssignIdx(ci);
+    setSelNames(new Set(
+      cards[ci].names.length > 0
+        ? cards[ci].names
+        : []  // 預設組：初始不勾，勾誰 = 把誰移回預設
+    ));
+    const { data } = await supabase
+      .from("customer_tours")
+      .select("customer:customers(name)")
+      .eq("tour_id", tourId);
+    const names = ((data || []) as unknown as Array<{ customer: { name: string } | null }>)
+      .map(r => (r.customer?.name || "").trim()).filter(Boolean);
+    setPartNames(Array.from(new Set(names)));
+  };
+
+  const saveAssign = async () => {
+    if (assignIdx === null || assignSaving) return;
+    const card = cards[assignIdx];
+    const isDefault = card.names.length === 0;
+    const before = new Set(card.names);
+    const added = Array.from(selNames).filter(n => !before.has(n));
+    const removed = Array.from(before).filter(n => !selNames.has(n));
+    if (added.length === 0 && removed.length === 0) { setAssignIdx(null); return; }
+
+    setAssignSaving(true);
+    try {
+      // 新勾選：先清掉他原本的個人航班，再複製本組航段給他（預設組只清不加）
+      for (const name of added) {
+        await supabase.from("tour_flights").delete().eq("tour_id", tourId).eq("passenger_name", name);
+        if (!isDefault) {
+          const rows = card.flights.map(f => ({
+            tour_id: tourId, passenger_name: name,
+            flight_number: f.flight_number, flight_date: f.flight_date,
+            departure_time: f.departure_time, arrival_time: f.arrival_time,
+            departure_airport: f.departure_airport, departure_terminal: f.departure_terminal,
+            arrival_airport: f.arrival_airport, arrival_terminal: f.arrival_terminal,
+            pnr: "", ticket_number: "", ticket_number_return: "", special_meal: "", notes: "",
+          }));
+          const { error } = await supabase.from("tour_flights").insert(rows);
+          if (error) { alert("指派失敗：" + error.message); return; }
+        }
+      }
+      // 取消勾選：刪掉他在本組的個人航班（回到預設航班）
+      for (const name of removed) {
+        await supabase.from("tour_flights").delete().eq("tour_id", tourId).eq("passenger_name", name);
+      }
+      setAssignIdx(null);
+      onUpdated?.();
+    } finally {
+      setAssignSaving(false);
+    }
+  };
+
   const ACCENT_OUT = "#0284c7";   // 去程：天藍
   const ACCENT_BACK = "#ea580c";  // 回程：橘
 
@@ -278,13 +346,28 @@ export default function FlightSummary({ flights, startDate, endDate, onUpdated }
               {/* 適用旅客 */}
               <div className="flex items-center gap-1.5 flex-wrap">
                 <Users className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                {cards.length > 1 && (
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300">
+                    {card.names.length === 0 ? "預設" : `組 ${ci + 1}`}
+                  </span>
+                )}
                 {card.names.length === 0 ? (
-                  <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">全團適用</span>
+                  <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                    {cards.length > 1 ? "未指派旅客搭此航班" : "全團適用"}
+                  </span>
                 ) : (
                   <span className="text-xs text-slate-600 dark:text-slate-300" title={card.names.join("、")}>
                     <span className="font-semibold">{card.names.slice(0, 4).join("、")}</span>
                     {card.names.length > 4 && <span className="text-slate-400"> 等 {card.names.length} 人</span>}
                   </span>
+                )}
+                {cards.length > 1 && (
+                  <button
+                    onClick={() => openAssign(ci)}
+                    className="ml-auto flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-lg border border-sky-300 dark:border-sky-600 text-sky-600 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-900/30 transition"
+                  >
+                    <UserPlus className="w-3 h-3" /> 指派旅客
+                  </button>
                 )}
               </div>
 
@@ -341,6 +424,75 @@ export default function FlightSummary({ flights, startDate, endDate, onUpdated }
           );
         })}
       </div>
+
+      {/* 指派旅客彈窗 */}
+      {assignIdx !== null && cards[assignIdx] && (() => {
+        const card = cards[assignIdx];
+        const isDefault = card.names.length === 0;
+        // 名單 = 本團旅客 ∪ 已出現在各航班組的名字（可能有非團員名字，也列出讓你清理）
+        const allNames = Array.from(new Set([...partNames, ...cards.flatMap(c => c.names)]));
+        const toggle = (n: string) => setSelNames(s => {
+          const next = new Set(s);
+          if (next.has(n)) next.delete(n); else next.add(n);
+          return next;
+        });
+        return (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setAssignIdx(null)}>
+            <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-md max-h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+              <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between shrink-0">
+                <h4 className="font-bold text-sm text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                  <UserPlus className="w-4 h-4 text-sky-600" />
+                  指派旅客到{isDefault ? "預設航班" : `組 ${assignIdx + 1}`}
+                </h4>
+                <button onClick={() => setAssignIdx(null)} className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded"><X className="w-4.5 h-4.5" /></button>
+              </div>
+              <p className="px-4 pt-2 text-[11px] text-slate-400 shrink-0">
+                {isDefault
+                  ? "勾選的旅客會移除個人航班，改搭預設航班。"
+                  : "勾選 = 搭這組航班；取消勾選 = 回到預設航班。指派會複製這組航段給該旅客。"}
+              </p>
+              <div className="flex-1 overflow-y-auto p-3 grid grid-cols-2 gap-1.5">
+                {allNames.length === 0 && <p className="col-span-2 text-xs text-slate-400 p-2">載入中…</p>}
+                {allNames.map(n => {
+                  const g = groupOf(n);
+                  const inThisCard = isDefault ? g === null : g === assignIdx;
+                  const checked = selNames.has(n) || (isDefault && g === null);
+                  const disabled = isDefault && g === null;  // 已是預設，不能從預設「取消」
+                  const notMember = !partNames.includes(n);
+                  return (
+                    <button
+                      key={n}
+                      disabled={disabled}
+                      onClick={() => toggle(n)}
+                      className={`flex items-center gap-1.5 px-2.5 py-2 rounded-lg border text-left text-xs transition ${
+                        checked
+                          ? "border-sky-400 bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 font-semibold"
+                          : "border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:border-sky-300"
+                      } ${disabled ? "opacity-60 cursor-default" : ""}`}
+                    >
+                      <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${
+                        checked ? "bg-sky-500 border-sky-500" : "border-slate-300 dark:border-slate-500"}`}>
+                        {checked && <Check className="w-3 h-3 text-white" />}
+                      </span>
+                      <span className="truncate">{n}</span>
+                      <span className="ml-auto text-[10px] text-slate-400 shrink-0">
+                        {notMember ? "非團員" : g === null ? "預設" : inThisCard && !isDefault ? "" : `組${g + 1}`}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="px-4 py-3 border-t border-slate-100 dark:border-slate-700 flex justify-end gap-2 shrink-0">
+                <button onClick={() => setAssignIdx(null)} className="px-3.5 py-1.5 text-xs text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-600 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700 transition">取消</button>
+                <button onClick={saveAssign} disabled={assignSaving}
+                  className="flex items-center gap-1.5 bg-sky-600 hover:bg-sky-700 text-white text-xs font-semibold px-4 py-1.5 rounded-lg disabled:opacity-50 transition">
+                  {assignSaving && <Loader2 className="w-3.5 h-3.5 animate-spin" />} 儲存指派
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
