@@ -41,14 +41,29 @@ export function groupIndexOf(cards: FlightCard[], name: string): number | null {
   return i >= 0 ? i : null;
 }
 
-/** 卡片短標籤：組1・預設（CZ3024/CZ8220）／ 組2（CZ5301…）*/
+/** 卡片短標籤：組1・預設（CZ3024→CZ3023）／ 組2（CZ3024→MF887）
+ *  顯示「首班→尾班」而非前兩班，去回程不同的組才分得出來 */
 export function cardShortLabel(cards: FlightCard[], i: number): string {
   const card = cards[i];
   if (!card) return "";
   const base = card.names.length === 0 ? `組 ${i + 1}・預設` : `組 ${i + 1}`;
-  const nos = Array.from(new Set(card.flights.map(f => f.flight_number).filter(Boolean)));
-  const noStr = nos.slice(0, 2).join("/") + (nos.length > 2 ? "…" : "");
+  const sorted = card.flights.slice()
+    .sort((a, b) => (a.flight_date || "").localeCompare(b.flight_date || "") || (a.departure_time || "").localeCompare(b.departure_time || ""));
+  const nos = sorted.map(f => f.flight_number).filter(Boolean);
+  const noStr = nos.length === 0 ? ""
+    : nos.length === 1 ? nos[0]
+    : `${nos[0]}→${nos[nos.length - 1]}`;
   return noStr ? `${base}（${noStr}）` : base;
+}
+
+/** 這位旅客名下的航班是否已有 PNR / 票號（重新指派會刪除，需要先確認）*/
+export function passengerHasTicketData(flights: TourFlight[], name: string): boolean {
+  const n = (name || "").trim();
+  if (!n) return false;
+  return flights.some(f =>
+    (f.passenger_name || "").trim() === n &&
+    ((f.pnr || "").trim() || (f.ticket_number || "").trim() || (f.ticket_number_return || "").trim())
+  );
 }
 
 /**

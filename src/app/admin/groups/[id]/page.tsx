@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase, Tour, TourStatus, Customer, CustomerTour, CustomPriceTier, TourFlight } from "@/lib/supabase";
-import { computeFlightCards, groupIndexOf, cardShortLabel, assignPassengerToCard } from "@/lib/flightGroups";
+import { computeFlightCards, groupIndexOf, cardShortLabel, assignPassengerToCard, passengerHasTicketData } from "@/lib/flightGroups";
 import CostSpreadsheet from "@/components/CostSpreadsheet";
 import PaymentsTab from "@/components/PaymentsTab";
 import ItineraryTab from "@/components/ItineraryTab";
@@ -273,6 +273,11 @@ export default function GroupDetailPage() {
   const changeFlightGroup = async (custName: string, val: string) => {
     const cards = computeFlightCards(tourFlights);
     const card = val === "" ? null : cards[Number(val)] || null;
+    if (passengerHasTicketData(tourFlights, custName) &&
+        !window.confirm(`${custName} 的航班已登錄 PNR／票號，重新指派會刪除這些資料。\n確定要改嗎？`)) {
+      await loadFlights();  // 還原下拉顯示
+      return;
+    }
     const err = await assignPassengerToCard(id, custName, card);
     if (err) { alert("指派航班失敗：" + err); return; }
     await loadFlights();

@@ -2,7 +2,7 @@
 import { useState } from "react";
 import { supabase, TourFlight } from "@/lib/supabase";
 import { airportInfo, terminalLabel, knownTerminal } from "@/lib/airports";
-import { computeFlightCards, assignPassengerToCard } from "@/lib/flightGroups";
+import { computeFlightCards, assignPassengerToCard, passengerHasTicketData } from "@/lib/flightGroups";
 import { PlaneTakeoff, PlaneLanding, Users, ArrowRight, Search, Loader2, UserPlus, X, Check } from "lucide-react";
 
 interface Props {
@@ -256,6 +256,12 @@ export default function FlightSummary({ flights, tourId, startDate, endDate, onU
     const added = Array.from(selNames).filter(n => !before.has(n));
     const removed = Array.from(before).filter(n => !selNames.has(n));
     if (added.length === 0 && removed.length === 0) { setAssignIdx(null); return; }
+
+    const withTickets = [...added, ...removed].filter(n => passengerHasTicketData(flights, n));
+    if (withTickets.length > 0 &&
+        !window.confirm(`${withTickets.join("、")} 的航班已登錄 PNR／票號，重新指派會刪除這些資料。\n確定要繼續嗎？`)) {
+      return;
+    }
 
     setAssignSaving(true);
     try {
