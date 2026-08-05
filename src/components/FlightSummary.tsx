@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { supabase, TourFlight } from "@/lib/supabase";
 import { airportInfo, terminalLabel, knownTerminal } from "@/lib/airports";
+import { computeFlightCards, assignPassengerToCard } from "@/lib/flightGroups";
 import { PlaneTakeoff, PlaneLanding, Users, ArrowRight, Search, Loader2, UserPlus, X, Check } from "lucide-react";
 
 interface Props {
@@ -221,27 +222,8 @@ export default function FlightSummary({ flights, tourId, startDate, endDate, onU
 
   if (flights.length === 0) return null;
 
-  // 依旅客分組（未填姓名 → 全團共用）
-  const groups = new Map<string, TourFlight[]>();
-  flights.forEach(f => {
-    const key = (f.passenger_name || "").trim() || "__ALL__";
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push(f);
-  });
-
-  // 把「行程完全相同」的旅客併成同一張卡（避免每人一張重複卡）
-  const sig = (fs: TourFlight[]) => fs
-    .slice().sort((a, b) => (a.flight_date || "").localeCompare(b.flight_date || "") || (a.departure_time || "").localeCompare(b.departure_time || ""))
-    .map(f => `${f.flight_date}|${f.flight_number}|${f.departure_airport}|${f.departure_time}|${f.arrival_airport}|${f.arrival_time}`).join("//");
-
-  const merged = new Map<string, { names: string[]; flights: TourFlight[] }>();
-  groups.forEach((fs, name) => {
-    const s = sig(fs);
-    if (!merged.has(s)) merged.set(s, { names: [], flights: fs });
-    if (name !== "__ALL__") merged.get(s)!.names.push(name);
-  });
-
-  const cards = Array.from(merged.values());
+  // 依旅客分組 → 相同行程併卡（與旅客分頁的航班組下拉共用同一套邏輯）
+  const cards = computeFlightCards(flights);
 
   // ── 指派旅客 ──────────────────────────────────────────────
   // 每位旅客目前所屬的組（依 passenger_name 分組的卡片索引；不在任何組 = 預設）
@@ -277,25 +259,15 @@ export default function FlightSummary({ flights, tourId, startDate, endDate, onU
 
     setAssignSaving(true);
     try {
-      // 新勾選：先清掉他原本的個人航班，再複製本組航段給他（預設組只清不加）
+      // 新勾選：複製本組航段給他（預設組 = 只清除個人航班）
       for (const name of added) {
-        await supabase.from("tour_flights").delete().eq("tour_id", tourId).eq("passenger_name", name);
-        if (!isDefault) {
-          const rows = card.flights.map(f => ({
-            tour_id: tourId, passenger_name: name,
-            flight_number: f.flight_number, flight_date: f.flight_date,
-            departure_time: f.departure_time, arrival_time: f.arrival_time,
-            departure_airport: f.departure_airport, departure_terminal: f.departure_terminal,
-            arrival_airport: f.arrival_airport, arrival_terminal: f.arrival_terminal,
-            pnr: "", ticket_number: "", ticket_number_return: "", special_meal: "", notes: "",
-          }));
-          const { error } = await supabase.from("tour_flights").insert(rows);
-          if (error) { alert("指派失敗：" + error.message); return; }
-        }
+        const err = await assignPassengerToCard(tourId, name, isDefault ? null : card);
+        if (err) { alert("指派失敗：" + err); return; }
       }
-      // 取消勾選：刪掉他在本組的個人航班（回到預設航班）
+      // 取消勾選：刪掉個人航班（回到預設航班）
       for (const name of removed) {
-        await supabase.from("tour_flights").delete().eq("tour_id", tourId).eq("passenger_name", name);
+        const err = await assignPassengerToCard(tourId, name, null);
+        if (err) { alert("指派失敗：" + err); return; }
       }
       setAssignIdx(null);
       onUpdated?.();

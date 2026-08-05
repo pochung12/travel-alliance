@@ -1,7 +1,8 @@
 "use client";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { supabase, Tour, TourStatus, Customer, CustomerTour, CustomPriceTier } from "@/lib/supabase";
+import { supabase, Tour, TourStatus, Customer, CustomerTour, CustomPriceTier, TourFlight } from "@/lib/supabase";
+import { computeFlightCards, groupIndexOf, cardShortLabel, assignPassengerToCard } from "@/lib/flightGroups";
 import CostSpreadsheet from "@/components/CostSpreadsheet";
 import PaymentsTab from "@/components/PaymentsTab";
 import ItineraryTab from "@/components/ItineraryTab";
@@ -39,6 +40,7 @@ const PART_COLS_DEFAULT: PartCol[] = [
   { key: "meal_preference",  label: "餐食偏好",   visible: true  },
   { key: "room_number",      label: "房號",      visible: true  },
   { key: "ticket_booked",    label: "已訂票",     visible: true  },
+  { key: "flight_group",     label: "航班",       visible: true  },
   { key: "ct_notes",         label: "備註",       visible: true  },
   { key: "id_images",        label: "證件照片",   visible: true  },
   // ── CRM 直帶欄位（從 customers 表帶入唯讀顯示，欄位選單可勾選） ──
@@ -110,7 +112,7 @@ const COL_WIDTHS_DEFAULT: Record<string, number> = {
   taibao_number: 112, taibao_expiry: 96,
   deposit_amount: 110, balance_amount: 110,
   meal_preference: 112, room_number: 112,
-  ticket_booked: 72, ct_notes: 150, id_images: 130,
+  ticket_booked: 72, flight_group: 130, ct_notes: 150, id_images: 130,
   name_en: 140, gender: 56, birthday: 100, id_number: 120,
   address: 180, emergency_contact: 100, emergency_phone: 120, crm_notes: 160,
 };
@@ -158,6 +160,8 @@ export default function GroupDetailPage() {
   const [typePickerRect, setTypePickerRect] = useState<DOMRect | null>(null);
   // 旅客搜尋
   const [partSearch,    setPartSearch]    = useState("");
+  // 航班（供「航班組」下拉）
+  const [tourFlights,   setTourFlights]   = useState<TourFlight[]>([]);
   // 欄位設定
   const [partCols,      setPartCols]      = useState<PartCol[]>(PART_COLS_DEFAULT);
   const [showColSettings, setShowColSettings] = useState(false);
@@ -252,6 +256,28 @@ export default function GroupDetailPage() {
     }
   };
 
+  // 航班（旅客分頁「航班組」下拉用；與機票分頁的航班總覽同一套分組）
+  const loadFlights = async () => {
+    const { data } = await supabase
+      .from("tour_flights").select("*").eq("tour_id", id)
+      .order("flight_date").order("departure_time");
+    setTourFlights((data || []) as TourFlight[]);
+  };
+
+  // 切回旅客分頁時重抓航班（可能剛在機票分頁改過）
+  useEffect(() => {
+    if (activeTab === "participants") loadFlights();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  const changeFlightGroup = async (custName: string, val: string) => {
+    const cards = computeFlightCards(tourFlights);
+    const card = val === "" ? null : cards[Number(val)] || null;
+    const err = await assignPassengerToCard(id, custName, card);
+    if (err) { alert("指派航班失敗：" + err); return; }
+    await loadFlights();
+  };
+
   const loadPayTotals = async () => {
     const [{ data: pays }, { data: costs }] = await Promise.all([
       supabase.from("tour_payments").select("id,type,category,amount,customer_ids").eq("tour_id", id),
@@ -297,6 +323,7 @@ export default function GroupDetailPage() {
     loadTour();
     loadParticipants();
     loadPayTotals();
+    loadFlights();
     // 旅客清單 + CRM 標籤 並行載入
     Promise.all([
       supabase.from("customers").select("id,name,phone,email,meal_preference").order("name"),
@@ -1968,6 +1995,34 @@ export default function GroupDetailPage() {
                                   }`}>
                                   {booked ? "✓ 已訂" : "未訂"}
                                 </button>
+                              </div>
+                            );
+                          }
+                          if (col.key === "flight_group") {
+                            const cards = computeFlightCards(tourFlights);
+                            const gi = groupIndexOf(cards, p.customer.name);
+                            const namedCount = cards.filter(c => c.names.length > 0).length;
+                            return (
+                              <div key="flight_group" style={{width: colWidths.flight_group}} className="flex-shrink-0 flex items-center pr-2">
+                                {tourFlights.length === 0 ? (
+                                  <span className="text-[10px] text-slate-300 dark:text-slate-600">無航班</span>
+                                ) : (
+                                  <select
+                                    value={gi === null ? "" : String(gi)}
+                                    onChange={e => changeFlightGroup(p.customer.name, e.target.value)}
+                                    title={namedCount === 0 ? "目前只有一組航班；在機票分頁匯入不同旅客的航班後可在此指派" : "選擇這位旅客搭哪組航班"}
+                                    className={`w-full text-[10px] border rounded-lg px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-sky-400 ${
+                                      gi === null
+                                        ? "border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-400 dark:text-slate-400"
+                                        : "border-sky-300 dark:border-sky-600 bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 font-semibold"
+                                    }`}
+                                  >
+                                    <option value="">預設航班</option>
+                                    {cards.map((c, i) => c.names.length > 0 && (
+                                      <option key={i} value={String(i)}>{cardShortLabel(cards, i)}</option>
+                                    ))}
+                                  </select>
+                                )}
                               </div>
                             );
                           }
