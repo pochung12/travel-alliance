@@ -320,7 +320,7 @@ export default function FlightSummary({ flights, tourId, startDate, endDate, onU
                 <Users className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                 {cards.length > 1 && (
                   <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300">
-                    {card.names.length === 0 ? "預設" : `組 ${ci + 1}`}
+                    {card.names.length === 0 ? `組 ${ci + 1}・預設` : `組 ${ci + 1}`}
                   </span>
                 )}
                 {card.names.length === 0 ? (

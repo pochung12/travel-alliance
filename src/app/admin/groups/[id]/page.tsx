@@ -2017,7 +2017,12 @@ export default function GroupDetailPage() {
                                         : "border-sky-300 dark:border-sky-600 bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 font-semibold"
                                     }`}
                                   >
-                                    <option value="">預設航班</option>
+                                    <option value="">
+                                      {(() => {
+                                        const di = cards.findIndex(c => c.names.length === 0);
+                                        return di >= 0 ? cardShortLabel(cards, di) : "預設航班";
+                                      })()}
+                                    </option>
                                     {cards.map((c, i) => c.names.length > 0 && (
                                       <option key={i} value={String(i)}>{cardShortLabel(cards, i)}</option>
                                     ))}

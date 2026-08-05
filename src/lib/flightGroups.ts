@@ -28,7 +28,9 @@ export function computeFlightCards(flights: TourFlight[]): FlightCard[] {
     if (!merged.has(s)) merged.set(s, { names: [], flights: fs });
     if (name !== "__ALL__") merged.get(s)!.names.push(name);
   });
-  return Array.from(merged.values());
+  // 預設卡（未指定旅客）固定排第一 → 永遠是「組 1」
+  return Array.from(merged.values())
+    .sort((a, b) => (a.names.length === 0 ? 0 : 1) - (b.names.length === 0 ? 0 : 1));
 }
 
 /** 這位旅客目前屬於哪張卡（null = 預設／未指派）*/
@@ -39,11 +41,11 @@ export function groupIndexOf(cards: FlightCard[], name: string): number | null {
   return i >= 0 ? i : null;
 }
 
-/** 卡片短標籤：組N（CZ3024/CZ8220）*/
+/** 卡片短標籤：組1・預設（CZ3024/CZ8220）／ 組2（CZ5301…）*/
 export function cardShortLabel(cards: FlightCard[], i: number): string {
   const card = cards[i];
   if (!card) return "";
-  const base = card.names.length === 0 ? "預設" : `組 ${i + 1}`;
+  const base = card.names.length === 0 ? `組 ${i + 1}・預設` : `組 ${i + 1}`;
   const nos = Array.from(new Set(card.flights.map(f => f.flight_number).filter(Boolean)));
   const noStr = nos.slice(0, 2).join("/") + (nos.length > 2 ? "…" : "");
   return noStr ? `${base}（${noStr}）` : base;
