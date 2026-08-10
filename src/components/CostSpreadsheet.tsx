@@ -5,7 +5,7 @@ import { useExchangeRate } from "@/lib/useExchangeRate";
 import VersionExtras from "@/components/VersionExtras";
 import {
   Save, Plus, Trash2, Settings, X, Camera, Upload,
-  Check, ChevronDown, ChevronRight, Pencil, Copy,
+  Check, ChevronDown, ChevronRight, ChevronUp, Pencil, Copy,
   ExternalLink, BarChart2, CalendarDays,
 } from "lucide-react";
 
@@ -14,6 +14,7 @@ interface CustomColumn { id: string; name: string; type: "text" | "number" }
 
 interface Row {
   id?: string;
+  sort_order?: number | null;   // 同一群組（綜合/同一天）內的排序
   day_number?: number | null;   // null = 綜合模式; 1,2,3... = 按天模式
   category: CostCategory;
   description: string;
@@ -62,7 +63,7 @@ const DEFAULT_COL_WIDTHS: Record<string, number> = {
   subtotal:    112,
   notes:       104,
   url:         164,
-  act:         66,
+  act:         92,
 };
 
 // ── URL cell helper ────────────────────────────────────────────────────────────
@@ -92,6 +93,21 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
   const [copyMenuIdx,   setCopyMenuIdx]     = useState<number | null>(null);
   const [copyMsg,       setCopyMsg]         = useState<string>("");
   const cnyColRef = useRef(true);                 // tour_costs.cny 欄位是否存在
+  const sortColRef = useRef(true);                // tour_costs.sort_order 欄位是否存在
+  // 隱藏空白列（沒填任何資料的預設分類列）
+  const [hideBlank, setHideBlank] = useState<boolean>(() => {
+    try { return localStorage.getItem("ta_cost_hide_blank") === "1"; } catch { return false; }
+  });
+  const toggleHideBlank = () => {
+    setHideBlank(v => {
+      try { localStorage.setItem("ta_cost_hide_blank", v ? "0" : "1"); } catch { /* ignore */ }
+      return !v;
+    });
+  };
+  const isBlankRow = (r: Row) =>
+    !r.description.trim() && !r.unit_price && !r.notes.trim() && !(r.reference_url || "").trim() &&
+    !Number(r.custom_data._cny) &&
+    !Object.entries(r.custom_data).some(([k, v]) => k !== "_cny" && String(v ?? "").trim() !== "");
   const [cnyColMissing, setCnyColMissing] = useState(false);
   const [showNewVersion, setShowNewVersion] = useState(false);
   const [newVersionName, setNewVersionName] = useState("");
@@ -197,12 +213,24 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
     setCalcModeLocal(mode);
     setDayLabels(ver?.day_labels || {});
 
-    const { data } = await supabase.from("tour_costs").select("*")
-      .eq("tour_id", tourId).eq("version_id", versionId).order("day_number", { ascending: true, nullsFirst: true }).order("created_at");
+    // sort_order 欄位可能還沒跑 migration，失敗時退回舊排序
+    let query = await supabase.from("tour_costs").select("*")
+      .eq("tour_id", tourId).eq("version_id", versionId)
+      .order("day_number", { ascending: true, nullsFirst: true })
+      .order("sort_order", { ascending: true, nullsFirst: false })
+      .order("created_at");
+    if (query.error && (query.error.code === "42703" || /sort_order/i.test(query.error.message || ""))) {
+      sortColRef.current = false;
+      query = await supabase.from("tour_costs").select("*")
+        .eq("tour_id", tourId).eq("version_id", versionId)
+        .order("day_number", { ascending: true, nullsFirst: true }).order("created_at");
+    }
+    const { data } = query;
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const dbRows: Row[] = (data || []).map((d: any) => ({
       id: d.id, day_number: d.day_number ?? null,
+      sort_order: d.sort_order ?? null,
       category: d.category as CostCategory,
       description: d.description, unit_price: d.unit_price,
       quantity: d.quantity || 1,
@@ -306,6 +334,29 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
     }]);
   };
 
+  // 上下移動：綜合模式在同分類內移動、按天模式在同一天內移動
+  const rowGroupKey = (r: Row) => r.day_number == null ? `cat:${r.category}` : `day:${r.day_number}`;
+  const moveRow = (idx: number, dir: -1 | 1) => {
+    setRows(prev => {
+      const r = prev[idx];
+      if (!r) return prev;
+      const key = rowGroupKey(r);
+      const groupIdxs = prev.map((row, i) => ({ row, i })).filter(({ row }) => rowGroupKey(row) === key).map(({ i }) => i);
+      const pos = groupIdxs.indexOf(idx);
+      const tpos = pos + dir;
+      if (pos < 0 || tpos < 0 || tpos >= groupIdxs.length) return prev;
+      const jdx = groupIdxs[tpos];
+      const next = prev.slice();
+      [next[idx], next[jdx]] = [next[jdx], next[idx]];
+      // 重編該群組 sort_order，變動的列標 dirty
+      next.map((row, i) => ({ row, i })).filter(({ row }) => rowGroupKey(row) === key)
+        .forEach(({ row, i }, k) => {
+          if ((row.sort_order ?? null) !== k) next[i] = { ...row, sort_order: k, dirty: true };
+        });
+      return next;
+    });
+  };
+
   const removeRow = (idx: number) => {
     const row = rows[idx];
     if (row.id) supabase.from("tour_costs").delete().eq("id", row.id).then(() => {});
@@ -329,21 +380,36 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
         unit_price: row.unit_price, quantity: row.quantity,
         notes: row.notes, reference_url: row.reference_url || "",
       };
-      // 人民幣參考金額（僅供參考，不計入總額）
-      const payload = cnyColRef.current ? { ...base, cny: Number(row.custom_data._cny) || 0 } : base;
+      // 人民幣參考金額（僅供參考，不計入總額）+ 排序
+      const buildPayload = () => ({
+        ...base,
+        ...(cnyColRef.current ? { cny: Number(row.custom_data._cny) || 0 } : {}),
+        ...(sortColRef.current && row.sort_order != null ? { sort_order: row.sort_order } : {}),
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const isMissingSort = (e: any) => !!e && sortColRef.current &&
+        (e.code === "42703" || e.code === "PGRST204") && /sort_order/i.test(e.message || "");
       if (row.id) {
-        let { error } = await supabase.from("tour_costs").update(payload).eq("id", row.id);
+        let { error } = await supabase.from("tour_costs").update(buildPayload()).eq("id", row.id);
         if (error && cnyColRef.current && isMissingCny(error)) {
           cnyColRef.current = false; setCnyColMissing(true);
-          ({ error } = await supabase.from("tour_costs").update(base).eq("id", row.id));
+          ({ error } = await supabase.from("tour_costs").update(buildPayload()).eq("id", row.id));
+        }
+        if (error && isMissingSort(error)) {
+          sortColRef.current = false;
+          ({ error } = await supabase.from("tour_costs").update(buildPayload()).eq("id", row.id));
         }
         if (error) { failedCount.n++; continue; }
         setRows(prev => prev.map((r, i) => i === idx ? { ...r, dirty: false } : r));
       } else {
-        let res = await supabase.from("tour_costs").insert([payload]).select("id").single();
+        let res = await supabase.from("tour_costs").insert([buildPayload()]).select("id").single();
         if (res.error && cnyColRef.current && isMissingCny(res.error)) {
           cnyColRef.current = false; setCnyColMissing(true);
-          res = await supabase.from("tour_costs").insert([base]).select("id").single();
+          res = await supabase.from("tour_costs").insert([buildPayload()]).select("id").single();
+        }
+        if (res.error && isMissingSort(res.error)) {
+          sortColRef.current = false;
+          res = await supabase.from("tour_costs").insert([buildPayload()]).select("id").single();
         }
         if (res.error || !res.data) { failedCount.n++; continue; }
         const newId = res.data.id;
@@ -559,7 +625,7 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
       {customColumns.map(col => (
         <col key={col.id} style={{ width: colWidths[`c_${col.id}`] ?? 110 }} />
       ))}
-      <col style={{ width: colWidths.act ?? 66 }} />
+      <col style={{ width: colWidths.act ?? 92 }} />
     </colgroup>
   );
 
@@ -630,8 +696,21 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
   // 列尾動作：複製到其他版本 + 刪除
   const renderRowActions = (r: Row, idx: number) => {
     const others = versions.filter(v => v.id !== activeVersionId);
+    const groupRows = rows.filter(row => rowGroupKey(row) === rowGroupKey(r));
+    const pos = groupRows.indexOf(r);
+    const canUp = pos > 0, canDown = pos >= 0 && pos < groupRows.length - 1;
     return (
       <div className="flex items-center justify-center gap-0.5 relative">
+        <div className="flex flex-col">
+          <button onClick={() => moveRow(idx, -1)} disabled={!canUp} title="上移"
+            className="p-0.5 text-slate-400 hover:text-blue-600 disabled:opacity-20 disabled:cursor-default rounded transition-colors">
+            <ChevronUp className="w-3.5 h-3.5" />
+          </button>
+          <button onClick={() => moveRow(idx, 1)} disabled={!canDown} title="下移"
+            className="p-0.5 text-slate-400 hover:text-blue-600 disabled:opacity-20 disabled:cursor-default rounded transition-colors">
+            <ChevronDown className="w-3.5 h-3.5" />
+          </button>
+        </div>
         {others.length > 0 && (
           <>
             <button onClick={e => { e.stopPropagation(); setCopyMenuIdx(copyMenuIdx === idx ? null : idx); }}
@@ -905,7 +984,9 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
                 <TableHead />
                 <tbody>
                   {COST_CATEGORIES.map(cat => {
-                    const catRows = overallRows.map((r, idx) => ({ r, idx: rows.indexOf(r) })).filter(({ r }) => r.category === cat.key);
+                    const catRows = overallRows.map((r, idx) => ({ r, idx: rows.indexOf(r) }))
+                      .filter(({ r }) => r.category === cat.key)
+                      .filter(({ r }) => !hideBlank || !isBlankRow(r));
                     if (catRows.length === 0) return null;
                     return catRows.map(({ r, idx }, i) => (
                       <tr key={idx} className={`border-t border-slate-100 dark:border-slate-700 ${idx % 2 === 0 ? "bg-white dark:bg-slate-800" : "bg-slate-50/50 dark:bg-slate-800/50"} hover:bg-blue-50/30 dark:hover:bg-blue-900/10 transition-colors`}>
@@ -959,6 +1040,7 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
                   {/* Misc / uncategorized rows */}
                   {overallRows.map((r, _) => ({ r, idx: rows.indexOf(r) }))
                     .filter(({ r }) => !COST_CATEGORIES.find(c => c.key === r.category))
+                    .filter(({ r }) => !hideBlank || !isBlankRow(r))
                     .map(({ r, idx }) => renderRow(r, idx))}
                   {/* Total */}
                   <tr className="bg-slate-800 text-white font-bold text-sm border-t-2 border-slate-600">
@@ -970,10 +1052,22 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
                 </tbody>
               </table>
             </div>
-            <div className="px-3 py-2 bg-slate-50 dark:bg-slate-700/50 border-t border-slate-200 dark:border-slate-600">
+            <div className="px-3 py-2 bg-slate-50 dark:bg-slate-700/50 border-t border-slate-200 dark:border-slate-600 flex items-center justify-between gap-3">
               <button onClick={addRow} className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-700 font-medium">
                 <Plus className="w-3.5 h-3.5" /> 新增費用列
               </button>
+              {(() => {
+                const blankCount = overallRows.filter(isBlankRow).length;
+                if (blankCount === 0 && !hideBlank) return null;
+                return (
+                  <button onClick={toggleHideBlank}
+                    title={hideBlank ? "顯示所有空白的預設分類列" : "隱藏沒填任何資料的列，表格更乾淨"}
+                    className={`flex items-center gap-1.5 text-xs font-medium transition-colors ${
+                      hideBlank ? "text-amber-600 hover:text-amber-700" : "text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"}`}>
+                    {hideBlank ? `顯示空白列（已隱藏 ${blankCount}）` : `隱藏空白列（${blankCount}）`}
+                  </button>
+                );
+              })()}
             </div>
           </>
         )}
