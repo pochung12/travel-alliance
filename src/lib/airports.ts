@@ -237,6 +237,12 @@ const AIRPORT_TERMINAL: Record<string, { intl?: string; byAirline?: Record<strin
     byAirline: { CZ: "3", "3U": "3", CA: "3", KY: "3", MF: "3", OQ: "3", SC: "3", TV: "3", ZH: "3" },
     "*": "2",
   },
+  // 廈門高崎：T3 為國際/港澳台航班 + 廈門航空（國內線也在 T3）；T4 為其他公司國內線
+  XMN: {
+    intl: "3",
+    byAirline: { MF: "3" },
+    "*": "4",
+  },
 };
 
 /**
