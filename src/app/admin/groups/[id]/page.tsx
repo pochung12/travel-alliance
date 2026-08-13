@@ -380,6 +380,7 @@ export default function GroupDetailPage() {
       deposit_per_person: form.deposit_per_person || 0,
       tip_per_day:  form.tip_per_day || 0,
       tip_included: !!form.tip_included,
+      single_supplement: form.single_supplement || 0,
       status: form.status, notes: form.notes,
     }).eq("id", id);
 
@@ -408,7 +409,7 @@ export default function GroupDetailPage() {
         }).eq("id", id);
         setSaving(false);
         if (e2) { alert("儲存失敗：" + e2.message); return; }
-        alert("基本資料已儲存（部分新欄位尚未建立）。\n\n請在 Supabase SQL Editor 執行：\n\nALTER TABLE tours\n  ADD COLUMN IF NOT EXISTS deposit_per_person NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS tip_per_day NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS tip_included BOOLEAN NOT NULL DEFAULT false,\n  ADD COLUMN IF NOT EXISTS original_price NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS price_type TEXT NOT NULL DEFAULT '',\n  ADD COLUMN IF NOT EXISTS card_surcharge_percent NUMERIC(6,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS card_surcharge_amount NUMERIC(10,2) NOT NULL DEFAULT 0;");
+        alert("基本資料已儲存（部分新欄位尚未建立）。\n\n請在 Supabase SQL Editor 執行：\n\nALTER TABLE tours\n  ADD COLUMN IF NOT EXISTS deposit_per_person NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS tip_per_day NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS tip_included BOOLEAN NOT NULL DEFAULT false,\n  ADD COLUMN IF NOT EXISTS original_price NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS price_type TEXT NOT NULL DEFAULT '',\n  ADD COLUMN IF NOT EXISTS card_surcharge_percent NUMERIC(6,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS card_surcharge_amount NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS single_supplement NUMERIC(10,2) NOT NULL DEFAULT 0;");
         await loadTour();
         return;
       }
@@ -990,6 +991,23 @@ export default function GroupDetailPage() {
                   </p>
                 );
               })()}
+            </div>
+            <div className="col-span-2">
+              <label className={lbl}>單房差（一人入住一間的補差額）</label>
+              <div className="flex items-center gap-3 mt-1 flex-wrap">
+                <div className="relative w-40">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 select-none">NT$</span>
+                  <input type="number" min="0" placeholder="0"
+                    className="w-full pl-9 pr-3 border border-slate-200 dark:border-slate-600 rounded-lg py-2 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400 text-right"
+                    value={form.single_supplement || ""}
+                    onChange={e => setForm({ ...form, single_supplement: +e.target.value })} />
+                </div>
+                <span className="text-xs text-slate-400 dark:text-slate-500">
+                  {(form.single_supplement || 0) > 0
+                    ? `前台團費區將顯示：單房差 +NT$${(form.single_supplement || 0).toLocaleString()}`
+                    : "填 0 則前台不顯示單房差"}
+                </span>
+              </div>
             </div>
             <div className="col-span-2">
               <label className={lbl}>司機/導遊/領隊小費</label>

@@ -62,6 +62,7 @@ export interface Tour {
   deposit_per_person?: number;            // 每人訂金金額
   tip_per_day?: number;                   // 司機/導遊/領隊小費（元/天）
   tip_included?: boolean;                 // 前台標示：true=已含於團費 / false=不含
+  single_supplement?: number;             // 單房差：一人入住一間需補的差額 (NT$)
   status: TourStatus;
   notes: string;
   is_public?: boolean;                    // 是否在前台公開顯示

@@ -259,6 +259,19 @@ function PriceRows({ tour }: { tour: Tour }) {
           <span className="font-bold text-[#b04a3a]">NT${tour.deposit_per_person.toLocaleString()}</span>
         </div>
       ) : null}
+      {(tour.single_supplement ?? 0) > 0 ? (
+        <div className="flex justify-between items-center py-3.5 gap-3 flex-wrap">
+          <span className="text-sm font-medium flex items-center gap-2 flex-wrap">
+            單房差
+            <span className="text-[11px] px-2 py-0.5 rounded-full font-semibold bg-amber-100 text-amber-700">
+              一人入住一間
+            </span>
+          </span>
+          <span className="font-bold">
+            +NT${(tour.single_supplement ?? 0).toLocaleString()}
+          </span>
+        </div>
+      ) : null}
       {(tour.tip_per_day ?? 0) > 0 ? (
         <div className="flex justify-between items-center py-3.5 gap-3 flex-wrap">
           <span className="text-sm font-medium flex items-center gap-2 flex-wrap">
