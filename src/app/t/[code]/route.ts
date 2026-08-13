@@ -29,5 +29,8 @@ export async function GET(
     );
   }
 
-  return NextResponse.redirect(new URL(`/tours/${data.tour_id}`, req.url), 302);
+  // Railway 反向代理後 req.url 是 localhost，須用 forwarded host 組對外網址
+  const host = req.headers.get("x-forwarded-host") || req.headers.get("host") || "1trip.com.tw";
+  const proto = req.headers.get("x-forwarded-proto") || "https";
+  return NextResponse.redirect(`${proto}://${host}/tours/${data.tour_id}`, 302);
 }
