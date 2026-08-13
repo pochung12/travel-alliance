@@ -7,6 +7,7 @@ import {
 import {
   Sparkles, Globe, Eye, Loader2, CheckCircle2, AlertCircle,
   RefreshCw, EyeOff, ExternalLink, Image as ImageIcon, Pencil, X, Save, Upload, Search,
+  Link as LinkIcon,
 } from "lucide-react";
 import FlightEditor from "@/components/FlightEditor";
 import ShareKit from "@/components/ShareKit";
@@ -123,6 +124,9 @@ export default function TourPageTab({ tour }: Props) {
   // 從別家行程網址自動抓取
   const [scrapeUrl, setScrapeUrl] = useState("");
   const [scraping, setScraping]   = useState(false);
+  // 行程頁短網址（1trip.com.tw/t/xxxxxx）
+  const [shortUrl, setShortUrl] = useState("");
+  const [shortCopied, setShortCopied] = useState(false);
   // 上傳行程檔案（PDF / Word）
   const docFileRef = useRef<HTMLInputElement>(null);
   const [docParsing, setDocParsing] = useState(false);
@@ -193,8 +197,20 @@ export default function TourPageTab({ tour }: Props) {
 
   useEffect(() => {
     loadVersions().finally(() => setLoading(false));
+    // 取得（或建立）行程頁短網址
+    fetch("/api/tour-link", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tourId: tour.id }),
+    }).then(r => r.json()).then(j => { if (j.tourUrl) setShortUrl(j.tourUrl); }).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tour.id]);
+
+  const copyShortUrl = async () => {
+    if (!shortUrl) return;
+    try { await navigator.clipboard.writeText(shortUrl); } catch { /* ignore */ }
+    setShortCopied(true);
+    setTimeout(() => setShortCopied(false), 1800);
+  };
 
   // 切換版本
   const switchVersion = async (id: string) => {
@@ -884,6 +900,18 @@ Day2 箱根一日遊，蘆之湖海賊船、大涌谷，溫泉飯店會席料理
                 className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:border-cyan-400 hover:text-cyan-600 rounded-lg transition-colors">
                 <Eye className="w-3.5 h-3.5" /> 預覽頁面 <ExternalLink className="w-3 h-3" />
               </a>
+              {shortUrl && (
+                <button onClick={copyShortUrl}
+                  title={`複製行程頁短網址：${shortUrl}`}
+                  className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition-colors font-mono ${
+                    shortCopied
+                      ? "border-emerald-400 text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20"
+                      : "border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:border-violet-400 hover:text-violet-600"
+                  }`}>
+                  {shortCopied ? <CheckCircle2 className="w-3.5 h-3.5" /> : <LinkIcon className="w-3.5 h-3.5" />}
+                  {shortCopied ? "已複製短網址" : shortUrl.replace(/^https?:\/\//, "")}
+                </button>
+              )}
               <button onClick={togglePublish} disabled={saving}
                 className={`flex items-center gap-1.5 text-xs px-4 py-1.5 rounded-lg font-medium transition-colors disabled:opacity-50 ${
                   page.status === "published"
@@ -1313,7 +1341,7 @@ Day2 箱根一日遊，蘆之湖海賊船、大涌谷，溫泉飯店會席料理
           ...((content?.gallery || []).flatMap(g => g.images)),
         ].filter(Boolean)))}
         highlights={content?.highlights || []}
-        pageUrl={`https://1trip.com.tw/tours/${tour.id}`}
+        pageUrl={shortUrl || `https://1trip.com.tw/tours/${tour.id}`}
       />
     </div>
   );
