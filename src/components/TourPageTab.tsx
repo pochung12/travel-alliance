@@ -123,6 +123,11 @@ export default function TourPageTab({ tour }: Props) {
   // 從別家行程網址自動抓取
   const [scrapeUrl, setScrapeUrl] = useState("");
   const [scraping, setScraping]   = useState(false);
+  // 上傳行程檔案（PDF / Word）
+  const docFileRef = useRef<HTMLInputElement>(null);
+  const [docParsing, setDocParsing] = useState(false);
+  const [docMsg, setDocMsg] = useState("");
+  const [docErr, setDocErr] = useState("");
   const [scrapeErr, setScrapeErr] = useState("");
   const [scrapedImages, setScrapedImages] = useState<string[]>([]);
   const [saving, setSaving]     = useState(false);
@@ -251,10 +256,101 @@ export default function TourPageTab({ tour }: Props) {
     }
   };
 
+  // ── 上傳行程檔案（PDF / Word）→ 萃取文字 → 自動生成 ─────────────────────────
+  const handleDocFile = async (file: File) => {
+    setDocParsing(true); setDocErr(""); setDocMsg("");
+    try {
+      const name = file.name.toLowerCase();
+      let text = "";
+
+      if (name.endsWith(".pdf")) {
+        setDocMsg("讀取 PDF 文字中…");
+        const pdfjsLib = await import("pdfjs-dist");
+        pdfjsLib.GlobalWorkerOptions.workerSrc =
+          `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+        const pdf = await pdfjsLib.getDocument({ data: await file.arrayBuffer() }).promise;
+        const parts: string[] = [];
+        for (let p = 1; p <= Math.min(pdf.numPages, 20); p++) {
+          const page = await pdf.getPage(p);
+          const tc = await page.getTextContent();
+          parts.push(tc.items.map(it => ("str" in it ? it.str : "")).join(" "));
+        }
+        text = parts.join("\n\n").replace(/[ \t]{2,}/g, " ").trim();
+
+        // 文字太少 → 可能是掃描檔，改走頁面截圖 + AI 視覺辨識
+        if (text.length < 80) {
+          setDocMsg("此 PDF 為掃描檔，AI 辨識頁面中（較慢）…");
+          const images: string[] = [];
+          for (let p = 1; p <= Math.min(pdf.numPages, 8); p++) {
+            const page = await pdf.getPage(p);
+            const viewport = page.getViewport({ scale: 2.0 });
+            const canvas = document.createElement("canvas");
+            canvas.width = viewport.width; canvas.height = viewport.height;
+            const ctx = canvas.getContext("2d")!;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await page.render({ canvasContext: ctx, viewport, canvas } as any).promise;
+            images.push(canvas.toDataURL("image/jpeg", 0.9));
+          }
+          const res = await fetch("/api/tour-page/extract-doc", {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ images }),
+          });
+          const j = await res.json();
+          if (!res.ok) { setDocErr(j.error || "辨識失敗"); return; }
+          text = (j.text || "").trim();
+        }
+      } else if (name.endsWith(".docx") || name.endsWith(".doc")) {
+        if (name.endsWith(".doc") && !name.endsWith(".docx")) {
+          setDocErr("舊版 .doc 格式不支援，請在 Word 另存為 .docx 或 PDF 再上傳");
+          return;
+        }
+        setDocMsg("解析 Word 檔中…");
+        const buf = await file.arrayBuffer();
+        let b64 = "";
+        {
+          const bytes = new Uint8Array(buf);
+          let bin = "";
+          const chunk = 0x8000;
+          for (let i = 0; i < bytes.length; i += chunk) {
+            bin += String.fromCharCode.apply(null, Array.from(bytes.subarray(i, i + chunk)));
+          }
+          b64 = btoa(bin);
+        }
+        const res = await fetch("/api/tour-page/extract-doc", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ docxBase64: b64 }),
+        });
+        const j = await res.json();
+        if (!res.ok) { setDocErr(j.error || "解析失敗"); return; }
+        text = (j.text || "").trim();
+      } else {
+        setDocErr("請上傳 PDF 或 Word（.docx）檔案");
+        return;
+      }
+
+      if (!text) { setDocErr("檔案裡讀不到行程文字，請改用複製貼上"); return; }
+      const merged = rawInput.trim() ? rawInput.trim() + "\n\n" + text : text;
+      setRawInput(merged);
+      setDocMsg(`已讀取「${file.name}」（${text.length.toLocaleString()} 字），開始生成行程網頁…`);
+      // 自動觸發生成（與按「AI 生成行程網頁」相同流程）
+      await generate(merged);
+      setDocMsg(`「${file.name}」已生成完成，可在下方預覽與編輯`);
+    } catch (e) {
+      console.error("[doc-upload]", e);
+      setDocErr("讀取檔案失敗，請確認檔案未加密後重試");
+    } finally {
+      setDocParsing(false);
+      if (docFileRef.current) docFileRef.current.value = "";
+      setTimeout(() => setDocMsg(""), 8000);
+    }
+  };
+
   // ── AI 生成 ──────────────────────────────────────────────────────────────────
-  const generate = async () => {
+  // overrideInput：上傳檔案流程直接帶入剛萃取的素材（state 更新是非同步的，不能依賴 rawInput）
+  const generate = async (overrideInput?: string) => {
     setGenerating(true);
     setError("");
+    const inputText = typeof overrideInput === "string" ? overrideInput : rawInput;
     const keep = page ? Array.from(keepSet) : [];
     try {
       const res = await fetch("/api/tour-page/generate", {
@@ -269,7 +365,7 @@ export default function TourPageTab({ tour }: Props) {
             days: getDays(tour.start_date, tour.end_date),
             selling_price: tour.selling_price,
           },
-          rawInput,
+          rawInput: inputText,
           keep,
         }),
       });
@@ -655,6 +751,36 @@ export default function TourPageTab({ tour }: Props) {
           )}
         </div>
 
+        {/* 上傳行程檔案（PDF / Word）→ 一鍵生成 */}
+        <div className="rounded-xl border border-violet-200 dark:border-violet-800 bg-violet-50/50 dark:bg-violet-900/10 p-3">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-semibold text-violet-700 dark:text-violet-300 shrink-0">📄 上傳行程檔案</span>
+            <button onClick={() => docFileRef.current?.click()} disabled={docParsing || generating}
+              className="flex items-center gap-1.5 text-sm px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-lg font-medium disabled:opacity-50 transition-colors shrink-0">
+              {docParsing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+              {docParsing ? "處理中…" : "選擇 PDF / Word 檔"}
+            </button>
+            <input ref={docFileRef} type="file" accept=".pdf,.docx,.doc,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="hidden"
+              onChange={e => e.target.files?.[0] && handleDocFile(e.target.files[0])} />
+            {docMsg && !docErr && (
+              <span className="flex items-center gap-1.5 text-xs text-violet-600 dark:text-violet-300">
+                {docParsing ? <Loader2 className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                {docMsg}
+              </span>
+            )}
+          </div>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
+            上傳同業或自製的行程檔（PDF、Word .docx），系統會自動讀取行程內容並
+            <span className="text-violet-600 dark:text-violet-400 font-medium">直接生成精美行程網頁</span>，
+            不用手動貼文字。掃描版 PDF 也可以（AI 會逐頁辨識，較慢）。讀到的文字會同時填入下方素材框，生成前後都可修改再重新生成。
+          </p>
+          {docErr && (
+            <p className="flex items-center gap-1.5 text-xs text-red-500 mt-1.5">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {docErr}
+            </p>
+          )}
+        </div>
+
         <textarea
           className="w-full h-48 border border-slate-200 dark:border-slate-600 rounded-xl px-4 py-3 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-violet-400 resize-y font-mono"
           placeholder={`範例：
@@ -705,7 +831,7 @@ Day2 箱根一日遊，蘆之湖海賊船、大涌谷，溫泉飯店會席料理
         )}
 
         <div className="flex items-center gap-3 flex-wrap">
-          <button onClick={generate}
+          <button onClick={() => generate()}
             disabled={generating || (hasPage && keepSet.size === KEEP_SECTIONS.length)}
             className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white rounded-xl text-sm font-semibold disabled:opacity-50 transition-all shadow-sm">
             {generating
