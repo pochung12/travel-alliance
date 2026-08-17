@@ -37,11 +37,39 @@ function LoginForm() {
     setError("");
     setLoading(true);
 
-    const { data, error: authErr } = await supabase.auth.signInWithPassword({ email, password });
-    if (authErr) { setError(authErr.message); setLoading(false); return; }
+    const directResult = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+    let authErr = directResult.error;
+    let user = directResult.data.user;
+
+    // Supabase Auth 區域節點若發生 5xx/網路錯誤，改由 Railway 伺服器安全代送驗證。
+    if (authErr && ((authErr.status || 0) >= 500 || /fetch|network|timeout|522/i.test(authErr.message))) {
+      const proxyResponse = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim(), password }),
+      });
+      const proxy = await proxyResponse.json().catch(() => ({ error: "登入服務回應格式錯誤" }));
+      if (!proxyResponse.ok || !proxy.access_token || !proxy.refresh_token) {
+        setError(proxy.error || `登入服務暫時無法使用（${proxyResponse.status}）`);
+        setLoading(false);
+        return;
+      }
+      const sessionResult = await supabase.auth.setSession({
+        access_token: proxy.access_token,
+        refresh_token: proxy.refresh_token,
+      });
+      user = sessionResult.data.user;
+      authErr = sessionResult.error;
+    }
+
+    if (authErr || !user) {
+      setError(authErr?.message || "登入失敗，未取得使用者資料");
+      setLoading(false);
+      return;
+    }
 
     const { data: prof, error: profileErr } = await supabase
-      .from("profiles").select("role").eq("id", data.user!.id).maybeSingle();
+      .from("profiles").select("role").eq("id", user.id).maybeSingle();
 
     if (profileErr) {
       setError(`登入成功，但帳號權限讀取失敗：${profileErr.message}`);
@@ -49,7 +77,7 @@ function LoginForm() {
       return;
     }
     if (!prof) {
-      setError(`登入成功，但此帳號（${data.user?.email || email}）沒有 profiles 權限資料，請由管理員補建。`);
+      setError(`登入成功，但此帳號（${user.email || email}）沒有 profiles 權限資料，請由管理員補建。`);
       setLoading(false);
       return;
     }
