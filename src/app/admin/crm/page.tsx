@@ -5,9 +5,10 @@ import { supabase, Customer, Tour } from "@/lib/supabase";
 import {
   Plus, Search, Users, ScanLine, Upload, FileSpreadsheet,
   Loader2, CheckCircle, AlertCircle, X, Settings, Tag, Trash2, CheckCircle2, Layers,
-  GitMerge, ChevronRight, ArrowUp, ArrowDown, ChevronsUpDown, Pencil, Copy, Check, UserMinus,
+  GitMerge, ChevronRight, ArrowUp, ArrowDown, ChevronsUpDown, Pencil, Copy, Check, UserMinus, Crop,
 } from "lucide-react";
 import Link from "next/link";
+import ImageCropModal from "@/components/ImageCropModal";
 
 // ─── types ───────────────────────────────────────────────────────────────────
 type DocType = "passport" | "taibao" | "idCard";
@@ -509,6 +510,7 @@ export default function CRMPage() {
   const [duplicates, setDuplicates] = useState<Customer[]>([]);
   const [creating,   setCreating]   = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [cropTarget, setCropTarget] = useState<{ kind: "scan" } | { kind: "bulk"; index: number } | null>(null);
 
   // import
   const [showImport,   setShowImport]   = useState(false);
@@ -924,6 +926,32 @@ export default function CRMPage() {
   };
   const toggleBulkItem = (idx:number) => {
     setBulkItems(prev=>prev.map((it,i)=>i===idx?{...it,selected:!it.selected}:it));
+  };
+
+  const bulkItemImage = (item: BulkItem): string =>
+    item.form.passport_image || item.form.taibao_image || item.form.id_card_image || item.preview;
+
+  const applyCroppedImage = (cropped: string) => {
+    if (!cropTarget) return;
+    if (cropTarget.kind === "scan") {
+      setScanImg(cropped);
+      setScanForm(prev => docType === "passport"
+        ? { ...prev, passport_image: cropped }
+        : docType === "taibao"
+          ? { ...prev, taibao_image: cropped }
+          : { ...prev, id_card_image: cropped });
+    } else {
+      setBulkItems(prev => prev.map((item, index) => {
+        if (index !== cropTarget.index) return item;
+        const form = item.form.passport_image
+          ? { ...item.form, passport_image: cropped }
+          : item.form.taibao_image
+            ? { ...item.form, taibao_image: cropped }
+            : { ...item.form, id_card_image: cropped };
+        return { ...item, preview: cropped, form };
+      }));
+    }
+    setCropTarget(null);
   };
 
   const handleBulkCreate = async () => {
@@ -2427,6 +2455,12 @@ export default function CRMPage() {
                                   <AlertCircle className="w-6 h-6 text-white" />
                                 </div>
                               )}
+                              {item.status==="done" && (
+                                <button type="button" onClick={()=>setCropTarget({kind:"bulk",index:idx})}
+                                  className="absolute left-1.5 bottom-1.5 z-10 inline-flex items-center gap-1 rounded-lg bg-black/65 hover:bg-blue-600 px-2 py-1 text-[10px] font-medium text-white">
+                                  <Crop className="w-3 h-3" /> 裁切
+                                </button>
+                              )}
                             </div>
                             {/* info */}
                             <div className="p-2.5 bg-white dark:bg-slate-800 space-y-1.5">
@@ -2696,6 +2730,12 @@ export default function CRMPage() {
                           <span className="text-white ml-2 text-sm font-medium">AI 辨識中…</span>
                         </div>
                       )}
+                      {scanStatus!=="scanning" && (
+                        <button type="button" onClick={e=>{e.stopPropagation();setCropTarget({kind:"scan"});}}
+                          className="absolute left-2 bottom-2 inline-flex items-center gap-1 rounded-lg bg-black/65 hover:bg-blue-600 px-3 py-1.5 text-xs font-medium text-white">
+                          <Crop className="w-3.5 h-3.5" /> 裁切照片
+                        </button>
+                      )}
                     </div>
                   ) : (
                     <div className="py-10 flex flex-col items-center gap-2 text-slate-400">
@@ -2771,6 +2811,14 @@ export default function CRMPage() {
             </div>
           </div>
         </div>
+      )}
+      {cropTarget && (
+        <ImageCropModal
+          image={cropTarget.kind === "scan" ? scanImg : bulkItemImage(bulkItems[cropTarget.index])}
+          title={cropTarget.kind === "scan" ? "裁切掃描證件照片" : `裁切${bulkItems[cropTarget.index]?.form.name || "證件"}照片`}
+          onCancel={()=>setCropTarget(null)}
+          onConfirm={applyCroppedImage}
+        />
       )}
     </div>
   );

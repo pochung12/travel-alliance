@@ -2,7 +2,8 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase, Customer, Tour } from "@/lib/supabase";
-import { ArrowLeft, Save, Trash2, Upload, ScanLine, X, CheckCircle, AlertCircle, Loader2, UtensilsCrossed, RotateCw, Wand2 } from "lucide-react";
+import { ArrowLeft, Save, Trash2, Upload, ScanLine, X, CheckCircle, AlertCircle, Loader2, UtensilsCrossed, RotateCw, Wand2, Crop } from "lucide-react";
+import ImageCropModal from "@/components/ImageCropModal";
 
 // ─── Meal options (same as groups page) ───────────────────────────────────────
 const MEAL_OPTIONS = [
@@ -100,6 +101,7 @@ export default function CustomerDetailPage() {
   const [taibaoStatus,   setTaibaoStatus]   = useState<ScanStatus>({ type: "idle" });
   const [idCardStatus,   setIdCardStatus]   = useState<ScanStatus>({ type: "idle" });
   const [dupWarning, setDupWarning] = useState<Array<{id: string; name: string; birthday: string}>>([]);
+  const [cropTarget, setCropTarget] = useState<"passport" | "taibao" | "idCard" | null>(null);
 
   const passportInputRef = useRef<HTMLInputElement>(null);
   const taibaoInputRef   = useRef<HTMLInputElement>(null);
@@ -541,18 +543,21 @@ export default function CustomerDetailPage() {
           inputRef={idCardInputRef} onUpload={e => handleDocUpload(e, "idCard")}
           onClear={() => { setForm(p => ({ ...p, id_card_image: "" })); setIdCardStatus({ type: "idle" }); }}
           onScan={() => scanDocument("idCard")}
+          onCrop={() => setCropTarget("idCard")}
           onAutoRotate={() => autoRotate("idCard")} onManualRotate={() => manualRotate("idCard")} />
         <DocumentCard title="🛂 護照" image={form.passport_image || ""} status={passportStatus}
           history={documentHistory.filter(d=>d.document_type==='passport'&&d.image_data!==form.passport_image)}
           inputRef={passportInputRef} onUpload={e => handleDocUpload(e, "passport")}
           onClear={() => { setForm(p => ({ ...p, passport_image: "" })); setPassportStatus({ type: "idle" }); }}
           onScan={() => scanDocument("passport")}
+          onCrop={() => setCropTarget("passport")}
           onAutoRotate={() => autoRotate("passport")} onManualRotate={() => manualRotate("passport")} />
         <DocumentCard title="🪪 台胞證" image={form.taibao_image || ""} status={taibaoStatus}
           history={documentHistory.filter(d=>d.document_type==='taibao'&&d.image_data!==form.taibao_image)}
           inputRef={taibaoInputRef} onUpload={e => handleDocUpload(e, "taibao")}
           onClear={() => { setForm(p => ({ ...p, taibao_image: "" })); setTaibaoStatus({ type: "idle" }); }}
           onScan={() => scanDocument("taibao")}
+          onCrop={() => setCropTarget("taibao")}
           onAutoRotate={() => autoRotate("taibao")} onManualRotate={() => manualRotate("taibao")} />
       </div>
 
@@ -581,19 +586,33 @@ export default function CustomerDetailPage() {
           ))}
         </div>
       )}
+      {cropTarget && (
+        <ImageCropModal
+          image={cropTarget === "passport" ? form.passport_image || "" : cropTarget === "taibao" ? form.taibao_image || "" : form.id_card_image || ""}
+          title={`裁切${cropTarget === "passport" ? "護照" : cropTarget === "taibao" ? "台胞證" : "身分證"}照片`}
+          onCancel={() => setCropTarget(null)}
+          onConfirm={cropped => {
+            setDocImage(cropTarget, cropped);
+            const setStatus = cropTarget === "passport" ? setPassportStatus : cropTarget === "taibao" ? setTaibaoStatus : setIdCardStatus;
+            setStatus({ type: "success", msg: "照片已裁切，將自動儲存" });
+            setCropTarget(null);
+          }}
+        />
+      )}
     </div>
   );
 }
 
 // ── DocumentCard ──────────────────────────────────────────────────────────────
 function DocumentCard({
-  title, image, history = [], status, inputRef, onUpload, onClear, onScan, onAutoRotate, onManualRotate,
+  title, image, history = [], status, inputRef, onUpload, onClear, onScan, onCrop, onAutoRotate, onManualRotate,
 }: {
   title: string; image: string; status: ScanStatus;
   history?: DocumentHistoryImage[];
   inputRef: React.RefObject<HTMLInputElement>;
   onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onClear: () => void; onScan: () => void;
+  onCrop: () => void;
   onAutoRotate: () => void; onManualRotate: () => void;
 }) {
   const scanning = status.type === "scanning";
@@ -612,6 +631,10 @@ function DocumentCard({
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-white rounded-lg disabled:opacity-40 transition-colors">
             {rotating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
             {rotating ? "轉正中…" : "智能轉正"}
+          </button>
+          <button onClick={onCrop} disabled={!image || rotating || scanning}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-40 transition-colors">
+            <Crop className="w-3.5 h-3.5" /> 裁切
           </button>
           <button onClick={onScan} disabled={!image || scanning || rotating}
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded-lg disabled:opacity-40 transition-colors">
