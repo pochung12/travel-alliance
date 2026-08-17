@@ -102,6 +102,7 @@ export default function CustomerDetailPage() {
   const [idCardStatus,   setIdCardStatus]   = useState<ScanStatus>({ type: "idle" });
   const [dupWarning, setDupWarning] = useState<Array<{id: string; name: string; birthday: string}>>([]);
   const [cropTarget, setCropTarget] = useState<"passport" | "taibao" | "idCard" | null>(null);
+  const previousDocRef = useRef<Partial<Record<"passport" | "taibao" | "idCard", { image: string; expiry: string }>>>({});
 
   const passportInputRef = useRef<HTMLInputElement>(null);
   const taibaoInputRef   = useRef<HTMLInputElement>(null);
@@ -179,6 +180,10 @@ export default function CustomerDetailPage() {
 
   const handleDocUpload = async (e: React.ChangeEvent<HTMLInputElement>, docType: "passport" | "taibao" | "idCard") => {
     const file = e.target.files?.[0]; if (!file) return;
+    previousDocRef.current[docType] = {
+      image: docType === "passport" ? form.passport_image || "" : docType === "taibao" ? form.taibao_image || "" : form.id_card_image || "",
+      expiry: docType === "passport" ? form.passport_expiry || "" : docType === "taibao" ? form.taibao_expiry || "" : "",
+    };
     const compressed = await compressImage(file);
     if (docType === "passport") { setForm(prev => ({ ...prev, passport_image: compressed })); setPassportStatus({ type: "idle" }); }
     else if (docType === "taibao") { setForm(prev => ({ ...prev, taibao_image: compressed })); setTaibaoStatus({ type: "idle" }); }
@@ -230,6 +235,29 @@ export default function CustomerDetailPage() {
     if (!newDate) return false;
     if (!existingDate) return true;
     return new Date(newDate) > new Date(existingDate);
+  };
+
+  const deleteHistoryPhoto = async (doc: DocumentHistoryImage) => {
+    if (!confirm(`確定永久刪除此${doc.document_type === "passport" ? "護照" : doc.document_type === "taibao" ? "台胞證" : "身分證"}歷史照片？`)) return;
+    const { error } = await supabase.from("customer_document_images").delete().eq("id", doc.id).eq("customer_id", id);
+    if (error) { alert("刪除歷史照片失敗：" + error.message); return; }
+    setDocumentHistory(prev => prev.filter(item => item.id !== doc.id));
+  };
+
+  const deleteOlderRecognizedPhotos = async (documentType: "passport" | "taibao", newestExpiry: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(newestExpiry)) return 0;
+    const oldIds = documentHistory
+      .filter(doc => doc.document_type === documentType && !!doc.expiry && doc.expiry < newestExpiry)
+      .map(doc => doc.id);
+    if (oldIds.length === 0) return 0;
+    const { error } = await supabase.from("customer_document_images")
+      .delete().eq("customer_id", id).in("id", oldIds);
+    if (error) {
+      setAutoSaveError("較舊歷史照片自動清理失敗：" + error.message);
+      return 0;
+    }
+    setDocumentHistory(prev => prev.filter(doc => !oldIds.includes(doc.id)));
+    return oldIds.length;
   };
 
   const applyOcr = (result: OcrResult, docType: "passport" | "taibao" | "idCard") => {
@@ -292,7 +320,15 @@ export default function CustomerDetailPage() {
       });
       const result: OcrResult = await res.json();
       if (result.error) throw new Error(result.error);
+      const recognizedExpiry = docType === "passport" ? result.passportExpiry : docType === "taibao" ? result.taibaoExpiry : null;
+      const previous = previousDocRef.current[docType];
+      const scannedIsOlder = !!recognizedExpiry && !!previous?.expiry && recognizedExpiry < previous.expiry;
+      if (scannedIsOlder && previous?.image) setDocImage(docType, previous.image);
       const { detected, skipped } = applyOcr(result, docType);
+      let autoDeleted = 0;
+      if (!scannedIsOlder && recognizedExpiry && (docType === "passport" || docType === "taibao")) {
+        autoDeleted = await deleteOlderRecognizedPhotos(docType, recognizedExpiry);
+      }
       if (result.name) {
         const { data: dups } = await supabase.from("customers").select("id,name,birthday")
           .ilike("name", result.name.trim()).neq("id", id);
@@ -305,10 +341,11 @@ export default function CustomerDetailPage() {
       };
       const detectedLabels = detected.map(k => labels[k] || k).join("、");
       const skippedNote = skipped.length > 0 ? `（${skipped.join("、")}）` : "";
+      const cleanupNote = autoDeleted > 0 ? `，已自動刪除 ${autoDeleted} 張較舊歷史照片` : "";
       const msg = detected.length > 0
-        ? `已辨識：${detectedLabels}${skippedNote}`
+        ? `已辨識：${detectedLabels}${skippedNote}${cleanupNote}`
         : skipped.length > 0
-          ? skipped.join("、")
+          ? `${skipped.join("、")}${scannedIsOlder ? "，主照片已恢復為較新版本" : ""}`
           : "未辨識到資料，請確認圖片清晰度";
       setStatus({ type: "success", msg });
     } catch {
@@ -544,6 +581,7 @@ export default function CustomerDetailPage() {
           onClear={() => { setForm(p => ({ ...p, id_card_image: "" })); setIdCardStatus({ type: "idle" }); }}
           onScan={() => scanDocument("idCard")}
           onCrop={() => setCropTarget("idCard")}
+          onDeleteHistory={deleteHistoryPhoto}
           onAutoRotate={() => autoRotate("idCard")} onManualRotate={() => manualRotate("idCard")} />
         <DocumentCard title="🛂 護照" image={form.passport_image || ""} status={passportStatus}
           history={documentHistory.filter(d=>d.document_type==='passport'&&d.image_data!==form.passport_image)}
@@ -551,6 +589,7 @@ export default function CustomerDetailPage() {
           onClear={() => { setForm(p => ({ ...p, passport_image: "" })); setPassportStatus({ type: "idle" }); }}
           onScan={() => scanDocument("passport")}
           onCrop={() => setCropTarget("passport")}
+          onDeleteHistory={deleteHistoryPhoto}
           onAutoRotate={() => autoRotate("passport")} onManualRotate={() => manualRotate("passport")} />
         <DocumentCard title="🪪 台胞證" image={form.taibao_image || ""} status={taibaoStatus}
           history={documentHistory.filter(d=>d.document_type==='taibao'&&d.image_data!==form.taibao_image)}
@@ -558,6 +597,7 @@ export default function CustomerDetailPage() {
           onClear={() => { setForm(p => ({ ...p, taibao_image: "" })); setTaibaoStatus({ type: "idle" }); }}
           onScan={() => scanDocument("taibao")}
           onCrop={() => setCropTarget("taibao")}
+          onDeleteHistory={deleteHistoryPhoto}
           onAutoRotate={() => autoRotate("taibao")} onManualRotate={() => manualRotate("taibao")} />
       </div>
 
@@ -605,7 +645,7 @@ export default function CustomerDetailPage() {
 
 // ── DocumentCard ──────────────────────────────────────────────────────────────
 function DocumentCard({
-  title, image, history = [], status, inputRef, onUpload, onClear, onScan, onCrop, onAutoRotate, onManualRotate,
+  title, image, history = [], status, inputRef, onUpload, onClear, onScan, onCrop, onDeleteHistory, onAutoRotate, onManualRotate,
 }: {
   title: string; image: string; status: ScanStatus;
   history?: DocumentHistoryImage[];
@@ -613,6 +653,7 @@ function DocumentCard({
   onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onClear: () => void; onScan: () => void;
   onCrop: () => void;
+  onDeleteHistory: (doc: DocumentHistoryImage) => void;
   onAutoRotate: () => void; onManualRotate: () => void;
 }) {
   const scanning = status.type === "scanning";
@@ -673,12 +714,17 @@ function DocumentCard({
             <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-2">已保留的歷史照片（{history.length}）</p>
             <div className="grid grid-cols-3 gap-2">
               {history.map(doc=>(
-                <a key={doc.id} href={doc.image_data} target="_blank" rel="noreferrer"
-                  className="group/history rounded-lg border border-slate-200 dark:border-slate-600 overflow-hidden hover:border-violet-400 transition-colors"
-                  title={`${doc.document_number||'證件'}${doc.expiry?` 效期 ${doc.expiry}`:''}`}>
-                  <img src={doc.image_data} alt="證件歷史照片" className="w-full h-16 object-cover group-hover/history:scale-105 transition-transform" />
-                  <div className="px-1.5 py-1 text-[9px] text-slate-500 dark:text-slate-400 truncate">{doc.document_number||doc.expiry||'歷史照片'}</div>
-                </a>
+                <div key={doc.id} className="relative group/history rounded-lg border border-slate-200 dark:border-slate-600 overflow-hidden hover:border-violet-400 transition-colors">
+                  <a href={doc.image_data} target="_blank" rel="noreferrer"
+                    title={`${doc.document_number||'證件'}${doc.expiry?` 效期 ${doc.expiry}`:''}`}>
+                    <img src={doc.image_data} alt="證件歷史照片" className="w-full h-16 object-cover group-hover/history:scale-105 transition-transform" />
+                    <div className="px-1.5 py-1 pr-6 text-[9px] text-slate-500 dark:text-slate-400 truncate">{doc.document_number||doc.expiry||'歷史照片'}</div>
+                  </a>
+                  <button type="button" onClick={()=>onDeleteHistory(doc)} title="永久刪除此歷史照片"
+                    className="absolute top-1 right-1 p-1 rounded-full bg-black/65 text-white opacity-100 sm:opacity-0 sm:group-hover/history:opacity-100 hover:bg-red-600 transition-all">
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
               ))}
             </div>
           </div>
