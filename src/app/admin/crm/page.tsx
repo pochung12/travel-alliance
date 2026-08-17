@@ -252,7 +252,9 @@ const ALL_COLS: ColDef[] = [
   { key: "email",             label: "Email",      width: 180, visible: true  },
   { key: "id_number",         label: "身分證",     width: 140, visible: false },
   { key: "passport",          label: "護照（號碼＋效期）", width: 170, visible: true  },
+  { key: "passport_image",    label: "護照照片",   width: 110, visible: false },
   { key: "taibao_number",     label: "台胞證（號碼＋效期）", width: 170, visible: false },
+  { key: "taibao_image",      label: "台胞證照片", width: 110, visible: false },
   { key: "address",           label: "地址",       width: 200, visible: false },
   { key: "emergency_contact", label: "緊急聯絡人", width: 120, visible: false },
   { key: "emergency_phone",   label: "緊急電話",   width: 140, visible: false },
@@ -451,6 +453,9 @@ export default function CRMPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [search, setSearch]       = useState("");
   const [loading, setLoading]     = useState(true);
+  const [docImages, setDocImages] = useState<Record<string, { passport_image?: string; taibao_image?: string }>>({});
+  const [docImagesLoading, setDocImagesLoading] = useState(false);
+  const [imagePreview, setImagePreview] = useState<{ src: string; label: string; x: number; y: number } | null>(null);
 
   // tour records per customer
   const [custTours, setCustTours] = useState<Record<string, Pick<Tour,"id"|"name">[]>>({});
@@ -654,6 +659,49 @@ export default function CRMPage() {
 
   // ⚡ 三個查詢全部並行
   useEffect(() => { Promise.all([load(), loadLabels(), loadCustTours()]); }, []);
+
+  // 證件圖片是 base64 大欄位：只有使用者勾選圖片欄位時才批次載入，避免 CRM 列表平時浪費流量。
+  const passportImageVisible = columns.some(c => c.key === "passport_image" && c.visible);
+  const taibaoImageVisible = columns.some(c => c.key === "taibao_image" && c.visible);
+  useEffect(() => {
+    if ((!passportImageVisible && !taibaoImageVisible) || customers.length === 0) return;
+    const missingIds = customers
+      .filter(c => {
+        const cached = docImages[c.id];
+        return !cached ||
+          (passportImageVisible && cached.passport_image === undefined) ||
+          (taibaoImageVisible && cached.taibao_image === undefined);
+      })
+      .map(c => c.id);
+    if (missingIds.length === 0) return;
+
+    let cancelled = false;
+    const fields = ["id"];
+    if (passportImageVisible) fields.push("passport_image");
+    if (taibaoImageVisible) fields.push("taibao_image");
+    setDocImagesLoading(true);
+    supabase.from("customers").select(fields.join(",")).in("id", missingIds).then(({ data, error }) => {
+      if (cancelled) return;
+      if (error) {
+        console.warn("CRM document image load failed:", error.message);
+      } else {
+        setDocImages(prev => {
+          const next = { ...prev };
+          (data || []).forEach(row => {
+            const item = row as unknown as { id: string; passport_image?: string | null; taibao_image?: string | null };
+            next[item.id] = {
+              ...next[item.id],
+              ...(passportImageVisible ? { passport_image: item.passport_image || "" } : {}),
+              ...(taibaoImageVisible ? { taibao_image: item.taibao_image || "" } : {}),
+            };
+          });
+          return next;
+        });
+      }
+      setDocImagesLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [customers, passportImageVisible, taibaoImageVisible, docImages]);
 
   // ── resize ────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -1473,6 +1521,34 @@ export default function CRMPage() {
                           })}
                           <CopyBtn text={(c.meal_preference||"").trim()} />
                         </div>
+                      ) : col.key==="passport_image"||col.key==="taibao_image" ? (
+                        (() => {
+                          const src = docImages[c.id]?.[col.key as "passport_image" | "taibao_image"];
+                          const label = col.key === "passport_image" ? `${c.name}的護照照片` : `${c.name}的台胞證照片`;
+                          if (src === undefined) {
+                            return docImagesLoading
+                              ? <Loader2 className="w-4 h-4 text-violet-400 animate-spin mx-auto" />
+                              : <span className="text-xs text-slate-300 dark:text-slate-600">載入中…</span>;
+                          }
+                          if (!src) return <span className="text-xs text-slate-300 dark:text-slate-600">未上傳</span>;
+                          return (
+                            <button
+                              type="button"
+                              className="block rounded-lg border border-slate-200 dark:border-slate-600 overflow-hidden bg-slate-100 dark:bg-slate-700 hover:border-violet-400 hover:ring-2 hover:ring-violet-200 dark:hover:ring-violet-900/60 transition-all"
+                              title="滑鼠移入放大預覽"
+                              onMouseEnter={e => {
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                const previewW = Math.min(440, window.innerWidth - 32);
+                                let x = rect.right + 12;
+                                if (x + previewW > window.innerWidth - 16) x = Math.max(16, rect.left - previewW - 12);
+                                const y = Math.max(16, Math.min(rect.top, window.innerHeight - 500));
+                                setImagePreview({ src, label, x, y });
+                              }}
+                              onMouseLeave={() => setImagePreview(null)}>
+                              <img src={src} alt={label} className="w-16 h-11 object-cover" />
+                            </button>
+                          );
+                        })()
                       ) : col.key==="passport"||col.key==="taibao_number" ? (
                         (() => {
                           const num = (c as unknown as Record<string,string>)[col.key] || "";
@@ -1514,6 +1590,20 @@ export default function CRMPage() {
           </table>
         )}
       </div>{/* end desktop table */}
+
+      {/* 用 fixed 浮層避免大圖被表格 overflow 容器裁切 */}
+      {imagePreview && (
+        <div
+          className="fixed z-[80] pointer-events-none rounded-2xl border border-white/70 dark:border-slate-600 bg-white dark:bg-slate-900 shadow-2xl p-2"
+          style={{ left: imagePreview.x, top: imagePreview.y, width: "min(440px, calc(100vw - 32px))" }}>
+          <img
+            src={imagePreview.src}
+            alt={imagePreview.label}
+            className="w-full max-h-[70vh] object-contain rounded-xl bg-slate-100 dark:bg-slate-800"
+          />
+          <p className="px-2 pt-2 pb-1 text-xs font-medium text-slate-600 dark:text-slate-300 truncate">{imagePreview.label}</p>
+        </div>
+      )}
 
       {/* ══════════════════════════════════════════════════════════════════════
           MERGE DUPLICATES MODAL
