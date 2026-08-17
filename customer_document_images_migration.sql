@@ -14,5 +14,17 @@ CREATE TABLE IF NOT EXISTS customer_document_images (
 CREATE INDEX IF NOT EXISTS idx_customer_document_images_customer
   ON customer_document_images(customer_id, document_type, created_at DESC);
 
--- 本專案現有 CRM 由前端 authenticated/anon Supabase client 讀寫，權限與 customers 表保持一致。
-ALTER TABLE customer_document_images DISABLE ROW LEVEL SECURITY;
+-- 護照／台胞證照片屬敏感個資：禁止 anon，只允許已登入後台使用者讀寫。
+REVOKE ALL ON TABLE customer_document_images FROM anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE customer_document_images TO authenticated;
+
+ALTER TABLE customer_document_images ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Authenticated users manage customer document images"
+  ON customer_document_images;
+CREATE POLICY "Authenticated users manage customer document images"
+  ON customer_document_images
+  FOR ALL
+  TO authenticated
+  USING (true)
+  WITH CHECK (true);
