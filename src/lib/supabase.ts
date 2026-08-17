@@ -153,6 +153,7 @@ export interface CustomerDocumentImage {
   image_hash: string;
   document_number: string;
   expiry: string | null;
+  display_order?: number;
   created_at: string;
 }
 

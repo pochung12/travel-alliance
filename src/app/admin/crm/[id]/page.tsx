@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabase, Customer, Tour } from "@/lib/supabase";
-import { ArrowLeft, Save, Trash2, Upload, ScanLine, X, CheckCircle, AlertCircle, Loader2, UtensilsCrossed, RotateCw, Wand2, Crop } from "lucide-react";
+import { ArrowLeft, ArrowUp, ArrowDown, Save, Star, Trash2, Upload, ScanLine, X, CheckCircle, AlertCircle, Loader2, UtensilsCrossed, RotateCw, Wand2, Crop } from "lucide-react";
 import ImageCropModal from "@/components/ImageCropModal";
 
 // ─── Meal options (same as groups page) ───────────────────────────────────────
@@ -85,7 +85,20 @@ interface OcrResult {
 type ScanStatus = { type: "idle" } | { type: "scanning" } | { type: "rotating" } | { type: "success"; msg: string } | { type: "error"; msg: string };
 interface DocumentHistoryImage {
   id: string; document_type: 'passport'|'taibao'|'id_card'; image_data: string;
-  document_number: string; expiry: string|null; created_at: string;
+  image_hash?: string; document_number: string; expiry: string|null; created_at: string;
+  display_order?: number;
+}
+
+type DocType = DocumentHistoryImage["document_type"];
+type DocFormType = "passport" | "taibao" | "idCard";
+
+const DOC_IMAGE_KEY: Record<DocType, "passport_image"|"taibao_image"|"id_card_image"> = {
+  passport: "passport_image", taibao: "taibao_image", id_card: "id_card_image",
+};
+
+async function hashDocumentImage(imageData: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(imageData));
+  return Array.from(new Uint8Array(digest)).map(byte=>byte.toString(16).padStart(2,"0")).join("");
 }
 
 export default function CustomerDetailPage() {
@@ -101,6 +114,7 @@ export default function CustomerDetailPage() {
   const lastSaved = useRef<Partial<Customer>>({});
   const [highlightedFields, setHighlightedFields] = useState<Set<string>>(new Set());
   const [documentHistory, setDocumentHistory] = useState<DocumentHistoryImage[]>([]);
+  const [historyOrderSupported, setHistoryOrderSupported] = useState(true);
 
   const [passportStatus, setPassportStatus] = useState<ScanStatus>({ type: "idle" });
   const [taibaoStatus,   setTaibaoStatus]   = useState<ScanStatus>({ type: "idle" });
@@ -117,11 +131,44 @@ export default function CustomerDetailPage() {
     (async () => {
       const { data } = await supabase.from("customers").select(CUSTOMER_DETAIL_COLS).eq("id", id).single();
       if (!data) { router.push("/admin/crm"); return; }
-      setCustomer(data); setForm(data); lastSaved.current = data;
-      const { data: history } = await supabase.from("customer_document_images")
-        .select("id,document_type,image_data,document_number,expiry,created_at")
-        .eq("customer_id",id).order("created_at",{ascending:false});
-      setDocumentHistory((history||[]) as DocumentHistoryImage[]);
+      const orderedHistory = await supabase.from("customer_document_images")
+        .select("id,document_type,image_data,image_hash,document_number,expiry,created_at,display_order")
+        .eq("customer_id",id).order("display_order",{ascending:true}).order("created_at",{ascending:false});
+      let historyRows = (orderedHistory.data||[]) as unknown as DocumentHistoryImage[];
+      let historyError = orderedHistory.error;
+      if (historyError && (historyError.code === "42703" || historyError.message.includes("display_order"))) {
+        setHistoryOrderSupported(false);
+        const fallback = await supabase.from("customer_document_images")
+          .select("id,document_type,image_data,image_hash,document_number,expiry,created_at")
+          .eq("customer_id",id).order("created_at",{ascending:false});
+        historyRows = (fallback.data||[]) as unknown as DocumentHistoryImage[];
+        historyError = fallback.error;
+      }
+      if (historyError) setAutoSaveError("載入證件照片歷史失敗：" + historyError.message);
+
+      // 主圖若已被清空但歷史照片仍存在，載入時自動將排序第一張遞補為主圖。
+      const repaired = { ...data } as Customer;
+      const repairPatch: Partial<Customer> = {};
+      (["passport","taibao","id_card"] as DocType[]).forEach(docType=>{
+        const imageKey = DOC_IMAGE_KEY[docType];
+        const replacement = historyRows.find(item=>item.document_type===docType && !!item.image_data);
+        if (!repaired[imageKey] && replacement) {
+          repaired[imageKey] = replacement.image_data;
+          repairPatch[imageKey] = replacement.image_data;
+        }
+      });
+      if (Object.keys(repairPatch).length>0) {
+        const {error:repairError}=await supabase.from("customers").update(repairPatch).eq("id",id);
+        if (repairError) {
+          Object.keys(repairPatch).forEach(key=>{
+            const imageKey=key as keyof Pick<Customer,"passport_image"|"taibao_image"|"id_card_image">;
+            repaired[imageKey]=data[imageKey];
+          });
+          setAutoSaveError("自動遞補證件主照片失敗："+repairError.message);
+        }
+      }
+      setCustomer(repaired); setForm(repaired); lastSaved.current = repaired;
+      setDocumentHistory(historyRows);
       const { data: ct } = await supabase
         .from("customer_tours").select("paid_amount, tour:tours(*)").eq("customer_id", id);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -247,6 +294,97 @@ export default function CustomerDetailPage() {
     const { error } = await supabase.from("customer_document_images").delete().eq("id", doc.id).eq("customer_id", id);
     if (error) { alert("刪除歷史照片失敗：" + error.message); return; }
     setDocumentHistory(prev => prev.filter(item => item.id !== doc.id));
+  };
+
+  const reloadDocumentHistory = async () => {
+    const result = historyOrderSupported
+      ? await supabase.from("customer_document_images")
+          .select("id,document_type,image_data,image_hash,document_number,expiry,created_at,display_order")
+          .eq("customer_id",id).order("display_order",{ascending:true}).order("created_at",{ascending:false})
+      : await supabase.from("customer_document_images")
+          .select("id,document_type,image_data,image_hash,document_number,expiry,created_at")
+          .eq("customer_id",id).order("created_at",{ascending:false});
+    const {data,error}=result;
+    if (error) { setAutoSaveError("重新載入證件照片失敗："+error.message); return; }
+    setDocumentHistory((data||[]) as unknown as DocumentHistoryImage[]);
+  };
+
+  const archiveCurrentMain = async (docType: DocType, imageData: string) => {
+    if (!imageData) return true;
+    const imageHash = await hashDocumentImage(imageData);
+    const documentNumber = docType === "passport" ? form.passport || ""
+      : docType === "taibao" ? form.taibao_number || "" : form.id_number || "";
+    const expiry = docType === "passport" ? form.passport_expiry || null
+      : docType === "taibao" ? form.taibao_expiry || null : null;
+    const {error}=await supabase.from("customer_document_images").upsert({
+      customer_id:id, document_type:docType, image_data:imageData, image_hash:imageHash,
+      document_number:documentNumber, expiry,
+      ...(historyOrderSupported ? {display_order:0} : {}),
+    },{onConflict:"customer_id,document_type,image_hash",ignoreDuplicates:true});
+    if (error) { alert("保存目前主照片失敗，已中止操作："+error.message); return false; }
+    return true;
+  };
+
+  const setHistoryAsMain = async (doc: DocumentHistoryImage) => {
+    const imageKey = DOC_IMAGE_KEY[doc.document_type];
+    const currentImage = form[imageKey] || "";
+    if (currentImage === doc.image_data) return;
+    if (!(await archiveCurrentMain(doc.document_type,currentImage))) return;
+    const {error}=await supabase.from("customers").update({[imageKey]:doc.image_data}).eq("id",id);
+    if (error) { alert("設為主照片失敗："+error.message); return; }
+    setForm(prev=>({...prev,[imageKey]:doc.image_data}));
+    lastSaved.current={...lastSaved.current,[imageKey]:doc.image_data};
+    setCustomer(prev=>prev?{...prev,[imageKey]:doc.image_data}:prev);
+    setAutoSavedAt(new Date());
+    await reloadDocumentHistory();
+  };
+
+  const clearMainAndPromote = async (docType: DocType, setStatus: (status:ScanStatus)=>void) => {
+    const imageKey = DOC_IMAGE_KEY[docType];
+    const currentImage = form[imageKey] || "";
+    if (!currentImage) return;
+    const candidates = documentHistory.filter(doc=>doc.document_type===docType && doc.image_data!==currentImage);
+    const replacement = candidates[0]?.image_data || "";
+    if (!confirm(replacement
+      ? "確定刪除目前主照片？歷史照片的第一張將自動遞補為主照片。"
+      : "確定刪除目前主照片？目前沒有其他歷史照片可遞補。")) return;
+    const {error:updateError}=await supabase.from("customers").update({[imageKey]:replacement}).eq("id",id);
+    if (updateError) { alert("刪除主照片失敗："+updateError.message); return; }
+    const currentHash=await hashDocumentImage(currentImage);
+    const {error:archiveDeleteError}=await supabase.from("customer_document_images")
+      .delete().eq("customer_id",id).eq("document_type",docType).eq("image_hash",currentHash);
+    if (archiveDeleteError) {
+      // 主圖已安全遞補；歷史副本刪除失敗不回滾主圖，避免再次留下空白。
+      setAutoSaveError("主照片已遞補，但舊照片歷史副本刪除失敗："+archiveDeleteError.message);
+    }
+    setForm(prev=>({...prev,[imageKey]:replacement}));
+    lastSaved.current={...lastSaved.current,[imageKey]:replacement};
+    setCustomer(prev=>prev?{...prev,[imageKey]:replacement}:prev);
+    setStatus({type:"success",msg:replacement?"已刪除原主照片，並自動遞補歷史照片":"主照片已刪除"});
+    setAutoSavedAt(new Date());
+    await reloadDocumentHistory();
+  };
+
+  const moveHistoryPhoto = async (doc: DocumentHistoryImage, direction: -1|1, currentMain: string) => {
+    if (!historyOrderSupported) {
+      alert("請先執行 customer_document_images_order_migration.sql，才能永久調整照片順序。");
+      return;
+    }
+    const visible = documentHistory.filter(item=>item.document_type===doc.document_type && item.image_data!==currentMain);
+    const from = visible.findIndex(item=>item.id===doc.id);
+    const to = from+direction;
+    if (from<0 || to<0 || to>=visible.length) return;
+    const reordered=[...visible];
+    [reordered[from],reordered[to]]=[reordered[to],reordered[from]];
+    const updates = reordered.map((item,index)=>supabase.from("customer_document_images")
+      .update({display_order:index+1}).eq("id",item.id).eq("customer_id",id));
+    const results=await Promise.all(updates);
+    const error=results.find(result=>result.error)?.error;
+    if (error) { alert("調整照片順序失敗："+error.message); return; }
+    setDocumentHistory(prev=>{
+      const other=prev.filter(item=>item.document_type!==doc.document_type || item.image_data===currentMain);
+      return [...other,...reordered.map((item,index)=>({...item,display_order:index+1}))];
+    });
   };
 
   const deleteOlderRecognizedPhotos = async (documentType: "passport" | "taibao", newestExpiry: string) => {
@@ -583,26 +721,29 @@ export default function CustomerDetailPage() {
         <DocumentCard title="🪪 身分證" image={form.id_card_image || ""} status={idCardStatus}
           history={documentHistory.filter(d=>d.document_type==='id_card'&&d.image_data!==form.id_card_image)}
           inputRef={idCardInputRef} onUpload={e => handleDocUpload(e, "idCard")}
-          onClear={() => { setForm(p => ({ ...p, id_card_image: "" })); setIdCardStatus({ type: "idle" }); }}
+          onClear={() => clearMainAndPromote("id_card",setIdCardStatus)}
           onScan={() => scanDocument("idCard")}
           onCrop={() => setCropTarget("idCard")}
           onDeleteHistory={deleteHistoryPhoto}
+          onSetMain={setHistoryAsMain} onMoveHistory={moveHistoryPhoto}
           onAutoRotate={() => autoRotate("idCard")} onManualRotate={() => manualRotate("idCard")} />
         <DocumentCard title="🛂 護照" image={form.passport_image || ""} status={passportStatus}
           history={documentHistory.filter(d=>d.document_type==='passport'&&d.image_data!==form.passport_image)}
           inputRef={passportInputRef} onUpload={e => handleDocUpload(e, "passport")}
-          onClear={() => { setForm(p => ({ ...p, passport_image: "" })); setPassportStatus({ type: "idle" }); }}
+          onClear={() => clearMainAndPromote("passport",setPassportStatus)}
           onScan={() => scanDocument("passport")}
           onCrop={() => setCropTarget("passport")}
           onDeleteHistory={deleteHistoryPhoto}
+          onSetMain={setHistoryAsMain} onMoveHistory={moveHistoryPhoto}
           onAutoRotate={() => autoRotate("passport")} onManualRotate={() => manualRotate("passport")} />
         <DocumentCard title="🪪 台胞證" image={form.taibao_image || ""} status={taibaoStatus}
           history={documentHistory.filter(d=>d.document_type==='taibao'&&d.image_data!==form.taibao_image)}
           inputRef={taibaoInputRef} onUpload={e => handleDocUpload(e, "taibao")}
-          onClear={() => { setForm(p => ({ ...p, taibao_image: "" })); setTaibaoStatus({ type: "idle" }); }}
+          onClear={() => clearMainAndPromote("taibao",setTaibaoStatus)}
           onScan={() => scanDocument("taibao")}
           onCrop={() => setCropTarget("taibao")}
           onDeleteHistory={deleteHistoryPhoto}
+          onSetMain={setHistoryAsMain} onMoveHistory={moveHistoryPhoto}
           onAutoRotate={() => autoRotate("taibao")} onManualRotate={() => manualRotate("taibao")} />
       </div>
 
@@ -650,7 +791,7 @@ export default function CustomerDetailPage() {
 
 // ── DocumentCard ──────────────────────────────────────────────────────────────
 function DocumentCard({
-  title, image, history = [], status, inputRef, onUpload, onClear, onScan, onCrop, onDeleteHistory, onAutoRotate, onManualRotate,
+  title, image, history = [], status, inputRef, onUpload, onClear, onScan, onCrop, onDeleteHistory, onSetMain, onMoveHistory, onAutoRotate, onManualRotate,
 }: {
   title: string; image: string; status: ScanStatus;
   history?: DocumentHistoryImage[];
@@ -659,6 +800,8 @@ function DocumentCard({
   onClear: () => void; onScan: () => void;
   onCrop: () => void;
   onDeleteHistory: (doc: DocumentHistoryImage) => void;
+  onSetMain: (doc: DocumentHistoryImage) => void;
+  onMoveHistory: (doc: DocumentHistoryImage, direction:-1|1, currentMain:string) => void;
   onAutoRotate: () => void; onManualRotate: () => void;
 }) {
   const scanning = status.type === "scanning";
@@ -718,17 +861,33 @@ function DocumentCard({
           <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
             <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-2">已保留的歷史照片（{history.length}）</p>
             <div className="grid grid-cols-3 gap-2">
-              {history.map(doc=>(
+              {history.map((doc,index)=>(
                 <div key={doc.id} className="relative group/history rounded-lg border border-slate-200 dark:border-slate-600 overflow-hidden hover:border-violet-400 transition-colors">
                   <a href={doc.image_data} target="_blank" rel="noreferrer"
                     title={`${doc.document_number||'證件'}${doc.expiry?` 效期 ${doc.expiry}`:''}`}>
                     <img src={doc.image_data} alt="證件歷史照片" className="w-full h-16 object-cover group-hover/history:scale-105 transition-transform" />
-                    <div className="px-1.5 py-1 pr-6 text-[9px] text-slate-500 dark:text-slate-400 truncate">{doc.document_number||doc.expiry||'歷史照片'}</div>
+                    <div className="px-1.5 py-1 text-[9px] text-slate-500 dark:text-slate-400 truncate">{doc.document_number||doc.expiry||'歷史照片'}</div>
                   </a>
                   <button type="button" onClick={()=>onDeleteHistory(doc)} title="永久刪除此歷史照片"
                     className="absolute top-1 right-1 p-1 rounded-full bg-black/65 text-white opacity-100 sm:opacity-0 sm:group-hover/history:opacity-100 hover:bg-red-600 transition-all">
                     <Trash2 className="w-3 h-3" />
                   </button>
+                  <div className="flex items-center justify-between gap-0.5 p-1 bg-white/95 dark:bg-slate-800/95 border-t border-slate-100 dark:border-slate-700">
+                    <button type="button" onClick={()=>onSetMain(doc)} title="設為第一張主照片"
+                      className="flex items-center gap-0.5 px-1.5 py-1 rounded text-[9px] font-semibold text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/30">
+                      <Star className="w-2.5 h-2.5" /> 主圖
+                    </button>
+                    <div className="flex gap-0.5">
+                      <button type="button" disabled={index===0} onClick={()=>onMoveHistory(doc,-1,image)} title="向前移動"
+                        className="p-1 rounded text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-25">
+                        <ArrowUp className="w-3 h-3" />
+                      </button>
+                      <button type="button" disabled={index===history.length-1} onClick={()=>onMoveHistory(doc,1,image)} title="向後移動"
+                        className="p-1 rounded text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-25">
+                        <ArrowDown className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
                 </div>
               ))}
             </div>
