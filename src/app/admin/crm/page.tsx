@@ -5,7 +5,7 @@ import { supabase, Customer, Tour } from "@/lib/supabase";
 import {
   Plus, Search, Users, ScanLine, Upload, FileSpreadsheet,
   Loader2, CheckCircle, AlertCircle, X, Settings, Tag, Trash2, CheckCircle2, Layers,
-  GitMerge, ChevronRight, ArrowUp, ArrowDown, ChevronsUpDown, Pencil, Copy, Check,
+  GitMerge, ChevronRight, ArrowUp, ArrowDown, ChevronsUpDown, Pencil, Copy, Check, UserMinus,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -128,6 +128,14 @@ function editDistance(a: string, b: string): number {
     prev.splice(0, n+1, ...curr);
   }
   return prev[n];
+}
+
+function customerNamesCompatible(a: Customer, b: Customer): boolean {
+  const na = normalizeChineseName(a.name || '');
+  const nb = normalizeChineseName(b.name || '');
+  if (!na || !nb) return true;
+  if (na === nb) return true;
+  return na.length >= 3 && nb.length >= 3 && editDistance(na, nb) <= 1;
 }
 // ─── Merge field definitions ─────────────────────────────────────────────────
 const MERGE_FIELD_DEFS: {
@@ -1161,7 +1169,7 @@ export default function CRMPage() {
     byPass.forEach(cs => {
       if (cs.length<2) return;
       for (let i=0;i<cs.length;i++) for (let j=i+1;j<cs.length;j++)
-        addPair(cs[i],cs[j],"護照號碼相同");
+        if (customerNamesCompatible(cs[i],cs[j])) addPair(cs[i],cs[j],"護照號碼相同");
     });
 
     // ③ 身分證字號相同
@@ -1175,7 +1183,7 @@ export default function CRMPage() {
     byId.forEach(cs => {
       if (cs.length<2) return;
       for (let i=0;i<cs.length;i++) for (let j=i+1;j<cs.length;j++)
-        addPair(cs[i],cs[j],"身分證字號相同");
+        if (customerNamesCompatible(cs[i],cs[j])) addPair(cs[i],cs[j],"身分證字號相同");
     });
 
     // ④ 台胞證號碼相同
@@ -1189,7 +1197,7 @@ export default function CRMPage() {
     byTaibao.forEach(cs => {
       if (cs.length<2) return;
       for (let i=0;i<cs.length;i++) for (let j=i+1;j<cs.length;j++)
-        addPair(cs[i],cs[j],"台胞證號碼相同");
+        if (customerNamesCompatible(cs[i],cs[j])) addPair(cs[i],cs[j],"台胞證號碼相同");
     });
 
     // ⑤ 手機號碼相同（去除空格/符號，至少 8 碼）
@@ -1204,7 +1212,7 @@ export default function CRMPage() {
     byPhone.forEach(cs => {
       if (cs.length<2) return;
       for (let i=0;i<cs.length;i++) for (let j=i+1;j<cs.length;j++)
-        addPair(cs[i],cs[j],"手機號碼相同");
+        if (customerNamesCompatible(cs[i],cs[j])) addPair(cs[i],cs[j],"手機號碼相同");
     });
 
     // ⑥ 模糊姓名：編輯距離 ≤ 1（名字 ≥ 3 字才比，避免誤判）
@@ -1279,6 +1287,65 @@ export default function CRMPage() {
     setDupGroups(groups);
     setMergeResult(null);
     setShowMerge(true);
+  };
+
+  const removeCustomerFromDupGroup = (groupIndex: number, customerId: string) => {
+    setDupGroups(prev => prev.flatMap((group, index) => {
+      if (index !== groupIndex) return [group];
+      const customersLeft = group.customers.filter(c => c.id !== customerId);
+      if (customersLeft.length < 2) return [];
+      const { choices, smartInfo } = buildSmartChoices(customersLeft);
+      return [{
+        ...group,
+        id: customersLeft.map(c => c.id).sort().join(':'),
+        customers: customersLeft,
+        selected: false,
+        keepId: customersLeft.some(c => c.id === group.keepId) ? group.keepId : customersLeft[0].id,
+        fieldChoices: choices,
+        smartInfo,
+      }];
+    }));
+  };
+
+  const splitDupGroupByName = (groupIndex: number) => {
+    setDupGroups(prev => prev.flatMap((group, index) => {
+      if (index !== groupIndex) return [group];
+      const remaining = new Set(group.customers.map(c => c.id));
+      const clusters: Customer[][] = [];
+      while (remaining.size > 0) {
+        const seedId = remaining.values().next().value as string;
+        const queue = [seedId];
+        const clusterIds = new Set<string>();
+        remaining.delete(seedId);
+        while (queue.length > 0) {
+          const currentId = queue.shift()!;
+          clusterIds.add(currentId);
+          const current = group.customers.find(c => c.id === currentId)!;
+          Array.from(remaining).forEach(otherId => {
+            const other = group.customers.find(c => c.id === otherId)!;
+            if (customerNamesCompatible(current, other)) {
+              remaining.delete(otherId);
+              queue.push(otherId);
+            }
+          });
+        }
+        clusters.push(group.customers.filter(c => clusterIds.has(c.id)));
+      }
+      const splitGroups = clusters.filter(cluster => cluster.length >= 2).map(cluster => {
+        const { choices, smartInfo } = buildSmartChoices(cluster);
+        return {
+          ...group,
+          id: cluster.map(c => c.id).sort().join(':'),
+          reasons: ['依姓名拆分', ...group.reasons],
+          customers: cluster,
+          selected: false,
+          keepId: cluster.some(c => c.id === group.keepId) ? group.keepId : cluster[0].id,
+          fieldChoices: choices,
+          smartInfo,
+        };
+      });
+      return splitGroups.length > 0 ? splitGroups : [group];
+    }));
   };
 
   const setFieldChoice = (gi: number, key: string, choice: string|'clear') => {
@@ -1948,6 +2015,11 @@ export default function CRMPage() {
                             )}
                           </div>
                           <span className="ml-auto text-xs text-slate-400 dark:text-slate-500 hidden sm:block">點選欄位選擇要保留哪筆資料</span>
+                          <button type="button" onClick={()=>splitDupGroupByName(gi)}
+                            className="shrink-0 inline-flex items-center gap-1 rounded-lg border border-violet-200 dark:border-violet-700 bg-white dark:bg-slate-800 px-2 py-1 text-[10px] font-medium text-violet-600 dark:text-violet-300 hover:bg-violet-50 dark:hover:bg-violet-900/30"
+                            title="把姓名明顯不同的旅客拆成獨立合併組">
+                            <GitMerge className="w-3 h-3" /> 依姓名拆組
+                          </button>
                         </div>
 
                         {/* comparison table */}
@@ -1980,6 +2052,12 @@ export default function CRMPage() {
                                 className="text-[10px] text-violet-500 hover:underline mt-0.5 block truncate">
                                 {c.name}（查看 ↗）
                               </Link>
+                              <button type="button"
+                                onClick={()=>removeCustomerFromDupGroup(gi,c.id)}
+                                className="mt-1 inline-flex items-center gap-1 text-[10px] text-red-500 hover:text-red-600 hover:underline"
+                                title="此人不是同一位旅客，從本合併組移除">
+                                <UserMinus className="w-3 h-3" /> 移出此合併組
+                              </button>
                             </div>
                           ))}
 
