@@ -301,13 +301,21 @@ function sanitizeDate(d: unknown): string {
   return isNaN(Date.parse(iso)) ? "" : iso;
 }
 
+function inferOcrDocType(ocr: OcrResult): DocType | null {
+  const raw = (ocr.docType || "").toLowerCase();
+  if (ocr.passport || raw.includes("passport") || raw.includes("護照")) return "passport";
+  if (ocr.taibaoNumber || raw.includes("taibao") || raw.includes("台胞") || raw.includes("mainland")) return "taibao";
+  if (ocr.idNumber || raw.includes("idcard") || raw.includes("id_card") || raw.includes("身分證")) return "idCard";
+  return null;
+}
+
 function buildFormFromOcr(ocr: OcrResult, imageB64: string): Omit<Customer, "id" | "created_at"> {
   const form = { ...EMPTY };
   form.name     = ocr.name     ?? "";
   form.name_en  = ocr.nameEn   ?? "";
   form.birthday = sanitizeDate(ocr.birthday);
   form.gender   = sanitizeGender(ocr.gender);
-  const dt = ocr.docType;
+  const dt = inferOcrDocType(ocr);
   if (dt === "passport") {
     form.passport        = ocr.passport ?? "";
     form.passport_expiry = sanitizeDate(ocr.passportExpiry);
@@ -828,7 +836,8 @@ export default function CRMPage() {
         const idx = nextIdx++;
         setBulkItems(prev => prev.map((it,i)=>i===idx?{...it,status:"scanning"}:it));
         try {
-          const b64 = await compressImage(files[idx], 2400, 0.92);
+          // 手機原圖常超過數 MB；保留足夠 OCR/證件閱讀的清晰度，同時避免 Supabase 請求體過大。
+          const b64 = await compressImage(files[idx], 1800, 0.85);
           const res = await fetch("/api/ocr/document",{
             method:"POST", headers:{"Content-Type":"application/json"},
             body: JSON.stringify({imageBase64:b64, docType:"auto"}),
@@ -836,7 +845,7 @@ export default function CRMPage() {
           const ocr: OcrResult & {error?:string} = await res.json();
           if (ocr.error) throw new Error(ocr.error);
           const form = buildFormFromOcr(ocr, b64);
-          setBulkItems(prev=>prev.map((it,i)=>i===idx?{...it,status:"done",detectedType:ocr.docType??null,ocr,form}:it));
+          setBulkItems(prev=>prev.map((it,i)=>i===idx?{...it,status:"done",detectedType:inferOcrDocType(ocr),ocr,form}:it));
         } catch(e:unknown) {
           setBulkItems(prev=>prev.map((it,i)=>i===idx?{...it,status:"error",error:e instanceof Error?e.message:"OCR 失敗"}:it));
         }
@@ -857,33 +866,74 @@ export default function CRMPage() {
     const toCreate = bulkItems.filter(it=>it.selected&&it.status==="done"&&it.form.name.trim());
     if (toCreate.length===0) { alert("沒有可建立的旅客（請確認姓名已填寫）"); return; }
     setBulkCreating(true);
-    const entries = toCreate.map(it=>({
-      uid: it.uid,
-      payload: {
-        ...it.form,
-        gender: sanitizeGender(it.form.gender),
-        birthday: sanitizeDate(it.form.birthday)||null,
-        passport_expiry: sanitizeDate(it.form.passport_expiry)||null,
-        taibao_expiry: sanitizeDate(it.form.taibao_expiry)||null,
-      },
-    }));
+
+    // 同一人可能同時上傳護照與台胞證，先合併為一筆，避免產生重複旅客。
+    type BulkPerson = { uids: string[]; form: Omit<Customer,"id"|"created_at"> };
+    const grouped = new Map<string, BulkPerson>();
+    for (const item of toCreate) {
+      const nameKey = normalizeChineseName(item.form.name);
+      const enKey = (item.form.name_en || "").replace(/[^a-z]/gi, "").toLowerCase();
+      const key = nameKey ? `name:${nameKey}` : `en:${enKey}`;
+      const current = grouped.get(key);
+      if (!current) {
+        grouped.set(key, { uids: [item.uid], form: { ...item.form } });
+        continue;
+      }
+      const merged = { ...current.form };
+      (Object.keys(item.form) as (keyof typeof item.form)[]).forEach(field => {
+        const value = item.form[field];
+        if (value !== "" && value !== null && value !== undefined && !(field === "gender" && value === "other")) {
+          (merged as unknown as Record<string, unknown>)[field] = value;
+        }
+      });
+      grouped.set(key, { uids: [...current.uids, item.uid], form: merged });
+    }
+
     const createdUids = new Set<string>();
     const failures: {uid:string; msg:string}[] = [];
-    const BATCH = 20; // 每列含證件圖 base64，批次太大會撞請求上限
-    for (let i=0; i<entries.length; i+=BATCH) {
-      const chunk = entries.slice(i,i+BATCH);
-      const { error } = await supabase.from("customers").insert(chunk.map(e=>e.payload));
-      if (!error) { chunk.forEach(e=>createdUids.add(e.uid)); continue; }
-      // 批次失敗（Postgres 整批回滾）→ 逐筆重試，找出真正的壞行
-      for (const e of chunk) {
-        const { error: rowErr } = await supabase.from("customers").insert([e.payload]);
-        if (rowErr) failures.push({uid:e.uid, msg:rowErr.message});
-        else createdUids.add(e.uid);
+
+    for (const person of Array.from(grouped.values())) {
+      const f = person.form;
+      const normalizedName = normalizeChineseName(f.name);
+      const normalizedEn = (f.name_en || "").replace(/[^a-z]/gi, "").toLowerCase();
+      const existing = customers.find(c =>
+        normalizeChineseName(c.name) === normalizedName ||
+        (!!normalizedEn && (c.name_en || "").replace(/[^a-z]/gi, "").toLowerCase() === normalizedEn)
+      );
+
+      let error: { message: string } | null = null;
+      if (existing) {
+        // 只寫入本次真正辨識到的欄位，不用空值清掉 CRM 既有資料。
+        const updates: Record<string, unknown> = {};
+        (Object.keys(f) as (keyof typeof f)[]).forEach(field => {
+          const value = f[field];
+          if (value !== "" && value !== null && value !== undefined && !(field === "gender" && value === "other")) updates[field] = value;
+        });
+        if (f.birthday) updates.birthday = sanitizeDate(f.birthday) || null;
+        if (f.passport_expiry) updates.passport_expiry = sanitizeDate(f.passport_expiry) || null;
+        if (f.taibao_expiry) updates.taibao_expiry = sanitizeDate(f.taibao_expiry) || null;
+        const result = await supabase.from("customers").update(updates).eq("id", existing.id);
+        error = result.error;
+      } else {
+        const payload = {
+          ...f,
+          gender: sanitizeGender(f.gender),
+          birthday: sanitizeDate(f.birthday)||null,
+          passport_expiry: sanitizeDate(f.passport_expiry)||null,
+          taibao_expiry: sanitizeDate(f.taibao_expiry)||null,
+        };
+        const result = await supabase.from("customers").insert([payload]);
+        error = result.error;
       }
+
+      if (error) person.uids.forEach(uid => failures.push({ uid, msg: error!.message }));
+      else person.uids.forEach(uid => createdUids.add(uid));
     }
     setBulkCreating(false);
+    // 讓列表的護照／台胞證縮圖立即重新向 DB 取得。
+    setDocImages({});
     if (failures.length===0) {
-      setBulkDone({success:createdUids.size}); load(); return;
+      setBulkDone({success:grouped.size}); load(); return;
     }
     // 有失敗：成功的移出列表，失敗的標記錯誤留在畫面上
     setBulkItems(prev=>prev
@@ -893,7 +943,7 @@ export default function CRMPage() {
         return f ? {...it, status:"error" as const, error:`建立失敗：${f.msg}`} : it;
       }));
     if (createdUids.size>0) load();
-    alert(`成功建立 ${createdUids.size} 位、失敗 ${failures.length} 位。\n失敗原因（第一筆）：${failures[0].msg}\n失敗的照片已標紅保留在列表中。`);
+    alert(`成功儲存 ${createdUids.size} 張證件、失敗 ${failures.length} 張。\n失敗原因（第一筆）：${failures[0].msg}\n失敗的照片已標紅保留在列表中。`);
   };
 
   const closeBulkScan = () => {
@@ -2020,7 +2070,7 @@ export default function CRMPage() {
                 <div className="text-center py-12 space-y-3">
                   <CheckCircle className="w-14 h-14 text-emerald-500 mx-auto" />
                   <p className="text-xl font-semibold text-slate-800 dark:text-slate-100">批量建檔完成！</p>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">成功建立 <strong className="text-emerald-600">{bulkDone.success}</strong> 位旅客</p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">成功儲存 <strong className="text-emerald-600">{bulkDone.success}</strong> 位旅客的證件與照片</p>
                 </div>
               ) : (
                 <>
@@ -2140,7 +2190,7 @@ export default function CRMPage() {
                     disabled={bulkCreating||bulkProcessing||bulkItems.filter(it=>it.selected&&it.status==="done"&&it.form.name.trim()).length===0}
                     className="px-5 py-2 text-sm bg-amber-500 hover:bg-amber-600 text-white rounded-lg disabled:opacity-40 flex items-center gap-1.5">
                     {bulkCreating && <Loader2 className="w-4 h-4 animate-spin" />}
-                    {bulkCreating ? "建立中…" : `✓ 批量建立 ${bulkItems.filter(it=>it.selected&&it.status==="done"&&it.form.name.trim()).length} 位旅客`}
+                    {bulkCreating ? "儲存中…" : `✓ 批量儲存 ${bulkItems.filter(it=>it.selected&&it.status==="done"&&it.form.name.trim()).length} 張證件`}
                   </button>
                 </div>
               </div>
