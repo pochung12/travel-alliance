@@ -1303,6 +1303,9 @@ export default function CRMPage() {
       'id_number','id_card_image','passport','passport_expiry','passport_image',
       'taibao_number','taibao_expiry','taibao_image',
     ];
+    const DATE_KEYS = new Set<keyof Omit<Customer,'id'|'created_at'>>([
+      'birthday','passport_expiry','taibao_expiry',
+    ]);
     for (const group of toMerge) {
       const primary = group.customers.find(c=>c.id===group.keepId) || group.customers[0];
       const secondaryIds = group.customers.filter(c=>c.id!==primary.id).map(c=>c.id);
@@ -1382,7 +1385,12 @@ export default function CRMPage() {
       for (const key of ALL_KEYS) {
         const choice = group.fieldChoices[key] ?? primary.id;
         const source = choice==='clear' ? null : group.customers.find(c=>c.id===choice);
-        const val = source ? (source[key] ?? '') : (key === 'gender' ? 'other' : '');
+        const rawVal = source?.[key];
+        const val = DATE_KEYS.has(key)
+          ? (sanitizeDate(rawVal) || null)
+          : key === 'gender'
+            ? (rawVal || 'other')
+            : (rawVal ?? '');
         (patch as Record<string, unknown>)[key] = val;
       }
       const {error:updateError}=await supabase.from("customers").update(patch).eq("id", primary.id);
