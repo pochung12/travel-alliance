@@ -457,6 +457,8 @@ export default function CRMPage() {
   // tour records per customer
   const [custTours, setCustTours] = useState<Record<string, Pick<Tour,"id"|"name">[]>>({});
   const [allTours,  setAllTours]  = useState<Pick<Tour,"id"|"name"|"status">[]>([]);
+  const [allToursLoaded, setAllToursLoaded] = useState(false);
+  const [allToursLoading, setAllToursLoading] = useState(false);
   const [tourPickerId, setTourPickerId] = useState<string|null>(null);
 
   // labels
@@ -583,20 +585,36 @@ export default function CRMPage() {
     "address","emergency_contact","emergency_phone",
     "notes","meal_preference","created_at",
   ].join(",");
+  const LIST_COLS_WITHOUT_MEAL = [
+    "id","name","name_en","gender","birthday","phone","email",
+    "id_number","passport","passport_expiry",
+    "taibao_number","taibao_expiry",
+    "address","emergency_contact","emergency_phone",
+    "notes","created_at",
+  ].join(",");
+  const MERGE_CUSTOMER_COLS = [
+    LIST_COLS,
+    "id_card_image","passport_image","taibao_image",
+  ].join(",");
 
   const load = async () => {
-    // 先嘗試精簡欄位查詢；若欄位不存在（如 meal_preference 尚未 migrate）自動降級為 select("*")
+    // 永遠排除 base64 圖片；舊資料庫缺 meal_preference 時只退回另一組安全欄位。
     let { data, error } = await supabase
       .from("customers")
       .select(LIST_COLS)
       .order("created_at", { ascending: false });
-    if (error) {
-      console.warn("CRM list select fallback:", error.message);
+    const mealColumnMissing = !!error && (
+      error.code === "42703" || error.code === "PGRST204" ||
+      error.message.toLowerCase().includes("meal_preference")
+    );
+    if (mealColumnMissing) {
+      console.warn("CRM list select fallback:", error!.message);
       ({ data, error } = await supabase
         .from("customers")
-        .select("*")
+        .select(LIST_COLS_WITHOUT_MEAL)
         .order("created_at", { ascending: false }));
     }
+    if (error) console.error("CRM list load failed:", error.message);
     setCustomers((data || []) as unknown as Customer[]);
     setLoading(false);
   };
@@ -604,7 +622,7 @@ export default function CRMPage() {
   const loadLabels = async () => {
     // ⚡ 兩個 query 並行
     const [{ data: labels }, { data: cl }] = await Promise.all([
-      supabase.from("crm_labels").select("*").order("created_at"),
+      supabase.from("crm_labels").select("id,name,color").order("created_at"),
       supabase.from("customer_labels").select("customer_id, label_id"),
     ]);
     setAllLabels((labels || []) as CrmLabel[]);
@@ -617,21 +635,38 @@ export default function CRMPage() {
   };
 
   const loadCustTours = async () => {
-    const [{ data }, { data: tours }] = await Promise.all([
-      supabase.from("customer_tours").select("customer_id, tours(id, name)").neq("status", "cancelled"),
-      supabase.from("tours").select("id,name,status").order("start_date", { ascending: false }),
-    ]);
+    const { data } = await supabase
+      .from("customer_tours")
+      .select("customer_id,tour_id,tours(name)")
+      .neq("status", "cancelled");
     const map: Record<string, Pick<Tour, "id" | "name">[]> = {};
-    (data || []).forEach((row: { customer_id: string; tours: { id: string; name: string }[] | null }) => {
+    (data || []).forEach((row: { customer_id: string; tour_id: string; tours: { name: string }[] | { name: string } | null }) => {
       const tourArr = Array.isArray(row.tours) ? row.tours : (row.tours ? [row.tours] : []);
       tourArr.forEach(t => {
         if (!map[row.customer_id]) map[row.customer_id] = [];
-        if (!map[row.customer_id].find(x => x.id === t.id))
-          map[row.customer_id].push({ id: t.id, name: t.name });
+        if (!map[row.customer_id].find(x => x.id === row.tour_id))
+          map[row.customer_id].push({ id: row.tour_id, name: t.name });
       });
     });
     setCustTours(map);
-    setAllTours((tours || []) as Pick<Tour,"id"|"name"|"status">[]);
+  };
+
+  const loadAllTours = async () => {
+    if (allToursLoaded || allToursLoading) return;
+    setAllToursLoading(true);
+    const { data, error } = await supabase
+      .from("tours")
+      .select("id,name,status")
+      .order("start_date", { ascending: false });
+    if (error) console.error("CRM tour picker load failed:", error.message);
+    setAllTours((data || []) as Pick<Tour,"id"|"name"|"status">[]);
+    setAllToursLoaded(true);
+    setAllToursLoading(false);
+  };
+
+  const openTourPicker = (customerId: string) => {
+    setTourPickerId(customerId);
+    void loadAllTours();
   };
 
   const toggleCustTour = async (custId: string, tour: Pick<Tour,"id"|"name">) => {
@@ -658,51 +693,8 @@ export default function CRMPage() {
     }
   };
 
-  // ⚡ 三個查詢全部並行
+  // 列表只載入顯示所需資料；完整團清單延後到使用者打開參團編輯器。
   useEffect(() => { Promise.all([load(), loadLabels(), loadCustTours()]); }, []);
-
-  // 證件圖片是 base64 大欄位：只有使用者勾選圖片欄位時才批次載入，避免 CRM 列表平時浪費流量。
-  const passportImageVisible = columns.some(c => c.key === "passport_image" && c.visible);
-  const taibaoImageVisible = columns.some(c => c.key === "taibao_image" && c.visible);
-  useEffect(() => {
-    if ((!passportImageVisible && !taibaoImageVisible) || customers.length === 0) return;
-    const missingIds = customers
-      .filter(c => {
-        const cached = docImages[c.id];
-        return !cached ||
-          (passportImageVisible && cached.passport_image === undefined) ||
-          (taibaoImageVisible && cached.taibao_image === undefined);
-      })
-      .map(c => c.id);
-    if (missingIds.length === 0) return;
-
-    let cancelled = false;
-    const fields = ["id"];
-    if (passportImageVisible) fields.push("passport_image");
-    if (taibaoImageVisible) fields.push("taibao_image");
-    setDocImagesLoading(true);
-    supabase.from("customers").select(fields.join(",")).in("id", missingIds).then(({ data, error }) => {
-      if (cancelled) return;
-      if (error) {
-        console.warn("CRM document image load failed:", error.message);
-      } else {
-        setDocImages(prev => {
-          const next = { ...prev };
-          (data || []).forEach(row => {
-            const item = row as unknown as { id: string; passport_image?: string | null; taibao_image?: string | null };
-            next[item.id] = {
-              ...next[item.id],
-              ...(passportImageVisible ? { passport_image: item.passport_image || "" } : {}),
-              ...(taibaoImageVisible ? { taibao_image: item.taibao_image || "" } : {}),
-            };
-          });
-          return next;
-        });
-      }
-      setDocImagesLoading(false);
-    });
-    return () => { cancelled = true; };
-  }, [customers, passportImageVisible, taibaoImageVisible, docImages]);
 
   // ── resize ────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -757,8 +749,51 @@ export default function CRMPage() {
   const safeCurrentPage = Math.min(currentPage, totalPages);
   const pageStart = (safeCurrentPage - 1) * pageSize;
   const paginatedCustomers = sorted.slice(pageStart, pageStart + pageSize);
+  const pageCustomerIds = paginatedCustomers.map(c => c.id).join(",");
   const pageWindowStart = Math.max(1, Math.min(safeCurrentPage - 2, totalPages - 4));
   const visiblePageNumbers = Array.from({length: Math.min(5, totalPages)}, (_,i)=>pageWindowStart+i);
+
+  // base64 證件圖片只載入目前頁面的旅客，翻頁時才補下一頁，避免一次下載全 CRM。
+  const passportImageVisible = columns.some(c => c.key === "passport_image" && c.visible);
+  const taibaoImageVisible = columns.some(c => c.key === "taibao_image" && c.visible);
+  useEffect(() => {
+    if ((!passportImageVisible && !taibaoImageVisible) || !pageCustomerIds) return;
+    const visibleIds = pageCustomerIds.split(",");
+    const missingIds = visibleIds.filter(id => {
+      const cached = docImages[id];
+      return !cached ||
+        (passportImageVisible && cached.passport_image === undefined) ||
+        (taibaoImageVisible && cached.taibao_image === undefined);
+    });
+    if (missingIds.length === 0) return;
+
+    let cancelled = false;
+    const fields = ["id"];
+    if (passportImageVisible) fields.push("passport_image");
+    if (taibaoImageVisible) fields.push("taibao_image");
+    setDocImagesLoading(true);
+    supabase.from("customers").select(fields.join(",")).in("id", missingIds).then(({ data, error }) => {
+      if (cancelled) return;
+      if (error) {
+        console.warn("CRM document image load failed:", error.message);
+      } else {
+        setDocImages(prev => {
+          const next = { ...prev };
+          (data || []).forEach(row => {
+            const item = row as unknown as { id: string; passport_image?: string | null; taibao_image?: string | null };
+            next[item.id] = {
+              ...next[item.id],
+              ...(passportImageVisible ? { passport_image: item.passport_image || "" } : {}),
+              ...(taibaoImageVisible ? { taibao_image: item.taibao_image || "" } : {}),
+            };
+          });
+          return next;
+        });
+      }
+      setDocImagesLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [pageCustomerIds, passportImageVisible, taibaoImageVisible, docImages]);
 
   useEffect(() => {
     setCurrentPage(1);
@@ -808,14 +843,21 @@ export default function CRMPage() {
   const createLabel = async () => {
     if (!newLabelName.trim()) return;
     setSavingLabel(true);
-    await supabase.from("crm_labels").insert([{name:newLabelName.trim(),color:newLabelColor}]);
+    const {data,error}=await supabase.from("crm_labels")
+      .insert([{name:newLabelName.trim(),color:newLabelColor}])
+      .select("id,name,color").single();
+    if (error) { alert("新增標籤失敗："+error.message); setSavingLabel(false); return; }
+    setAllLabels(prev=>[...prev,data as CrmLabel]);
     setNewLabelName(""); setNewLabelColor(LABEL_COLORS[0]); setSavingLabel(false);
-    loadLabels();
   };
   const deleteLabel = async (id:string) => {
     if (!confirm("確定刪除此標籤？所有旅客的此標籤也會一併移除。")) return;
-    await supabase.from("crm_labels").delete().eq("id",id);
-    loadLabels();
+    const {error}=await supabase.from("crm_labels").delete().eq("id",id);
+    if (error) { alert("刪除標籤失敗："+error.message); return; }
+    setAllLabels(prev=>prev.filter(label=>label.id!==id));
+    setCustLabels(prev=>Object.fromEntries(
+      Object.entries(prev).map(([customerId,labelIds])=>[customerId,labelIds.filter(labelId=>labelId!==id)])
+    ));
   };
   const toggleCustLabel = async (custId:string, labelId:string) => {
     const current = custLabels[custId]||[];
@@ -1215,9 +1257,9 @@ export default function CRMPage() {
     const candidateIds = Array.from(new Set(Array.from(components.values()).flatMap(c=>Array.from(c.ids))));
     let fullById = new Map<string,Customer>();
     if (candidateIds.length > 0) {
-      const {data,error} = await supabase.from("customers").select("*").in("id",candidateIds);
+      const {data,error} = await supabase.from("customers").select(MERGE_CUSTOMER_COLS).in("id",candidateIds);
       if (error) { alert("載入完整證件資料失敗："+error.message); return; }
-      fullById = new Map(((data||[]) as Customer[]).map(c=>[c.id,c]));
+      fullById = new Map(((data||[]) as unknown as Customer[]).map(c=>[c.id,c]));
     }
 
     const groups: DupGroup[] = [];
@@ -1276,7 +1318,7 @@ export default function CRMPage() {
 
       const {data:existingArchives,error:archiveReadError} = await supabase
         .from("customer_document_images")
-        .select("document_type,image_data,image_hash,document_number,expiry")
+        .select("id,customer_id,document_type,image_hash")
         .in("customer_id",group.customers.map(c=>c.id));
       const archiveTableMissing = !!archiveReadError && (
         archiveReadError.code==='42P01' || archiveReadError.code==='PGRST205' ||
@@ -1294,16 +1336,35 @@ export default function CRMPage() {
         setMerging(false); alert('載入證件照片歷史失敗：'+archiveReadError.message); return;
       }
       if (!archiveTableMissing) {
-        const allDocs = [
-          ...distinctLegacy,
-          ...((existingArchives||[]) as {document_type:string;image_data:string;image_hash:string;document_number:string;expiry:string|null}[]),
-        ];
-        const uniqueDocs = Array.from(new Map(allDocs.map(d=>[`${d.document_type}:${d.image_data}`,d])).values());
-        const archivePayload = await Promise.all(uniqueDocs.map(async d=>({
+        // 歷史表內既有圖片直接在資料庫移轉 owner，不下載 image_data 再重傳。
+        const archives = (existingArchives || []) as {id:string;customer_id:string;document_type:string;image_hash:string}[];
+        const seenArchiveKeys = new Set(
+          archives
+            .filter(a=>a.customer_id===primary.id && a.image_hash)
+            .map(a=>`${a.document_type}:${a.image_hash}`)
+        );
+        const archiveDeleteIds:string[]=[];
+        const archiveMoveIds:string[]=[];
+        archives.filter(a=>a.customer_id!==primary.id).forEach(a=>{
+          const key = a.image_hash ? `${a.document_type}:${a.image_hash}` : `id:${a.id}`;
+          if (seenArchiveKeys.has(key)) archiveDeleteIds.push(a.id);
+          else { seenArchiveKeys.add(key); archiveMoveIds.push(a.id); }
+        });
+        if (archiveDeleteIds.length>0) {
+          const {error}=await supabase.from("customer_document_images").delete().in("id",archiveDeleteIds);
+          if (error) { setMerging(false); alert('去除重複證件照片失敗：'+error.message); return; }
+        }
+        if (archiveMoveIds.length>0) {
+          const {error}=await supabase.from("customer_document_images").update({customer_id:primary.id}).in("id",archiveMoveIds);
+          if (error) { setMerging(false); alert('移轉證件照片歷史失敗：'+error.message); return; }
+        }
+
+        // customers 舊欄位中的主圖可能尚未進歷史表，只補寫這些圖片。
+        const archivePayload = await Promise.all(distinctLegacy.map(async d=>({
           customer_id:primary.id,
           document_type:d.document_type,
           image_data:d.image_data,
-          image_hash:('image_hash' in d && d.image_hash) ? d.image_hash : await hashImageData(d.image_data),
+          image_hash:await hashImageData(d.image_data),
           document_number:d.document_number||'',
           expiry:d.expiry||null,
         })));
@@ -1652,7 +1713,7 @@ export default function CRMPage() {
                               </span>
                             );
                           })}
-                          <button onClick={e=>{e.stopPropagation();setTourPickerId(c.id);}}
+                          <button onClick={e=>{e.stopPropagation();openTourPicker(c.id);}}
                             className="opacity-0 group-hover/cell:opacity-100 transition-opacity p-0.5 text-slate-400 hover:text-blue-500 flex-shrink-0" title="編輯參團">
                             <Pencil className="w-3 h-3" />
                           </button>
@@ -2060,7 +2121,11 @@ export default function CRMPage() {
             <p className="text-xs text-slate-400 dark:text-slate-500 mb-2">
               {customers.find(c=>c.id===tourPickerId)?.name}
             </p>
-            {allTours.length===0 ? (
+            {allToursLoading ? (
+              <div className="flex items-center justify-center gap-2 text-xs text-slate-400 py-6">
+                <Loader2 className="w-4 h-4 animate-spin" /> 載入團資料…
+              </div>
+            ) : allTours.length===0 ? (
               <p className="text-xs text-slate-400 text-center py-4">尚無出團資料</p>
             ) : (
               <div className="overflow-y-auto space-y-0.5 flex-1">
