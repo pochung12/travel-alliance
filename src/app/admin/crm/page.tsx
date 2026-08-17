@@ -65,6 +65,7 @@ const LABEL_COLORS = [
   "#ef4444","#f97316","#eab308","#22c55e","#06b6d4",
   "#6366f1","#8b5cf6","#ec4899","#64748b","#0ea5e9",
 ];
+const CRM_PAGE_SIZE_OPTIONS = [10, 20, 30, 40, 50, 80] as const;
 
 // ─── Traditional → Simplified Chinese character map ──────────────────────────
 const T2S: Record<string,string> = {
@@ -447,6 +448,8 @@ export default function CRMPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [search, setSearch]       = useState("");
   const [loading, setLoading]     = useState(true);
+  const [pageSize, setPageSize]   = useState<number>(20);
+  const [currentPage, setCurrentPage] = useState(1);
   const [docImages, setDocImages] = useState<Record<string, { passport_image?: string; taibao_image?: string }>>({});
   const [docImagesLoading, setDocImagesLoading] = useState(false);
   const [imagePreview, setImagePreview] = useState<{ src: string; label: string; x: number; y: number } | null>(null);
@@ -539,6 +542,10 @@ export default function CRMPage() {
         const f = JSON.parse(freeze);
         if (typeof f.frozenHeader === "boolean") setFrozenHeader(f.frozenHeader);
         if ([0,1,2].includes(f.frozenCols)) setFrozenCols(f.frozenCols as 0|1|2);
+      }
+      const savedPageSize = Number(localStorage.getItem("ta_crm_page_size"));
+      if (CRM_PAGE_SIZE_OPTIONS.includes(savedPageSize as typeof CRM_PAGE_SIZE_OPTIONS[number])) {
+        setPageSize(savedPageSize);
       }
     } catch {}
   }, []);
@@ -745,6 +752,27 @@ export default function CRMPage() {
     if (av > bv) return sortDir === "asc" ? 1 : -1;
     return 0;
   });
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const pageStart = (safeCurrentPage - 1) * pageSize;
+  const paginatedCustomers = sorted.slice(pageStart, pageStart + pageSize);
+  const pageWindowStart = Math.max(1, Math.min(safeCurrentPage - 2, totalPages - 4));
+  const visiblePageNumbers = Array.from({length: Math.min(5, totalPages)}, (_,i)=>pageWindowStart+i);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, filterLabelId, sortKey, sortDir, pageSize]);
+
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
+
+  const changePageSize = (size: number) => {
+    setPageSize(size);
+    setCurrentPage(1);
+    localStorage.setItem("ta_crm_page_size", String(size));
+  };
 
   const cycleSort = (key: string) => {
     if (sortKey !== key) { setSortKey(key); setSortDir("asc"); }
@@ -1481,7 +1509,7 @@ export default function CRMPage() {
             </div>
           ) : (
             <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm divide-y divide-slate-100 dark:divide-slate-700/60">
-              {filtered.map(c => {
+              {paginatedCustomers.map(c => {
                 const labelIds = custLabels[c.id] || [];
                 const labels = labelIds.map(lid => allLabels.find(l => l.id === lid)).filter(Boolean) as { id:string; name:string; color:string }[];
                 const tours  = custTours[c.id] || [];
@@ -1584,7 +1612,7 @@ export default function CRMPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50 dark:divide-slate-700/50">
-              {sorted.map(c=>(
+              {paginatedCustomers.map(c=>(
                 <tr key={c.id} className="group/row hover:bg-slate-50 dark:hover:bg-slate-700/40 transition-colors">
                   {visibleCols.map((col, ci)=>(
                     <td key={col.key}
@@ -1717,6 +1745,40 @@ export default function CRMPage() {
           </table>
         )}
       </div>{/* end desktop table */}
+
+      {!loading && filtered.length>0 && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-3 sm:px-4 py-3 bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm">
+          <div className="flex items-center justify-between sm:justify-start gap-3 text-xs text-slate-500 dark:text-slate-400">
+            <span>共 <strong className="text-slate-700 dark:text-slate-200">{sorted.length}</strong> 筆，顯示 {pageStart+1}–{Math.min(pageStart+pageSize,sorted.length)} 筆</span>
+            <label className="flex items-center gap-1.5 whitespace-nowrap">
+              每頁
+              <select value={pageSize} onChange={e=>changePageSize(Number(e.target.value))}
+                className="border border-slate-200 dark:border-slate-600 rounded-lg px-2 py-1.5 bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-violet-400">
+                {CRM_PAGE_SIZE_OPTIONS.map(size=><option key={size} value={size}>{size}</option>)}
+              </select>
+              筆
+            </label>
+          </div>
+          <div className="flex items-center justify-start sm:justify-center gap-1 overflow-x-auto max-w-full pb-1 [&>button]:shrink-0">
+            <button onClick={()=>setCurrentPage(1)} disabled={safeCurrentPage===1}
+              className="h-8 px-2 rounded-lg text-xs border border-slate-200 dark:border-slate-600 text-slate-500 dark:text-slate-300 disabled:opacity-30 hover:bg-slate-50 dark:hover:bg-slate-700">最前</button>
+            <button onClick={()=>setCurrentPage(p=>Math.max(1,p-1))} disabled={safeCurrentPage===1}
+              className="h-8 px-2 rounded-lg text-xs border border-slate-200 dark:border-slate-600 text-slate-500 dark:text-slate-300 disabled:opacity-30 hover:bg-slate-50 dark:hover:bg-slate-700">上一頁</button>
+            {visiblePageNumbers.map(page=>(
+              <button key={page} onClick={()=>setCurrentPage(page)}
+                className={`h-8 min-w-8 px-2 rounded-lg text-xs font-medium transition-colors ${
+                  page===safeCurrentPage
+                    ? "bg-violet-600 text-white border border-violet-600"
+                    : "border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700"
+                }`}>{page}</button>
+            ))}
+            <button onClick={()=>setCurrentPage(p=>Math.min(totalPages,p+1))} disabled={safeCurrentPage===totalPages}
+              className="h-8 px-2 rounded-lg text-xs border border-slate-200 dark:border-slate-600 text-slate-500 dark:text-slate-300 disabled:opacity-30 hover:bg-slate-50 dark:hover:bg-slate-700">下一頁</button>
+            <button onClick={()=>setCurrentPage(totalPages)} disabled={safeCurrentPage===totalPages}
+              className="h-8 px-2 rounded-lg text-xs border border-slate-200 dark:border-slate-600 text-slate-500 dark:text-slate-300 disabled:opacity-30 hover:bg-slate-50 dark:hover:bg-slate-700">最後</button>
+          </div>
+        </div>
+      )}
 
       {/* 用 fixed 浮層避免大圖被表格 overflow 容器裁切 */}
       {imagePreview && (
