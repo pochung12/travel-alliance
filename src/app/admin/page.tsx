@@ -395,7 +395,7 @@ export default function AdminDashboard() {
     (async () => {
       const [{ data: tourData }, { count }, { data: payData }] = await Promise.all([
         supabase.from("tours").select("id,name,destination,start_date,end_date,pax,status").order("start_date", { ascending: true }),
-        supabase.from("customers").select("*", { count: "exact", head: true }),
+        supabase.from("customers").select("id", { count: "exact", head: true }),
         supabase.from("tour_payments").select("type, amount, payment_date"),
       ]);
       setTours((tourData || []) as unknown as Tour[]);

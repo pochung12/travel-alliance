@@ -18,6 +18,11 @@ import { useSidebarCollapsed } from "@/components/AdminShell";
 
 const input = "w-full border border-slate-200 dark:border-slate-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-violet-400 placeholder:text-slate-400";
 const lbl   = "block text-xs font-medium text-slate-500 dark:text-slate-400 mb-1";
+const CUSTOMER_DETAIL_COLS = [
+  "id","name","name_en","phone","email","id_number","id_card_image",
+  "passport","passport_expiry","passport_image","taibao_number","taibao_expiry","taibao_image",
+  "birthday","gender","address","emergency_contact","emergency_phone","notes","meal_preference","created_at",
+].join(",");
 
 const STATUS_COLOR: Record<string, string> = {
   planning: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300",
@@ -110,7 +115,7 @@ export default function CustomerDetailPage() {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase.from("customers").select("*").eq("id", id).single();
+      const { data } = await supabase.from("customers").select(CUSTOMER_DETAIL_COLS).eq("id", id).single();
       if (!data) { router.push("/admin/crm"); return; }
       setCustomer(data); setForm(data); lastSaved.current = data;
       const { data: history } = await supabase.from("customer_document_images")

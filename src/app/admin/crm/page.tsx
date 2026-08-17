@@ -602,10 +602,7 @@ export default function CRMPage() {
     "address","emergency_contact","emergency_phone",
     "notes","created_at",
   ].join(",");
-  const MERGE_CUSTOMER_COLS = [
-    LIST_COLS,
-    "id_card_image","passport_image","taibao_image",
-  ].join(",");
+  const MERGE_IMAGE_COLS = "id,id_card_image,passport_image,taibao_image";
 
   const load = async () => {
     // 永遠排除 base64 圖片；舊資料庫缺 meal_preference 時只退回另一組安全欄位。
@@ -1289,12 +1286,12 @@ export default function CRMPage() {
       reasons.forEach(r=>comp.reasons.add(r));
     });
 
-    // 列表平時不載入 base64；只在開啟合併時取得候選人的完整證件與照片。
+    // 開啟視窗只取文字欄位。base64 證件照片延後到使用者確認合併後才載入。
     const candidateIds = Array.from(new Set(Array.from(components.values()).flatMap(c=>Array.from(c.ids))));
     let fullById = new Map<string,Customer>();
     if (candidateIds.length > 0) {
-      const {data,error} = await supabase.from("customers").select(MERGE_CUSTOMER_COLS).in("id",candidateIds);
-      if (error) { alert("載入完整證件資料失敗："+error.message); return; }
+      const {data,error} = await supabase.from("customers").select(LIST_COLS).in("id",candidateIds);
+      if (error) { alert("載入重複旅客資料失敗："+error.message); return; }
       fullById = new Map(((data||[]) as unknown as Customer[]).map(c=>[c.id,c]));
     }
 
@@ -1401,13 +1398,28 @@ export default function CRMPage() {
     const DATE_KEYS = new Set<keyof Omit<Customer,'id'|'created_at'>>([
       'birthday','passport_expiry','taibao_expiry',
     ]);
+    // 只下載使用者實際勾選合併的證件照片，避免每次開啟視窗就讀取全部 base64。
+    const selectedCustomerIds = Array.from(new Set(toMerge.flatMap(group => group.customers.map(c => c.id))));
+    const { data: selectedImages, error: selectedImagesError } = await supabase
+      .from("customers").select(MERGE_IMAGE_COLS).in("id", selectedCustomerIds);
+    if (selectedImagesError) {
+      setMerging(false); alert("載入待合併證件照片失敗：" + selectedImagesError.message); return;
+    }
+    const imageByCustomerId = new Map((selectedImages || []).map(row => {
+      const item = row as unknown as Pick<Customer,"id"|"id_card_image"|"passport_image"|"taibao_image">;
+      return [item.id, item] as const;
+    }));
     for (const group of toMerge) {
-      const primary = group.customers.find(c=>c.id===group.keepId) || group.customers[0];
-      const secondaryIds = group.customers.filter(c=>c.id!==primary.id).map(c=>c.id);
+      const workingCustomers = group.customers.map(customer => ({
+        ...customer,
+        ...(imageByCustomerId.get(customer.id) || {}),
+      }));
+      const primary = workingCustomers.find(c=>c.id===group.keepId) || workingCustomers[0];
+      const secondaryIds = workingCustomers.filter(c=>c.id!==primary.id).map(c=>c.id);
 
       // 1. 先存檔所有不同的證件照片；完全相同的圖片以 SHA-256 去重。
       const legacyDocs: {document_type:string;image_data:string;document_number:string;expiry:string|null}[] = [];
-      group.customers.forEach(c=>{
+      workingCustomers.forEach(c=>{
         if (c.passport_image) legacyDocs.push({document_type:'passport',image_data:c.passport_image,document_number:c.passport||'',expiry:c.passport_expiry||null});
         if (c.taibao_image) legacyDocs.push({document_type:'taibao',image_data:c.taibao_image,document_number:c.taibao_number||'',expiry:c.taibao_expiry||null});
         if (c.id_card_image) legacyDocs.push({document_type:'id_card',image_data:c.id_card_image,document_number:c.id_number||'',expiry:null});
@@ -1417,7 +1429,7 @@ export default function CRMPage() {
       const {data:existingArchives,error:archiveReadError} = await supabase
         .from("customer_document_images")
         .select("id,customer_id,document_type,image_hash")
-        .in("customer_id",group.customers.map(c=>c.id));
+        .in("customer_id",workingCustomers.map(c=>c.id));
       const archiveTableMissing = !!archiveReadError && (
         archiveReadError.code==='42P01' || archiveReadError.code==='PGRST205' ||
         archiveReadError.message.includes('customer_document_images')
@@ -1479,17 +1491,22 @@ export default function CRMPage() {
       const patch: Partial<Omit<Customer,'id'|'created_at'>> = {};
       for (const key of ALL_KEYS) {
         const choice = group.fieldChoices[key] ?? primary.id;
-        const source = choice==='clear' ? null : group.customers.find(c=>c.id===choice);
+        const source = choice==='clear' ? null : workingCustomers.find(c=>c.id===choice);
         const rawVal = source?.[key];
         const val = DATE_KEYS.has(key)
           ? (sanitizeDate(rawVal) || null)
           : key === 'gender'
             ? (rawVal || 'other')
             : (rawVal ?? '');
-        (patch as Record<string, unknown>)[key] = val;
+        const currentVal = DATE_KEYS.has(key)
+          ? (sanitizeDate(primary[key]) || null)
+          : (primary[key] ?? '');
+        if (val !== currentVal) (patch as Record<string, unknown>)[key] = val;
       }
-      const {error:updateError}=await supabase.from("customers").update(patch).eq("id", primary.id);
-      if (updateError) { setMerging(false); alert('更新主旅客失敗：'+updateError.message); return; }
+      if (Object.keys(patch).length > 0) {
+        const {error:updateError}=await supabase.from("customers").update(patch).eq("id", primary.id);
+        if (updateError) { setMerging(false); alert('更新主旅客失敗：'+updateError.message); return; }
+      }
 
       // 3. 出團記錄轉移（整組多人一次處理，同團只保留一筆）
       const { data: existingTours } = await supabase
