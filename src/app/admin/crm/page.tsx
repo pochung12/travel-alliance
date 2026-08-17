@@ -178,11 +178,25 @@ function buildSmartChoices(customers: Customer[]): {
     })[0] || customers[0];
     choices[numberKey] = newest.id;
     choices[expiryKey] = newest.id;
-    choices[imageKey] = newest.id;
+    // 證件資料與照片必須分開判斷。最新效期那筆可能只有 OCR 資料、沒有照片，
+    // 此時要保留其他重複旅客中實際存在的照片，不能以空值覆蓋。
+    const imageSource = (newest[imageKey] ? newest : [...candidates]
+      .filter(c => !!c[imageKey])
+      .sort((a,b) => {
+        const ta = a[expiryKey] ? new Date(a[expiryKey]).getTime() : 0;
+        const tb = b[expiryKey] ? new Date(b[expiryKey]).getTime() : 0;
+        return tb - ta;
+      })[0]) || customers.find(c => !!c[imageKey]) || newest;
+    choices[imageKey] = imageSource.id;
     smartInfo[numberKey] = newest[expiryKey]
       ? `自動保留最新效期（${newest[expiryKey]}）`
       : '有證件資料者優先';
     if (newest[expiryKey]) smartInfo[expiryKey] = smartInfo[numberKey];
+    if (imageSource[imageKey]) {
+      smartInfo[imageKey] = imageSource.id === newest.id
+        ? '照片來自最新效期證件'
+        : `最新資料無照片，保留 ${imageSource.name} 的既有照片`;
+    }
   };
   newestFor('passport_expiry','passport','passport_image');
   newestFor('taibao_expiry','taibao_number','taibao_image');
@@ -1377,9 +1391,10 @@ export default function CRMPage() {
     setDupGroups(prev => prev.map((g, i) => {
       if (i !== gi) return g;
       const newChoices = {...g.fieldChoices, [key]: choice};
-      // Auto-update linked image field
+      // 選號碼時不可盲目同步照片來源；該筆可能只有 OCR 資料而沒有照片。
+      // 只有使用者明確清除證件資料時才同步清除照片。
       const fd = MERGE_FIELD_DEFS.find(f => f.key === key);
-      if (fd?.linked) newChoices[fd.linked] = choice;
+      if (fd?.linked && choice === 'clear') newChoices[fd.linked] = 'clear';
       return {...g, fieldChoices: newChoices};
     }));
   };
@@ -1397,6 +1412,9 @@ export default function CRMPage() {
     ];
     const DATE_KEYS = new Set<keyof Omit<Customer,'id'|'created_at'>>([
       'birthday','passport_expiry','taibao_expiry',
+    ]);
+    const IMAGE_KEYS = new Set<keyof Omit<Customer,'id'|'created_at'>>([
+      'id_card_image','passport_image','taibao_image',
     ]);
     // 只下載使用者實際勾選合併的證件照片，避免每次開啟視窗就讀取全部 base64。
     const selectedCustomerIds = Array.from(new Set(toMerge.flatMap(group => group.customers.map(c => c.id))));
@@ -1484,6 +1502,22 @@ export default function CRMPage() {
           if (archiveWriteError) {
             setMerging(false); alert('保存證件照片歷史失敗，已中止合併：'+archiveWriteError.message); return;
           }
+          // 寫入成功回應不代表資料一定完整，逐一回讀雜湊確認後才可繼續刪除來源旅客。
+          const expectedArchiveKeys = new Set(archivePayload.map(p=>`${p.document_type}:${p.image_hash}`));
+          const {data:verifiedArchives,error:archiveVerifyError}=await supabase
+            .from("customer_document_images")
+            .select("document_type,image_hash")
+            .eq("customer_id",primary.id)
+            .in("image_hash",Array.from(new Set(archivePayload.map(p=>p.image_hash))));
+          const verifiedArchiveKeys = new Set(((verifiedArchives || []) as {document_type:string;image_hash:string}[])
+            .map(a=>`${a.document_type}:${a.image_hash}`));
+          const missingArchives = Array.from(expectedArchiveKeys).filter(key=>!verifiedArchiveKeys.has(key));
+          if (archiveVerifyError || missingArchives.length>0) {
+            setMerging(false);
+            alert('證件照片保存驗證失敗，已中止合併；原旅客資料尚未刪除。'+
+              (archiveVerifyError ? '\n'+archiveVerifyError.message : `\n缺少 ${missingArchives.length} 張照片`));
+            return;
+          }
         }
       }
 
@@ -1492,7 +1526,21 @@ export default function CRMPage() {
       for (const key of ALL_KEYS) {
         const choice = group.fieldChoices[key] ?? primary.id;
         const source = choice==='clear' ? null : workingCustomers.find(c=>c.id===choice);
-        const rawVal = source?.[key];
+        let rawVal = source?.[key];
+        // 所選的最新資料若沒有照片，從整組中挑選「有照片且效期最新」者回退。
+        // 除非使用者明確選擇清除，否則任何空照片都不得覆蓋既有照片。
+        if (IMAGE_KEYS.has(key) && choice !== 'clear' && !rawVal) {
+          const expiryKey = key === 'passport_image' ? 'passport_expiry'
+            : key === 'taibao_image' ? 'taibao_expiry' : null;
+          rawVal = [...workingCustomers]
+            .filter(c=>!!c[key])
+            .sort((a,b)=>{
+              if (!expiryKey) return a.id===primary.id ? -1 : b.id===primary.id ? 1 : 0;
+              const ta=a[expiryKey] ? new Date(a[expiryKey] as string).getTime() : 0;
+              const tb=b[expiryKey] ? new Date(b[expiryKey] as string).getTime() : 0;
+              return tb-ta;
+            })[0]?.[key] || primary[key] || '';
+        }
         const val = DATE_KEYS.has(key)
           ? (sanitizeDate(rawVal) || null)
           : key === 'gender'
@@ -1506,6 +1554,21 @@ export default function CRMPage() {
       if (Object.keys(patch).length > 0) {
         const {error:updateError}=await supabase.from("customers").update(patch).eq("id", primary.id);
         if (updateError) { setMerging(false); alert('更新主旅客失敗：'+updateError.message); return; }
+      }
+
+      // 主照片完整性檢查：只要來源群組中曾有該類照片，合併後主旅客就必須仍有主圖。
+      const requiredImageKeys = Array.from(IMAGE_KEYS).filter(key=>workingCustomers.some(c=>!!c[key]));
+      if (requiredImageKeys.length>0) {
+        const {data:verifiedPrimary,error:primaryVerifyError}=await supabase
+          .from("customers").select("id,id_card_image,passport_image,taibao_image").eq("id",primary.id).single();
+        const verified = verifiedPrimary as unknown as Pick<Customer,'id'|'id_card_image'|'passport_image'|'taibao_image'> | null;
+        const missingMainImages = requiredImageKeys.filter(key=>!verified?.[key]);
+        if (primaryVerifyError || missingMainImages.length>0) {
+          setMerging(false);
+          alert('主證件照片驗證失敗，已中止合併；原旅客資料尚未刪除。'+
+            (primaryVerifyError ? '\n'+primaryVerifyError.message : `\n缺少：${missingMainImages.join('、')}`));
+          return;
+        }
       }
 
       // 3. 出團記錄轉移（整組多人一次處理，同團只保留一筆）
@@ -1533,7 +1596,10 @@ export default function CRMPage() {
       if (labelUpdIds.length > 0) await supabase.from("customer_labels").update({customer_id: primary.id}).in("id", labelUpdIds);
 
       // 5. 所有資料與照片都確認保留後，才批次刪除其餘帳號。
-      await supabase.from("customers").delete().in("id", secondaryIds);
+      const {error:deleteSecondaryError}=await supabase.from("customers").delete().in("id", secondaryIds);
+      if (deleteSecondaryError) {
+        setMerging(false); alert('刪除重複旅客失敗，主資料與照片已保留：'+deleteSecondaryError.message); return;
+      }
       merged++;
     }
     setMerging(false);
