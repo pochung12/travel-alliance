@@ -18,13 +18,14 @@ function LoginForm() {
   const [error,    setError]    = useState("");
 
   const noAccess = params.get("msg") === "no_access";
+  const sessionExpired = params.get("msg") === "session_expired";
 
   // If already logged in, redirect
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (!session) return;
       const { data: prof } = await supabase
-        .from("profiles").select("role").eq("id", session.user.id).single();
+        .from("profiles").select("role").eq("id", session.user.id).maybeSingle();
       if (prof?.role === "customer") router.replace("/customer");
       else if (prof) router.replace("/admin");
     });
@@ -39,8 +40,19 @@ function LoginForm() {
     const { data, error: authErr } = await supabase.auth.signInWithPassword({ email, password });
     if (authErr) { setError(authErr.message); setLoading(false); return; }
 
-    const { data: prof } = await supabase
-      .from("profiles").select("role").eq("id", data.user!.id).single();
+    const { data: prof, error: profileErr } = await supabase
+      .from("profiles").select("role").eq("id", data.user!.id).maybeSingle();
+
+    if (profileErr) {
+      setError(`登入成功，但帳號權限讀取失敗：${profileErr.message}`);
+      setLoading(false);
+      return;
+    }
+    if (!prof) {
+      setError(`登入成功，但此帳號（${data.user?.email || email}）沒有 profiles 權限資料，請由管理員補建。`);
+      setLoading(false);
+      return;
+    }
 
     if (prof?.role === "customer") {
       router.replace("/customer");
@@ -66,6 +78,12 @@ function LoginForm() {
           {noAccess && (
             <div className="mb-4 px-4 py-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-xl text-sm text-amber-700 dark:text-amber-300">
               ⚠️ 此帳號為顧客會員，無法進入管理後台
+            </div>
+          )}
+
+          {sessionExpired && !noAccess && (
+            <div className="mb-4 px-4 py-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-xl text-sm text-blue-700 dark:text-blue-300">
+              登入狀態已過期，請重新登入。
             </div>
           )}
 
