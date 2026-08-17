@@ -26,10 +26,10 @@ interface OcrResult {
 interface DupGroup {
   id: string;
   reasons: string[];
-  customers: [Customer, Customer];
+  customers: Customer[];
   selected: boolean;
   keepId: string;
-  fieldChoices: Record<string, 'a' | 'b' | 'clear'>;
+  fieldChoices: Record<string, string | 'clear'>; // customer id | clear
   smartInfo: Record<string, string>;  // field key → reason for auto-selection
 }
 
@@ -152,48 +152,30 @@ const MERGE_FIELD_DEFS: {
 ];
 
 // ── 智慧合併：自動判斷最佳欄位選擇 ──────────────────────────────────────────
-function buildSmartChoices(a: Customer, b: Customer): {
-  choices: Record<string, 'a'|'b'|'clear'>;
+function buildSmartChoices(customers: Customer[]): {
+  choices: Record<string, string|'clear'>;
   smartInfo: Record<string, string>;
 } {
-  const choices: Record<string, 'a'|'b'|'clear'> = {};
+  const choices: Record<string, string|'clear'> = {};
   const smartInfo: Record<string, string> = {};
 
-  // 比較效期：回傳較新的一側
-  const newerSide = (da: string|null|undefined, db: string|null|undefined): 'a'|'b'|null => {
-    if (!da && !db) return null;
-    if (!da)  return 'b';
-    if (!db)  return 'a';
-    return new Date(da) >= new Date(db) ? 'a' : 'b';
+  const newestFor = (expiryKey: 'passport_expiry'|'taibao_expiry', numberKey: 'passport'|'taibao_number', imageKey: 'passport_image'|'taibao_image') => {
+    const candidates = customers.filter(c => c[expiryKey] || c[numberKey] || c[imageKey]);
+    const newest = [...candidates].sort((a,b) => {
+      const ta = a[expiryKey] ? new Date(a[expiryKey]).getTime() : 0;
+      const tb = b[expiryKey] ? new Date(b[expiryKey]).getTime() : 0;
+      return tb - ta;
+    })[0] || customers[0];
+    choices[numberKey] = newest.id;
+    choices[expiryKey] = newest.id;
+    choices[imageKey] = newest.id;
+    smartInfo[numberKey] = newest[expiryKey]
+      ? `自動保留最新效期（${newest[expiryKey]}）`
+      : '有證件資料者優先';
+    if (newest[expiryKey]) smartInfo[expiryKey] = smartInfo[numberKey];
   };
-
-  // ── 護照：效期較新的一側，連同號碼+圖片一起 ──
-  const passSide = newerSide(a.passport_expiry, b.passport_expiry) ?? 'a';
-  choices['passport'] = passSide;
-  choices['passport_expiry'] = passSide;
-  choices['passport_image'] = passSide;
-  if (a.passport_expiry && b.passport_expiry) {
-    const newer = passSide === 'a' ? a.passport_expiry : b.passport_expiry;
-    smartInfo['passport'] = `效期較新（${newer}）`;
-    smartInfo['passport_expiry'] = `效期較新（${newer}）`;
-  } else if (a.passport_expiry || b.passport_expiry) {
-    smartInfo['passport'] = '有效期存在優先';
-    smartInfo['passport_expiry'] = '有效期存在優先';
-  }
-
-  // ── 台胞證：效期較新的一側（號碼相同，但連同效期+圖片） ──
-  const taibaoSide = newerSide(a.taibao_expiry, b.taibao_expiry) ?? 'a';
-  choices['taibao_number'] = taibaoSide;
-  choices['taibao_expiry'] = taibaoSide;
-  choices['taibao_image'] = taibaoSide;
-  if (a.taibao_expiry && b.taibao_expiry) {
-    const newer = taibaoSide === 'a' ? a.taibao_expiry : b.taibao_expiry;
-    smartInfo['taibao_number'] = `效期較新（${newer}）`;
-    smartInfo['taibao_expiry'] = `效期較新（${newer}）`;
-  } else if (a.taibao_expiry || b.taibao_expiry) {
-    smartInfo['taibao_number'] = '有效期存在優先';
-    smartInfo['taibao_expiry'] = '有效期存在優先';
-  }
+  newestFor('passport_expiry','passport','passport_image');
+  newestFor('taibao_expiry','taibao_number','taibao_image');
 
   // ── 其他欄位：非空優先；都有值時以甲方為預設 ──
   const others = [
@@ -202,15 +184,13 @@ function buildSmartChoices(a: Customer, b: Customer): {
     'address','emergency_contact','emergency_phone','notes','meal_preference',
   ] as (keyof Customer)[];
   for (const key of others) {
-    const va = (a[key] as string) || '';
-    const vb = (b[key] as string) || '';
-    if (!va && vb) {
-      choices[key] = 'b';
-      smartInfo[key] = '僅乙方有資料';
-    } else {
-      choices[key] = 'a';
-      if (va && !vb) smartInfo[key] = '僅甲方有資料';
-    }
+    const source = customers.find(c => {
+      const value = c[key];
+      return value !== '' && value !== null && value !== undefined && !(key === 'gender' && value === 'other');
+    }) || customers[0];
+    choices[key] = source.id;
+    const populated = customers.filter(c => !!c[key]).length;
+    if (populated === 1) smartInfo[key] = `僅 ${source.name} 有資料`;
   }
 
   return { choices, smartInfo };
@@ -336,6 +316,12 @@ function getCellValue(c: Customer, key: string): string {
   if (key === "gender") return c.gender === "male" ? "男" : c.gender === "female" ? "女" : "其他";
   if (key === "created_at") return new Date(c.created_at).toLocaleDateString("zh-TW");
   return ((c as unknown as Record<string, unknown>)[key] as string) || "—";
+}
+
+async function hashImageData(imageData: string): Promise<string> {
+  const bytes = new TextEncoder().encode(imageData);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest)).map(b=>b.toString(16).padStart(2,"0")).join("");
 }
 
 // ─── Copy button（懸停顯示，點擊複製欄位內容） ────────────────────────────────
@@ -1073,7 +1059,7 @@ export default function CRMPage() {
   };
 
   // ── find & merge duplicates ───────────────────────────────────────────────
-  const openMerge = () => {
+  const openMerge = async () => {
     const pairs = new Map<string, { customers: [Customer,Customer]; reasons: string[] }>();
     const addPair = (a:Customer, b:Customer, reason:string) => {
       const key = [a.id,b.id].sort().join(":");
@@ -1175,17 +1161,57 @@ export default function CRMPage() {
           addPair(a,b,'生日相同且姓名相似');
       }
     }
+    // 將 A-B、B-C 這種相連的配對合併成同一組，一次列出全部重複旅客。
+    const parent = new Map<string,string>();
+    const find = (id:string):string => {
+      const p = parent.get(id) || id;
+      if (p === id) { parent.set(id,id); return id; }
+      const root = find(p); parent.set(id,root); return root;
+    };
+    const union = (a:string,b:string) => {
+      const ra=find(a), rb=find(b);
+      if (ra!==rb) parent.set(rb,ra);
+    };
+    pairs.forEach(({customers:[a,b]}) => union(a.id,b.id));
+
+    const components = new Map<string,{ids:Set<string>;reasons:Set<string>}>();
+    pairs.forEach(({customers:[a,b],reasons}) => {
+      const root=find(a.id);
+      if (!components.has(root)) components.set(root,{ids:new Set(),reasons:new Set()});
+      const comp=components.get(root)!;
+      comp.ids.add(a.id); comp.ids.add(b.id);
+      reasons.forEach(r=>comp.reasons.add(r));
+    });
+
+    // 列表平時不載入 base64；只在開啟合併時取得候選人的完整證件與照片。
+    const candidateIds = Array.from(new Set(Array.from(components.values()).flatMap(c=>Array.from(c.ids))));
+    let fullById = new Map<string,Customer>();
+    if (candidateIds.length > 0) {
+      const {data,error} = await supabase.from("customers").select("*").in("id",candidateIds);
+      if (error) { alert("載入完整證件資料失敗："+error.message); return; }
+      fullById = new Map(((data||[]) as Customer[]).map(c=>[c.id,c]));
+    }
+
     const groups: DupGroup[] = [];
-    pairs.forEach(({customers,reasons},key) => {
-      const { choices, smartInfo } = buildSmartChoices(customers[0], customers[1]);
-      groups.push({id:key, reasons, customers, selected:false, keepId:customers[0].id, fieldChoices:choices, smartInfo});
+    components.forEach((comp) => {
+      const groupCustomers = Array.from(comp.ids)
+        .map(id=>fullById.get(id) || customers.find(c=>c.id===id))
+        .filter(Boolean) as Customer[];
+      if (groupCustomers.length < 2) return;
+      groupCustomers.sort((a,b)=>new Date(a.created_at).getTime()-new Date(b.created_at).getTime());
+      const { choices, smartInfo } = buildSmartChoices(groupCustomers);
+      groups.push({
+        id:groupCustomers.map(c=>c.id).sort().join(":"),
+        reasons:Array.from(comp.reasons), customers:groupCustomers, selected:false,
+        keepId:groupCustomers[0].id, fieldChoices:choices, smartInfo,
+      });
     });
     setDupGroups(groups);
     setMergeResult(null);
     setShowMerge(true);
   };
 
-  const setFieldChoice = (gi: number, key: string, choice: 'a'|'b'|'clear') => {
+  const setFieldChoice = (gi: number, key: string, choice: string|'clear') => {
     setDupGroups(prev => prev.map((g, i) => {
       if (i !== gi) return g;
       const newChoices = {...g.fieldChoices, [key]: choice};
@@ -1208,46 +1234,97 @@ export default function CRMPage() {
       'taibao_number','taibao_expiry','taibao_image',
     ];
     for (const group of toMerge) {
-      const [a, b] = group.customers;
-      const primary   = group.keepId === a.id ? a : b;
-      const secondary = group.keepId === a.id ? b : a;
+      const primary = group.customers.find(c=>c.id===group.keepId) || group.customers[0];
+      const secondaryIds = group.customers.filter(c=>c.id!==primary.id).map(c=>c.id);
 
-      // 1. 合併欄位
+      // 1. 先存檔所有不同的證件照片；完全相同的圖片以 SHA-256 去重。
+      const legacyDocs: {document_type:string;image_data:string;document_number:string;expiry:string|null}[] = [];
+      group.customers.forEach(c=>{
+        if (c.passport_image) legacyDocs.push({document_type:'passport',image_data:c.passport_image,document_number:c.passport||'',expiry:c.passport_expiry||null});
+        if (c.taibao_image) legacyDocs.push({document_type:'taibao',image_data:c.taibao_image,document_number:c.taibao_number||'',expiry:c.taibao_expiry||null});
+        if (c.id_card_image) legacyDocs.push({document_type:'id_card',image_data:c.id_card_image,document_number:c.id_number||'',expiry:null});
+      });
+      const distinctLegacy = Array.from(new Map(legacyDocs.map(d=>[`${d.document_type}:${d.image_data}`,d])).values());
+
+      const {data:existingArchives,error:archiveReadError} = await supabase
+        .from("customer_document_images")
+        .select("document_type,image_data,image_hash,document_number,expiry")
+        .in("customer_id",group.customers.map(c=>c.id));
+      const archiveTableMissing = !!archiveReadError && (
+        archiveReadError.code==='42P01' || archiveReadError.code==='PGRST205' ||
+        archiveReadError.message.includes('customer_document_images')
+      );
+      const distinctCounts = new Map<string,number>();
+      distinctLegacy.forEach(d=>distinctCounts.set(d.document_type,(distinctCounts.get(d.document_type)||0)+1));
+      const needsArchive = Array.from(distinctCounts.values()).some(n=>n>1);
+      if (archiveTableMissing && needsArchive) {
+        setMerging(false);
+        alert('為避免證件照片遺失，已中止合併。\n\n請先在 Supabase SQL Editor 執行 customer_document_images_migration.sql，再重新合併。');
+        return;
+      }
+      if (archiveReadError && !archiveTableMissing) {
+        setMerging(false); alert('載入證件照片歷史失敗：'+archiveReadError.message); return;
+      }
+      if (!archiveTableMissing) {
+        const allDocs = [
+          ...distinctLegacy,
+          ...((existingArchives||[]) as {document_type:string;image_data:string;image_hash:string;document_number:string;expiry:string|null}[]),
+        ];
+        const uniqueDocs = Array.from(new Map(allDocs.map(d=>[`${d.document_type}:${d.image_data}`,d])).values());
+        const archivePayload = await Promise.all(uniqueDocs.map(async d=>({
+          customer_id:primary.id,
+          document_type:d.document_type,
+          image_data:d.image_data,
+          image_hash:('image_hash' in d && d.image_hash) ? d.image_hash : await hashImageData(d.image_data),
+          document_number:d.document_number||'',
+          expiry:d.expiry||null,
+        })));
+        if (archivePayload.length>0) {
+          const {error:archiveWriteError}=await supabase.from("customer_document_images")
+            .upsert(archivePayload,{onConflict:'customer_id,document_type,image_hash',ignoreDuplicates:true});
+          if (archiveWriteError) {
+            setMerging(false); alert('保存證件照片歷史失敗，已中止合併：'+archiveWriteError.message); return;
+          }
+        }
+      }
+
+      // 2. 合併欄位：護照／台胞證號碼、效期與主圖自動來自最新效期的那一筆。
       const patch: Partial<Omit<Customer,'id'|'created_at'>> = {};
       for (const key of ALL_KEYS) {
-        const defaultSide = group.keepId === a.id ? 'a' : 'b';
-        const choice = group.fieldChoices[key] ?? defaultSide;
-        const val = choice === 'a' ? (a[key] ?? '') : choice === 'b' ? (b[key] ?? '') : (key === 'gender' ? 'other' : '');
+        const choice = group.fieldChoices[key] ?? primary.id;
+        const source = choice==='clear' ? null : group.customers.find(c=>c.id===choice);
+        const val = source ? (source[key] ?? '') : (key === 'gender' ? 'other' : '');
         (patch as Record<string, unknown>)[key] = val;
       }
-      await supabase.from("customers").update(patch).eq("id", primary.id);
+      const {error:updateError}=await supabase.from("customers").update(patch).eq("id", primary.id);
+      if (updateError) { setMerging(false); alert('更新主旅客失敗：'+updateError.message); return; }
 
-      // 2. 出團記錄轉移（避免重複：同一個 tour_id 只保留一筆）
+      // 3. 出團記錄轉移（整組多人一次處理，同團只保留一筆）
       const { data: existingTours } = await supabase
         .from("customer_tours").select("tour_id").eq("customer_id", primary.id);
       const existingTourIds = new Set((existingTours || []).map((r: {tour_id: string}) => r.tour_id));
       const { data: secTours } = await supabase
-        .from("customer_tours").select("id,tour_id").eq("customer_id", secondary.id);
+        .from("customer_tours").select("id,tour_id").in("customer_id", secondaryIds);
       const secToursArr = (secTours || []) as {id:string;tour_id:string}[];
-      const tourDelIds = secToursArr.filter(t =>  existingTourIds.has(t.tour_id)).map(t => t.id);
-      const tourUpdIds = secToursArr.filter(t => !existingTourIds.has(t.tour_id)).map(t => t.id);
+      const tourDelIds:string[]=[]; const tourUpdIds:string[]=[];
+      secToursArr.forEach(t=>{ if(existingTourIds.has(t.tour_id)) tourDelIds.push(t.id); else {existingTourIds.add(t.tour_id);tourUpdIds.push(t.id);} });
       if (tourDelIds.length > 0) await supabase.from("customer_tours").delete().in("id", tourDelIds);
       if (tourUpdIds.length > 0) await supabase.from("customer_tours").update({customer_id: primary.id}).in("id", tourUpdIds);
 
-      // 3. 標籤轉移（避免重複標籤）
+      // 4. 標籤轉移（避免重複標籤）
       const { data: existingLabels } = await supabase
         .from("customer_labels").select("label_id").eq("customer_id", primary.id);
       const existingLabelIds = new Set((existingLabels || []).map((r: {label_id: string}) => r.label_id));
       const { data: secLabels } = await supabase
-        .from("customer_labels").select("id,label_id").eq("customer_id", secondary.id);
+        .from("customer_labels").select("id,label_id").in("customer_id", secondaryIds);
       const secLabelsArr = (secLabels || []) as {id:string;label_id:string}[];
-      const labelDelIds = secLabelsArr.filter(l =>  existingLabelIds.has(l.label_id)).map(l => l.id);
-      const labelUpdIds = secLabelsArr.filter(l => !existingLabelIds.has(l.label_id)).map(l => l.id);
+      const labelDelIds:string[]=[]; const labelUpdIds:string[]=[];
+      secLabelsArr.forEach(l=>{if(existingLabelIds.has(l.label_id))labelDelIds.push(l.id);else{existingLabelIds.add(l.label_id);labelUpdIds.push(l.id);}});
       if (labelDelIds.length > 0) await supabase.from("customer_labels").delete().in("id", labelDelIds);
       if (labelUpdIds.length > 0) await supabase.from("customer_labels").update({customer_id: primary.id}).in("id", labelUpdIds);
 
-      // 4. 刪除次要帳號
-      await supabase.from("customers").delete().eq("id", secondary.id);
+      // 5. 所有資料與照片都確認保留後，才批次刪除其餘帳號。
+      await supabase.from("customers").delete().in("id", secondaryIds);
       merged++;
     }
     setMerging(false);
@@ -1704,7 +1781,6 @@ export default function CRMPage() {
                   </div>
 
                   {dupGroups.map((group, gi) => {
-                    const [a, b] = group.customers;
                     const getVal = (c: Customer, fd: typeof MERGE_FIELD_DEFS[0]) => {
                       const v = c[fd.key] as string;
                       return v || '';
@@ -1731,6 +1807,9 @@ export default function CRMPage() {
                                 {r}
                               </span>
                             ))}
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
+                              {group.customers.length} 筆一起合併
+                            </span>
                             {clearCount > 0 && (
                               <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400">
                                 已標記清空 {clearCount} 欄
@@ -1741,10 +1820,12 @@ export default function CRMPage() {
                         </div>
 
                         {/* comparison table */}
-                        <div className="bg-white dark:bg-slate-800 grid grid-cols-[6rem_1fr_1fr] text-sm">
+                        <div className="overflow-x-auto">
+                        <div className="bg-white dark:bg-slate-800 grid text-sm"
+                          style={{gridTemplateColumns:`6rem repeat(${group.customers.length}, minmax(11rem, 1fr))`, width:`max(100%, ${96+group.customers.length*176}px)`}}>
                           {/* col headers */}
                           <div className="px-3 py-2 bg-slate-50 dark:bg-slate-700/40 text-[10px] font-semibold text-slate-400 uppercase tracking-wide flex items-end">欄位</div>
-                          {[a,b].map((c,ci)=>(
+                          {group.customers.map((c,ci)=>(
                             <div key={c.id} className={`px-4 py-2 border-l border-slate-100 dark:border-slate-700 ${
                               group.keepId===c.id
                                 ? "bg-emerald-50 dark:bg-emerald-900/20"
@@ -1761,7 +1842,7 @@ export default function CRMPage() {
                                 <span className={`text-xs font-semibold ${
                                   group.keepId===c.id ? "text-emerald-700 dark:text-emerald-400" : "text-slate-500 dark:text-slate-400"
                                 }`}>
-                                  {group.keepId===c.id ? "✓ 保留帳號" : `旅客 ${ci===0?"A":"B"}`}
+                                  {group.keepId===c.id ? "✓ 保留帳號" : `旅客 ${ci+1}`}
                                 </span>
                               </label>
                               <Link href={`/admin/crm/${c.id}`} target="_blank"
@@ -1773,17 +1854,13 @@ export default function CRMPage() {
 
                           {/* per-field rows */}
                           {MERGE_FIELD_DEFS.map(fd => {
-                            const va = getVal(a, fd);
-                            const vb = getVal(b, fd);
-                            if (!va && !vb) return null;
-                            const diff = va !== vb;
-                            const choice = group.fieldChoices[fd.key] ?? 'a';
-                            const hasImgA = !!(fd.linked && (a[fd.linked] as string));
-                            const hasImgB = !!(fd.linked && (b[fd.linked] as string));
-                            const cells = [
-                              {v: va, side:'a' as const, cust:a, hasImg:hasImgA},
-                              {v: vb, side:'b' as const, cust:b, hasImg:hasImgB},
-                            ];
+                            const cells = group.customers.map(c=>({
+                              v:getVal(c,fd), customerId:c.id,
+                              hasImg:!!(fd.linked && (c[fd.linked] as string)),
+                            }));
+                            if (cells.every(c=>!c.v)) return null;
+                            const diff = new Set(cells.map(c=>c.v)).size>1;
+                            const choice = group.fieldChoices[fd.key] ?? group.keepId;
                             return (
                               <Fragment key={fd.key}>
                                 {/* label col */}
@@ -1795,7 +1872,7 @@ export default function CRMPage() {
                                       title={choice==='clear' ? '恢復' : '清空此欄'}
                                       onClick={()=>setFieldChoice(gi, fd.key,
                                         choice==='clear'
-                                          ? (group.keepId===a.id?'a':'b')
+                                          ? group.keepId
                                           : 'clear'
                                       )}
                                       className={`ml-auto flex-shrink-0 p-0.5 rounded transition-colors ${
@@ -1813,12 +1890,12 @@ export default function CRMPage() {
                                   )}
                                 </div>
                                 {/* value cells */}
-                                {cells.map(({v, side, hasImg}) => {
-                                  const isChosen = choice === side;
+                                {cells.map(({v, customerId, hasImg}) => {
+                                  const isChosen = choice === customerId;
                                   const isCleared = choice === 'clear';
                                   return (
-                                    <div key={side}
-                                      onClick={()=> { if (diff && !isCleared) setFieldChoice(gi, fd.key, side); }}
+                                    <div key={customerId}
+                                      onClick={()=> { if (diff && !isCleared) setFieldChoice(gi, fd.key, customerId); }}
                                       className={`px-3 py-2.5 border-l border-t border-slate-50 dark:border-slate-700/50 transition-all
                                         ${diff && !isCleared ? 'cursor-pointer' : ''}
                                         ${isCleared
@@ -1830,7 +1907,7 @@ export default function CRMPage() {
                                       <div className="flex items-start gap-1.5 min-w-0">
                                         {diff && !isCleared && (
                                           <input type="radio" checked={isChosen}
-                                            onChange={()=>setFieldChoice(gi, fd.key, side)}
+                                            onChange={()=>setFieldChoice(gi, fd.key, customerId)}
                                             className="mt-0.5 accent-emerald-600 flex-shrink-0"
                                             onClick={e=>e.stopPropagation()} />
                                         )}
@@ -1857,13 +1934,14 @@ export default function CRMPage() {
                             );
                           })}
                         </div>
+                        </div>
 
                         {/* footer note */}
                         {group.selected && (
                           <div className="px-4 py-2 bg-violet-50 dark:bg-violet-900/20 border-t border-violet-100 dark:border-violet-800/40 text-xs text-violet-600 dark:text-violet-400 flex items-center gap-1.5">
                             <ChevronRight className="w-3 h-3 flex-shrink-0" />
-                            <span>保留帳號「{group.keepId===a.id?a.name:b.name}」，各欄位依上方選擇套用
-                              {clearCount>0 && `（${clearCount} 欄將清空）`}，出團記錄一併移轉，另一筆刪除</span>
+                            <span>保留帳號「{group.customers.find(c=>c.id===group.keepId)?.name}」，各欄位依上方選擇套用
+                              {clearCount>0 && `（${clearCount} 欄將清空）`}，所有不同證件照片存檔，出團與標籤一併移轉，其餘 {group.customers.length-1} 筆刪除</span>
                           </div>
                         )}
                       </div>

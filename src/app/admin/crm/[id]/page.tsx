@@ -77,6 +77,10 @@ interface OcrResult {
 }
 
 type ScanStatus = { type: "idle" } | { type: "scanning" } | { type: "rotating" } | { type: "success"; msg: string } | { type: "error"; msg: string };
+interface DocumentHistoryImage {
+  id: string; document_type: 'passport'|'taibao'|'id_card'; image_data: string;
+  document_number: string; expiry: string|null; created_at: string;
+}
 
 export default function CustomerDetailPage() {
   const { id }   = useParams<{ id: string }>();
@@ -90,6 +94,7 @@ export default function CustomerDetailPage() {
   const [autoSaveError, setAutoSaveError] = useState("");
   const lastSaved = useRef<Partial<Customer>>({});
   const [highlightedFields, setHighlightedFields] = useState<Set<string>>(new Set());
+  const [documentHistory, setDocumentHistory] = useState<DocumentHistoryImage[]>([]);
 
   const [passportStatus, setPassportStatus] = useState<ScanStatus>({ type: "idle" });
   const [taibaoStatus,   setTaibaoStatus]   = useState<ScanStatus>({ type: "idle" });
@@ -105,6 +110,10 @@ export default function CustomerDetailPage() {
       const { data } = await supabase.from("customers").select("*").eq("id", id).single();
       if (!data) { router.push("/admin/crm"); return; }
       setCustomer(data); setForm(data); lastSaved.current = data;
+      const { data: history } = await supabase.from("customer_document_images")
+        .select("id,document_type,image_data,document_number,expiry,created_at")
+        .eq("customer_id",id).order("created_at",{ascending:false});
+      setDocumentHistory((history||[]) as DocumentHistoryImage[]);
       const { data: ct } = await supabase
         .from("customer_tours").select("paid_amount, tour:tours(*)").eq("customer_id", id);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -528,16 +537,19 @@ export default function CustomerDetailPage() {
       {/* ── Document Photos ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         <DocumentCard title="🪪 身分證" image={form.id_card_image || ""} status={idCardStatus}
+          history={documentHistory.filter(d=>d.document_type==='id_card'&&d.image_data!==form.id_card_image)}
           inputRef={idCardInputRef} onUpload={e => handleDocUpload(e, "idCard")}
           onClear={() => { setForm(p => ({ ...p, id_card_image: "" })); setIdCardStatus({ type: "idle" }); }}
           onScan={() => scanDocument("idCard")}
           onAutoRotate={() => autoRotate("idCard")} onManualRotate={() => manualRotate("idCard")} />
         <DocumentCard title="🛂 護照" image={form.passport_image || ""} status={passportStatus}
+          history={documentHistory.filter(d=>d.document_type==='passport'&&d.image_data!==form.passport_image)}
           inputRef={passportInputRef} onUpload={e => handleDocUpload(e, "passport")}
           onClear={() => { setForm(p => ({ ...p, passport_image: "" })); setPassportStatus({ type: "idle" }); }}
           onScan={() => scanDocument("passport")}
           onAutoRotate={() => autoRotate("passport")} onManualRotate={() => manualRotate("passport")} />
         <DocumentCard title="🪪 台胞證" image={form.taibao_image || ""} status={taibaoStatus}
+          history={documentHistory.filter(d=>d.document_type==='taibao'&&d.image_data!==form.taibao_image)}
           inputRef={taibaoInputRef} onUpload={e => handleDocUpload(e, "taibao")}
           onClear={() => { setForm(p => ({ ...p, taibao_image: "" })); setTaibaoStatus({ type: "idle" }); }}
           onScan={() => scanDocument("taibao")}
@@ -575,9 +587,10 @@ export default function CustomerDetailPage() {
 
 // ── DocumentCard ──────────────────────────────────────────────────────────────
 function DocumentCard({
-  title, image, status, inputRef, onUpload, onClear, onScan, onAutoRotate, onManualRotate,
+  title, image, history = [], status, inputRef, onUpload, onClear, onScan, onAutoRotate, onManualRotate,
 }: {
   title: string; image: string; status: ScanStatus;
+  history?: DocumentHistoryImage[];
   inputRef: React.RefObject<HTMLInputElement>;
   onUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onClear: () => void; onScan: () => void;
@@ -630,6 +643,21 @@ function DocumentCard({
             <Upload className="w-8 h-8 mx-auto mb-2 opacity-30" />
             <p className="text-sm">點此上傳{title.replace(/[🛂🪪]/g, "").trim()}圖片</p>
             <p className="text-xs mt-1 opacity-60">支援 JPG、PNG、WEBP</p>
+          </div>
+        )}
+        {history.length>0 && (
+          <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-700">
+            <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 mb-2">已保留的歷史照片（{history.length}）</p>
+            <div className="grid grid-cols-3 gap-2">
+              {history.map(doc=>(
+                <a key={doc.id} href={doc.image_data} target="_blank" rel="noreferrer"
+                  className="group/history rounded-lg border border-slate-200 dark:border-slate-600 overflow-hidden hover:border-violet-400 transition-colors"
+                  title={`${doc.document_number||'證件'}${doc.expiry?` 效期 ${doc.expiry}`:''}`}>
+                  <img src={doc.image_data} alt="證件歷史照片" className="w-full h-16 object-cover group-hover/history:scale-105 transition-transform" />
+                  <div className="px-1.5 py-1 text-[9px] text-slate-500 dark:text-slate-400 truncate">{doc.document_number||doc.expiry||'歷史照片'}</div>
+                </a>
+              ))}
+            </div>
           </div>
         )}
       </div>

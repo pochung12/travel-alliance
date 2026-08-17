@@ -145,6 +145,17 @@ export interface Customer {
   created_at: string;
 }
 
+export interface CustomerDocumentImage {
+  id: string;
+  customer_id: string;
+  document_type: 'passport' | 'taibao' | 'id_card';
+  image_data: string;
+  image_hash: string;
+  document_number: string;
+  expiry: string | null;
+  created_at: string;
+}
+
 // 固定四類 + 自訂類別（存 custom_price_tiers 的 id）
 export type ParticipantType = 'adult' | 'tour_only' | 'child' | 'infant' | (string & {});
 
