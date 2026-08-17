@@ -31,6 +31,13 @@ const EMPTY: CustForm = {
   address: "", emergency_contact: "", emergency_phone: "", notes: "",
   meal_preference: "",
 };
+const MATCH_CUSTOMER_COLS = [
+  "id","name","name_en","phone","email","id_number","id_card_image",
+  "passport","passport_expiry","passport_image",
+  "taibao_number","taibao_expiry","taibao_image",
+  "birthday","gender","address","emergency_contact","emergency_phone",
+  "notes","meal_preference","created_at",
+].join(",");
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 async function compressImage(file: File, maxPx = 2400, quality = 0.92): Promise<string> {
@@ -155,23 +162,30 @@ export default function ScanEnrollTools({ tourId, enrolledIds, onDone }: Props) 
 
   // ── 找出既有旅客（證件號優先，其次姓名+生日）避免重複建檔 ───────────────────
   const findExisting = async (f: CustForm): Promise<Customer | null> => {
-    if (f.passport?.trim()) {
-      const { data } = await supabase.from("customers").select("*").eq("passport", f.passport.trim()).limit(1);
-      if (data?.[0]) return data[0] as Customer;
-    }
-    if (f.taibao_number?.trim()) {
-      const { data } = await supabase.from("customers").select("*").eq("taibao_number", f.taibao_number.trim()).limit(1);
-      if (data?.[0]) return data[0] as Customer;
-    }
-    if (f.id_number?.trim()) {
-      const { data } = await supabase.from("customers").select("*").eq("id_number", f.id_number.trim()).limit(1);
-      if (data?.[0]) return data[0] as Customer;
+    const passport = f.passport?.trim();
+    const taibao = f.taibao_number?.trim();
+    const idNumber = f.id_number?.trim();
+    const filters:string[]=[];
+    // 證件號正常只含英數字；排除 PostgREST filter 特殊字元，避免拼接查詢出錯。
+    if (passport && /^[a-z0-9]+$/i.test(passport)) filters.push(`passport.eq.${passport}`);
+    if (taibao && /^[a-z0-9]+$/i.test(taibao)) filters.push(`taibao_number.eq.${taibao}`);
+    if (idNumber && /^[a-z0-9]+$/i.test(idNumber)) filters.push(`id_number.eq.${idNumber}`);
+    if (filters.length>0) {
+      const {data}=await supabase.from("customers")
+        .select(MATCH_CUSTOMER_COLS).or(filters.join(",")).limit(3);
+      const matches=(data||[]) as unknown as Customer[];
+      const exact=matches.find(c=>
+        (!!passport && c.passport===passport) ||
+        (!!taibao && c.taibao_number===taibao) ||
+        (!!idNumber && c.id_number===idNumber)
+      );
+      if (exact) return exact;
     }
     if (f.name?.trim()) {
-      let q = supabase.from("customers").select("*").eq("name", f.name.trim());
+      let q = supabase.from("customers").select(MATCH_CUSTOMER_COLS).eq("name", f.name.trim());
       if (sanitizeDate(f.birthday)) q = q.eq("birthday", sanitizeDate(f.birthday));
       const { data } = await q.limit(1);
-      if (data?.[0]) return data[0] as Customer;
+      if (data?.[0]) return data[0] as unknown as Customer;
     }
     return null;
   };
