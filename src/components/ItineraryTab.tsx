@@ -2,7 +2,8 @@
 import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import {
-  FileText, Globe, Upload, Save, X, ExternalLink, Loader2, CheckCircle2,
+  FileText, FileArchive, Globe, Upload, Save, X, ExternalLink, Loader2, CheckCircle2,
+  Eye, Download, Trash2, StickyNote,
 } from "lucide-react";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -35,6 +36,20 @@ interface ItinRecord {
   pdf_data: string;
 }
 
+interface ItineraryAttachment {
+  id: string;
+  file_name: string;
+  file_type: string;
+  file_size: number;
+  memo: string;
+  created_at: string;
+}
+
+interface AttachmentPreview extends ItineraryAttachment {
+  blob_url?: string;
+  html?: string;
+}
+
 interface Props {
   tourId: string;
   variant: "customer" | "trade";
@@ -52,8 +67,18 @@ export default function ItineraryTab({ tourId, variant }: Props) {
   const [saved, setSaved]         = useState(false);
   const blobRef = useRef<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const attachmentRef = useRef<HTMLInputElement>(null);
+  const previewBlobRef = useRef<string | null>(null);
+  const [attachments, setAttachments] = useState<ItineraryAttachment[]>([]);
+  const [attachmentUploading, setAttachmentUploading] = useState(false);
+  const [attachmentLoadingId, setAttachmentLoadingId] = useState<string|null>(null);
+  const [attachmentPreview, setAttachmentPreview] = useState<AttachmentPreview|null>(null);
+  const [memoDrafts, setMemoDrafts] = useState<Record<string,string>>({});
 
-  useEffect(() => () => { if (blobRef.current) URL.revokeObjectURL(blobRef.current); }, []);
+  useEffect(() => () => {
+    if (blobRef.current) URL.revokeObjectURL(blobRef.current);
+    if (previewBlobRef.current) URL.revokeObjectURL(previewBlobRef.current);
+  }, []);
 
   // reset state when variant switches (same component, different prop)
   useEffect(() => {
@@ -62,17 +87,22 @@ export default function ItineraryTab({ tourId, variant }: Props) {
     if (blobRef.current) { URL.revokeObjectURL(blobRef.current); blobRef.current = null; }
     setPdfBlob(null);
     setMode("doc");
+    setAttachments([]); setMemoDrafts({}); setAttachmentPreview(null);
     load();
   }, [tourId, variant]);
 
   const load = async () => {
     setLoading(true);
-    const { data } = await supabase
-      .from("tour_itinerary")
-      .select("id, doc_url, pdf_name, pdf_data")
-      .eq("tour_id", tourId)
-      .eq("variant", variant)
-      .limit(1);
+    const [{data},{data:attachmentRows,error:attachmentError}] = await Promise.all([
+      supabase.from("tour_itinerary")
+        .select("id, doc_url, pdf_name, pdf_data")
+        .eq("tour_id", tourId).eq("variant", variant).limit(1),
+      variant === "trade"
+        ? supabase.from("tour_itinerary_attachments")
+            .select("id,file_name,file_type,file_size,memo,created_at")
+            .eq("tour_id",tourId).eq("variant",variant).order("created_at",{ascending:false})
+        : Promise.resolve({data:[],error:null}),
+    ]);
 
     const row = data?.[0] as ItinRecord | undefined;
     if (row) {
@@ -86,7 +116,114 @@ export default function ItineraryTab({ tourId, variant }: Props) {
         if (!row.doc_url) setMode("pdf");
       }
     }
+    if (!attachmentError) {
+      const rows=(attachmentRows||[]) as ItineraryAttachment[];
+      setAttachments(rows);
+      setMemoDrafts(Object.fromEntries(rows.map(item=>[item.id,item.memo||""])));
+    }
     setLoading(false);
+  };
+
+  const b64ToArrayBuffer = (base64:string) => {
+    const binary=atob(base64);
+    const bytes=new Uint8Array(binary.length);
+    for(let index=0;index<binary.length;index++) bytes[index]=binary.charCodeAt(index);
+    return bytes.buffer;
+  };
+
+  const sanitizeWordHtml = (html:string) => {
+    const doc=new DOMParser().parseFromString(html,"text/html");
+    doc.querySelectorAll("script,iframe,object,embed").forEach(node=>node.remove());
+    doc.querySelectorAll("*").forEach(node=>Array.from(node.attributes).forEach(attr=>{
+      if(attr.name.toLowerCase().startsWith("on")) node.removeAttribute(attr.name);
+    }));
+    return doc.body.innerHTML;
+  };
+
+  const handleAttachmentUpload = async (event:React.ChangeEvent<HTMLInputElement>) => {
+    const files=Array.from(event.target.files||[]);
+    event.target.value="";
+    if(files.length===0) return;
+    const invalid=files.find(file=>!(/\.pdf$/i.test(file.name)||/\.docx?$/i.test(file.name)));
+    if(invalid) { alert(`「${invalid.name}」格式不支援，請上傳 PDF、DOCX 或 DOC。`); return; }
+    const oversized=files.find(file=>file.size>8*1024*1024);
+    if(oversized) { alert(`「${oversized.name}」超過 8MB，請先壓縮。`); return; }
+    setAttachmentUploading(true);
+    const payloads=await Promise.all(files.map(file=>new Promise<Record<string,unknown>>((resolve,reject)=>{
+      const reader=new FileReader();
+      reader.onload=()=>resolve({
+        tour_id:tourId,variant,file_name:file.name,
+        file_type:/\.pdf$/i.test(file.name)?"pdf":/\.docx$/i.test(file.name)?"docx":"doc",
+        file_size:file.size,file_data:String(reader.result).split(",")[1],memo:"",
+      });
+      reader.onerror=()=>reject(reader.error);
+      reader.readAsDataURL(file);
+    })));
+    const {data,error}=await supabase.from("tour_itinerary_attachments").insert(payloads)
+      .select("id,file_name,file_type,file_size,memo,created_at");
+    setAttachmentUploading(false);
+    if(error) {
+      alert(error.message.includes("tour_itinerary_attachments")
+        ? "附件資料表尚未建立，請先執行 tour_itinerary_attachments_migration.sql。"
+        : "上傳附件失敗："+error.message);
+      return;
+    }
+    const rows=(data||[]) as ItineraryAttachment[];
+    setAttachments(prev=>[...rows,...prev]);
+    setMemoDrafts(prev=>({...prev,...Object.fromEntries(rows.map(item=>[item.id,""]))}));
+    flash();
+  };
+
+  const saveAttachmentMemo = async (item:ItineraryAttachment) => {
+    const memo=memoDrafts[item.id]||"";
+    if(memo===item.memo) return;
+    const {error}=await supabase.from("tour_itinerary_attachments").update({memo}).eq("id",item.id).eq("tour_id",tourId);
+    if(error) { alert("儲存備忘失敗："+error.message); return; }
+    setAttachments(prev=>prev.map(row=>row.id===item.id?{...row,memo}:row));
+    flash();
+  };
+
+  const openAttachmentPreview = async (item:ItineraryAttachment) => {
+    setAttachmentLoadingId(item.id);
+    const {data,error}=await supabase.from("tour_itinerary_attachments")
+      .select("file_data").eq("id",item.id).eq("tour_id",tourId).single();
+    setAttachmentLoadingId(null);
+    if(error||!data?.file_data) { alert("載入附件失敗："+(error?.message||"檔案內容不存在")); return; }
+    if(previewBlobRef.current) { URL.revokeObjectURL(previewBlobRef.current); previewBlobRef.current=null; }
+    if(item.file_type==="pdf") {
+      const url=URL.createObjectURL(new Blob([b64ToArrayBuffer(data.file_data)],{type:"application/pdf"}));
+      previewBlobRef.current=url;
+      setAttachmentPreview({...item,blob_url:url});
+    } else if(item.file_type==="docx") {
+      try {
+        const mammoth=await import("mammoth");
+        const result=await mammoth.convertToHtml({arrayBuffer:b64ToArrayBuffer(data.file_data)});
+        setAttachmentPreview({...item,html:sanitizeWordHtml(result.value)});
+      } catch { alert("Word 預覽轉換失敗，請下載後查看原始檔案。"); }
+    } else {
+      alert("舊版 .doc 無法在瀏覽器內預覽，請使用下載功能查看；建議另存為 .docx。");
+    }
+  };
+
+  const downloadAttachment = async (item:ItineraryAttachment) => {
+    setAttachmentLoadingId(item.id);
+    const {data,error}=await supabase.from("tour_itinerary_attachments")
+      .select("file_data").eq("id",item.id).eq("tour_id",tourId).single();
+    setAttachmentLoadingId(null);
+    if(error||!data?.file_data) { alert("下載附件失敗："+(error?.message||"檔案內容不存在")); return; }
+    const mime=item.file_type==="pdf"?"application/pdf":item.file_type==="docx"
+      ?"application/vnd.openxmlformats-officedocument.wordprocessingml.document":"application/msword";
+    const url=URL.createObjectURL(new Blob([b64ToArrayBuffer(data.file_data)],{type:mime}));
+    const link=document.createElement("a"); link.href=url; link.download=item.file_name; link.click();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  };
+
+  const deleteAttachment = async (item:ItineraryAttachment) => {
+    if(!confirm(`確定刪除附件「${item.file_name}」？`)) return;
+    const {error}=await supabase.from("tour_itinerary_attachments").delete().eq("id",item.id).eq("tour_id",tourId);
+    if(error) { alert("刪除附件失敗："+error.message); return; }
+    setAttachments(prev=>prev.filter(row=>row.id!==item.id));
+    setAttachmentPreview(prev=>prev?.id===item.id?null:prev);
   };
 
   const upsert = async (patch: Partial<ItinRecord>) => {
@@ -163,6 +300,48 @@ export default function ItineraryTab({ tourId, variant }: Props) {
 
   return (
     <div className="space-y-4">
+
+      {variant === "trade" && (
+        <section className="rounded-2xl border border-amber-200 dark:border-amber-800/60 bg-gradient-to-br from-amber-50 to-white dark:from-amber-950/20 dark:to-slate-800 overflow-hidden shadow-sm">
+          <div className="flex items-center justify-between gap-3 px-4 md:px-5 py-4 border-b border-amber-100 dark:border-amber-900/40">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="p-2 rounded-xl bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300"><FileArchive className="w-5 h-5" /></div>
+              <div><h3 className="font-bold text-slate-800 dark:text-slate-100 text-sm">檔案備忘</h3><p className="text-[11px] text-slate-500 dark:text-slate-400">保存同業報價、行程版本及往來文件</p></div>
+            </div>
+            <button onClick={()=>attachmentRef.current?.click()} disabled={attachmentUploading}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold disabled:opacity-50 shrink-0">
+              {attachmentUploading?<Loader2 className="w-4 h-4 animate-spin"/>:<Upload className="w-4 h-4"/>}
+              {attachmentUploading?"上傳中…":"上傳檔案"}
+            </button>
+            <input ref={attachmentRef} type="file" multiple accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="hidden" onChange={handleAttachmentUpload}/>
+          </div>
+          {attachments.length===0 ? (
+            <button onClick={()=>attachmentRef.current?.click()} className="w-full py-10 text-center text-slate-400 hover:bg-amber-50/60 dark:hover:bg-amber-950/20 transition-colors">
+              <Upload className="w-7 h-7 mx-auto mb-2 opacity-50"/><span className="text-sm font-medium">尚無附件，點此上傳 Word 或 PDF</span><span className="block text-xs mt-1">每個檔案最大 8MB，檔案內容按預覽時才載入</span>
+            </button>
+          ) : (
+            <div className="divide-y divide-amber-100 dark:divide-amber-900/30">
+              {attachments.map(item=><div key={item.id} className="p-3 md:p-4 flex flex-col md:flex-row md:items-center gap-3">
+                <div className="flex items-center gap-3 min-w-0 md:w-64">
+                  <FileText className={`w-7 h-7 shrink-0 ${item.file_type==='pdf'?'text-red-500':'text-blue-600'}`}/>
+                  <div className="min-w-0"><p className="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate" title={item.file_name}>{item.file_name}</p><p className="text-[10px] text-slate-400">{item.file_type.toUpperCase()} · {(item.file_size/1024/1024).toFixed(2)} MB · {new Date(item.created_at).toLocaleDateString("zh-TW")}</p></div>
+                </div>
+                <div className="flex-1 flex items-center gap-2 min-w-0">
+                  <StickyNote className="w-4 h-4 text-amber-500 shrink-0"/>
+                  <input value={memoDrafts[item.id]||""} onChange={event=>setMemoDrafts(prev=>({...prev,[item.id]:event.target.value}))}
+                    onBlur={()=>saveAttachmentMemo(item)} onKeyDown={event=>event.key==="Enter"&&event.currentTarget.blur()}
+                    placeholder="輸入這份檔案的備忘…" className="w-full bg-white/70 dark:bg-slate-700/70 border border-amber-200 dark:border-amber-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-amber-400"/>
+                </div>
+                <div className="flex items-center gap-1 justify-end shrink-0">
+                  <button onClick={()=>openAttachmentPreview(item)} disabled={attachmentLoadingId===item.id||item.file_type==='doc'} title="預覽" className="p-2 rounded-lg text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 disabled:opacity-30">{attachmentLoadingId===item.id?<Loader2 className="w-4 h-4 animate-spin"/>:<Eye className="w-4 h-4"/>}</button>
+                  <button onClick={()=>downloadAttachment(item)} disabled={attachmentLoadingId===item.id} title="下載" className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700"><Download className="w-4 h-4"/></button>
+                  <button onClick={()=>deleteAttachment(item)} title="刪除" className="p-2 rounded-lg text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30"><Trash2 className="w-4 h-4"/></button>
+                </div>
+              </div>)}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* Mode switcher */}
       <div className="flex items-center gap-2 flex-wrap">
@@ -296,6 +475,20 @@ export default function ItineraryTab({ tourId, variant }: Props) {
               <p className="text-xs text-slate-400 dark:text-slate-500">或將 PDF 拖放到此處（最大 12MB）</p>
             </div>
           )}
+        </div>
+      )}
+
+      {attachmentPreview && (
+        <div className="fixed inset-0 z-50 bg-black/70 p-2 md:p-6 flex items-center justify-center" onClick={()=>setAttachmentPreview(null)}>
+          <div className="w-full max-w-6xl h-[94vh] bg-white dark:bg-slate-900 rounded-2xl overflow-hidden shadow-2xl flex flex-col" onClick={event=>event.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-slate-200 dark:border-slate-700">
+              <div className="min-w-0"><p className="font-bold text-sm text-slate-800 dark:text-slate-100 truncate">{attachmentPreview.file_name}</p>{attachmentPreview.memo&&<p className="text-xs text-amber-600 truncate">{attachmentPreview.memo}</p>}</div>
+              <div className="flex gap-1"><button onClick={()=>downloadAttachment(attachmentPreview)} className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"><Download className="w-5 h-5"/></button><button onClick={()=>setAttachmentPreview(null)} className="p-2 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"><X className="w-5 h-5"/></button></div>
+            </div>
+            <div className="flex-1 min-h-0 bg-slate-100 dark:bg-slate-950 overflow-auto">
+              {attachmentPreview.blob_url?<embed src={attachmentPreview.blob_url} type="application/pdf" className="w-full h-full"/>:<article className="max-w-4xl mx-auto my-4 md:my-8 bg-white text-slate-900 min-h-full p-6 md:p-12 shadow prose prose-slate" dangerouslySetInnerHTML={{__html:attachmentPreview.html||""}}/>}
+            </div>
+          </div>
         </div>
       )}
     </div>
