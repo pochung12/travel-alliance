@@ -483,6 +483,9 @@ export default function CRMPage() {
   const [allToursLoaded, setAllToursLoaded] = useState(false);
   const [allToursLoading, setAllToursLoading] = useState(false);
   const [tourPickerId, setTourPickerId] = useState<string|null>(null);
+  const tourRelationsLoadedRef = useRef<Set<string>>(new Set());
+  const tourRelationsLoadingRef = useRef<Set<string>>(new Set());
+  const [tourRelationEpoch, setTourRelationEpoch] = useState(0);
 
   // labels
   const [allLabels,     setAllLabels]     = useState<CrmLabel[]>([]);
@@ -655,12 +658,28 @@ export default function CRMPage() {
     setCustLabels(map);
   };
 
-  const loadCustTours = async () => {
-    const { data } = await supabase
+  const loadCustTours = async (customerIds: string[], force = false) => {
+    const ids = Array.from(new Set(customerIds)).filter(customerId =>
+      force || (!tourRelationsLoadedRef.current.has(customerId) && !tourRelationsLoadingRef.current.has(customerId))
+    );
+    if (ids.length === 0) return;
+    ids.forEach(customerId=>tourRelationsLoadingRef.current.add(customerId));
+    // 大量排序時分批，避免超長 URL 與單一 SQL statement timeout；一般頁面只會送出一批。
+    const chunks = Array.from({length:Math.ceil(ids.length/100)},(_,index)=>ids.slice(index*100,index*100+100));
+    const results = await Promise.all(chunks.map(chunk=>supabase
       .from("customer_tours")
       .select("customer_id,tour_id,tours(name)")
-      .neq("status", "cancelled");
+      .in("customer_id",chunk)
+      .neq("status", "cancelled")));
+    const error = results.find(result=>result.error)?.error;
+    if (error) {
+      ids.forEach(customerId=>tourRelationsLoadingRef.current.delete(customerId));
+      console.warn("CRM participant tours load failed:",error.message);
+      return;
+    }
+    const data = results.flatMap(result=>result.data||[]);
     const map: Record<string, Pick<Tour, "id" | "name">[]> = {};
+    ids.forEach(customerId=>{ map[customerId]=[]; });
     (data || []).forEach((row: { customer_id: string; tour_id: string; tours: { name: string }[] | { name: string } | null }) => {
       const tourArr = Array.isArray(row.tours) ? row.tours : (row.tours ? [row.tours] : []);
       tourArr.forEach(t => {
@@ -669,7 +688,11 @@ export default function CRMPage() {
           map[row.customer_id].push({ id: row.tour_id, name: t.name });
       });
     });
-    setCustTours(map);
+    setCustTours(prev=>({...prev,...map}));
+    ids.forEach(customerId=>{
+      tourRelationsLoadingRef.current.delete(customerId);
+      tourRelationsLoadedRef.current.add(customerId);
+    });
   };
 
   const loadAllTours = async () => {
@@ -715,7 +738,7 @@ export default function CRMPage() {
   };
 
   // 列表只載入顯示所需資料；完整團清單延後到使用者打開參團編輯器。
-  useEffect(() => { Promise.all([load(), loadLabels(), loadCustTours()]); }, []);
+  useEffect(() => { Promise.all([load(), loadLabels()]); }, []);
 
   // ── resize ────────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -773,6 +796,14 @@ export default function CRMPage() {
   const pageCustomerIds = paginatedCustomers.map(c => c.id).join(",");
   const pageWindowStart = Math.max(1, Math.min(safeCurrentPage - 2, totalPages - 4));
   const visiblePageNumbers = Array.from({length: Math.min(5, totalPages)}, (_,i)=>pageWindowStart+i);
+
+  // 參團關聯只抓目前頁面；只有使用者主動以「參團紀錄」排序時才載入全體。
+  useEffect(() => {
+    const ids = sortKey === "tours" ? customers.map(c=>c.id) : (pageCustomerIds ? pageCustomerIds.split(",") : []);
+    void loadCustTours(ids);
+    // tourRelationEpoch 用於合併後使目前頁面的關聯快取失效。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageCustomerIds, sortKey, tourRelationEpoch]);
 
   // base64 證件圖片只載入目前頁面的旅客，翻頁時才補下一頁，避免一次下載全 CRM。
   const passportImageVisible = columns.some(c => c.key === "passport_image" && c.visible);
@@ -1300,19 +1331,13 @@ export default function CRMPage() {
       reasons.forEach(r=>comp.reasons.add(r));
     });
 
-    // 開啟視窗只取文字欄位。base64 證件照片延後到使用者確認合併後才載入。
-    const candidateIds = Array.from(new Set(Array.from(components.values()).flatMap(c=>Array.from(c.ids))));
-    let fullById = new Map<string,Customer>();
-    if (candidateIds.length > 0) {
-      const {data,error} = await supabase.from("customers").select(LIST_COLS).in("id",candidateIds);
-      if (error) { alert("載入重複旅客資料失敗："+error.message); return; }
-      fullById = new Map(((data||[]) as unknown as Customer[]).map(c=>[c.id,c]));
-    }
+    // 列表已持有完整文字欄位，不重複向 Supabase 查詢；base64 圖片仍延後到確認合併才載入。
+    const customerById = new Map(customers.map(customer=>[customer.id,customer]));
 
     const groups: DupGroup[] = [];
     components.forEach((comp) => {
       const groupCustomers = Array.from(comp.ids)
-        .map(id=>fullById.get(id) || customers.find(c=>c.id===id))
+        .map(id=>customerById.get(id))
         .filter(Boolean) as Customer[];
       if (groupCustomers.length < 2) return;
       groupCustomers.sort((a,b)=>new Date(a.created_at).getTime()-new Date(b.created_at).getTime());
@@ -1423,6 +1448,22 @@ export default function CRMPage() {
     if (selectedImagesError) {
       setMerging(false); alert("載入待合併證件照片失敗：" + selectedImagesError.message); return;
     }
+    // 整批預取合併所需關聯，避免每一組重複查詢形成 N+1 與 statement timeout。
+    const [archivesResult,tourLinksResult,labelLinksResult] = await Promise.all([
+      supabase.from("customer_document_images")
+        .select("id,customer_id,document_type,image_hash").in("customer_id",selectedCustomerIds),
+      supabase.from("customer_tours")
+        .select("id,customer_id,tour_id").in("customer_id",selectedCustomerIds),
+      supabase.from("customer_labels")
+        .select("id,customer_id,label_id").in("customer_id",selectedCustomerIds),
+    ]);
+    if (tourLinksResult.error || labelLinksResult.error) {
+      setMerging(false);
+      alert("載入待合併關聯資料失敗："+(tourLinksResult.error?.message||labelLinksResult.error?.message));
+      return;
+    }
+    const selectedTourLinks=(tourLinksResult.data||[]) as {id:string;customer_id:string;tour_id:string}[];
+    const selectedLabelLinks=(labelLinksResult.data||[]) as {id:string;customer_id:string;label_id:string}[];
     const imageByCustomerId = new Map((selectedImages || []).map(row => {
       const item = row as unknown as Pick<Customer,"id"|"id_card_image"|"passport_image"|"taibao_image">;
       return [item.id, item] as const;
@@ -1444,10 +1485,9 @@ export default function CRMPage() {
       });
       const distinctLegacy = Array.from(new Map(legacyDocs.map(d=>[`${d.document_type}:${d.image_data}`,d])).values());
 
-      const {data:existingArchives,error:archiveReadError} = await supabase
-        .from("customer_document_images")
-        .select("id,customer_id,document_type,image_hash")
-        .in("customer_id",workingCustomers.map(c=>c.id));
+      const archiveReadError=archivesResult.error;
+      const workingCustomerIds=new Set(workingCustomers.map(c=>c.id));
+      const existingArchives=(archivesResult.data||[]).filter(row=>workingCustomerIds.has(row.customer_id));
       const archiveTableMissing = !!archiveReadError && (
         archiveReadError.code==='42P01' || archiveReadError.code==='PGRST205' ||
         archiveReadError.message.includes('customer_document_images')
@@ -1572,24 +1612,17 @@ export default function CRMPage() {
       }
 
       // 3. 出團記錄轉移（整組多人一次處理，同團只保留一筆）
-      const { data: existingTours } = await supabase
-        .from("customer_tours").select("tour_id").eq("customer_id", primary.id);
-      const existingTourIds = new Set((existingTours || []).map((r: {tour_id: string}) => r.tour_id));
-      const { data: secTours } = await supabase
-        .from("customer_tours").select("id,tour_id").in("customer_id", secondaryIds);
-      const secToursArr = (secTours || []) as {id:string;tour_id:string}[];
+      const existingTourIds = new Set(selectedTourLinks.filter(row=>row.customer_id===primary.id).map(row=>row.tour_id));
+      const secondaryIdSet=new Set(secondaryIds);
+      const secToursArr = selectedTourLinks.filter(row=>secondaryIdSet.has(row.customer_id));
       const tourDelIds:string[]=[]; const tourUpdIds:string[]=[];
       secToursArr.forEach(t=>{ if(existingTourIds.has(t.tour_id)) tourDelIds.push(t.id); else {existingTourIds.add(t.tour_id);tourUpdIds.push(t.id);} });
       if (tourDelIds.length > 0) await supabase.from("customer_tours").delete().in("id", tourDelIds);
       if (tourUpdIds.length > 0) await supabase.from("customer_tours").update({customer_id: primary.id}).in("id", tourUpdIds);
 
       // 4. 標籤轉移（避免重複標籤）
-      const { data: existingLabels } = await supabase
-        .from("customer_labels").select("label_id").eq("customer_id", primary.id);
-      const existingLabelIds = new Set((existingLabels || []).map((r: {label_id: string}) => r.label_id));
-      const { data: secLabels } = await supabase
-        .from("customer_labels").select("id,label_id").in("customer_id", secondaryIds);
-      const secLabelsArr = (secLabels || []) as {id:string;label_id:string}[];
+      const existingLabelIds = new Set(selectedLabelLinks.filter(row=>row.customer_id===primary.id).map(row=>row.label_id));
+      const secLabelsArr = selectedLabelLinks.filter(row=>secondaryIdSet.has(row.customer_id));
       const labelDelIds:string[]=[]; const labelUpdIds:string[]=[];
       secLabelsArr.forEach(l=>{if(existingLabelIds.has(l.label_id))labelDelIds.push(l.id);else{existingLabelIds.add(l.label_id);labelUpdIds.push(l.id);}});
       if (labelDelIds.length > 0) await supabase.from("customer_labels").delete().in("id", labelDelIds);
@@ -1604,7 +1637,11 @@ export default function CRMPage() {
     }
     setMerging(false);
     setMergeResult({merged});
-    load(); loadLabels(); loadCustTours();
+    tourRelationsLoadedRef.current.clear();
+    tourRelationsLoadingRef.current.clear();
+    setCustTours({});
+    setTourRelationEpoch(epoch=>epoch+1);
+    load(); loadLabels();
   };
 
   // ─── render ───────────────────────────────────────────────────────────────

@@ -15,6 +15,11 @@ CREATE INDEX IF NOT EXISTS idx_customers_phone
 CREATE INDEX IF NOT EXISTS idx_customers_name_birthday
   ON customers (name, birthday);
 
+-- OCR／掃描建檔會用 ilike 尋找相似姓名；trigram 避免資料量增長後逐列掃描。
+CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA extensions;
+CREATE INDEX IF NOT EXISTS idx_customers_name_trgm
+  ON customers USING gin (name extensions.gin_trgm_ops);
+
 -- 2) 標籤關聯查詢與刪除
 CREATE INDEX IF NOT EXISTS idx_customer_labels_customer_id
   ON customer_labels (customer_id);
@@ -28,6 +33,8 @@ CREATE INDEX IF NOT EXISTS idx_customer_tours_customer_status
   ON customer_tours (customer_id, status);
 CREATE INDEX IF NOT EXISTS idx_customer_tours_tour_status
   ON customer_tours (tour_id, status);
+CREATE INDEX IF NOT EXISTS idx_customer_tours_customer_tour
+  ON customer_tours (customer_id, tour_id);
 
 -- 4) 更新統計資訊，讓 planner 使用新索引
 ANALYZE customers;
