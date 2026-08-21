@@ -7,7 +7,7 @@ import {
 import {
   Sparkles, Globe, Eye, Loader2, CheckCircle2, AlertCircle,
   RefreshCw, EyeOff, ExternalLink, Image as ImageIcon, Pencil, X, Save, Upload, Search,
-  Link as LinkIcon,
+  Link as LinkIcon, Plus, Trash2, ChevronUp, ChevronDown,
 } from "lucide-react";
 import FlightEditor from "@/components/FlightEditor";
 import PageListEditor from "@/components/PageListEditor";
@@ -1153,19 +1153,73 @@ Day2 箱根一日遊，蘆之湖海賊船、大涌谷，溫泉飯店會席料理
                 </div>
               )}
 
-              {/* 景點美照（可展開逐張換圖/上傳） */}
-              {(content.gallery?.length || 0) > 0 && (
-                <div>
+              {/* 景點美照（可展開逐組改名稱／換圖／增刪／排序） */}
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
                   <button onClick={() => setGalleryOpen(v => !v)}
-                    className="text-xs text-slate-400 mb-1.5 flex items-center gap-1.5 hover:text-violet-600">
-                    景點美照（{content.gallery!.length} 個景點 × 3 張）
-                    <span className="text-violet-500 underline">{galleryOpen ? "收合" : "展開管理照片"}</span>
+                    className="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1.5 hover:text-violet-600 transition-colors">
+                    🖼 景點美照（{content.gallery?.length || 0} 組 × 3 張）
+                    <span className="text-violet-500 underline font-normal">{galleryOpen ? "收合" : "展開編輯"}</span>
                   </button>
-                  {galleryOpen ? (
-                    <div className="space-y-3">
-                      {content.gallery!.map((g, gi) => (
+                  {galleryOpen && (
+                    <button
+                      onClick={() => updateGallery([...(content.gallery || []), { name: "新景點", subtitle: "", images: ["", "", ""] }])}
+                      className="flex items-center gap-1 text-xs px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded-lg transition-colors">
+                      <Plus className="w-3.5 h-3.5" /> 新增景點
+                    </button>
+                  )}
+                </div>
+                {galleryOpen ? (
+                  <div className="space-y-2.5">
+                    {(content.gallery || []).map((g, gi) => {
+                      const list = content.gallery || [];
+                      const swap = (dir: -1 | 1) => {
+                        const j = gi + dir;
+                        if (j < 0 || j >= list.length) return;
+                        const n = list.slice();
+                        [n[gi], n[j]] = [n[j], n[gi]];
+                        updateGallery(n);
+                      };
+                      return (
                         <div key={gi} className="rounded-xl border border-slate-200 dark:border-slate-600 p-2.5">
-                          <div className="text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">{g.name}</div>
+                          <div className="flex items-start gap-1.5 mb-2">
+                            <div className="flex-1 min-w-0 space-y-1.5">
+                              <input
+                                className="w-full text-xs font-medium border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-violet-400"
+                                placeholder="景點名稱（例：玉龍雪山）"
+                                defaultValue={g.name}
+                                onBlur={e => {
+                                  const v = e.target.value.trim();
+                                  if (v !== g.name) updateGallery(list.map((x, k) => k === gi ? { ...x, name: v } : x));
+                                }}
+                              />
+                              <input
+                                className="w-full text-[11px] border border-slate-200 dark:border-slate-600 rounded-lg px-2.5 py-1.5 bg-white dark:bg-slate-700 text-slate-600 dark:text-slate-300 focus:outline-none focus:ring-1 focus:ring-violet-400"
+                                placeholder="一句話描述（前台顯示在景點名稱下方，可留空）"
+                                defaultValue={g.subtitle || ""}
+                                onBlur={e => {
+                                  const v = e.target.value.trim();
+                                  if (v !== (g.subtitle || "")) updateGallery(list.map((x, k) => k === gi ? { ...x, subtitle: v } : x));
+                                }}
+                              />
+                            </div>
+                            <div className="flex flex-col shrink-0">
+                              <button onClick={() => swap(-1)} disabled={gi === 0} title="上移"
+                                className="p-0.5 text-slate-400 hover:text-violet-600 disabled:opacity-20 disabled:cursor-default rounded transition-colors">
+                                <ChevronUp className="w-3.5 h-3.5" />
+                              </button>
+                              <button onClick={() => swap(1)} disabled={gi === list.length - 1} title="下移"
+                                className="p-0.5 text-slate-400 hover:text-violet-600 disabled:opacity-20 disabled:cursor-default rounded transition-colors">
+                                <ChevronDown className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                            <button
+                              onClick={() => { if (confirm(`確定刪除景點「${g.name}」？（含 3 張照片）`)) updateGallery(list.filter((_, k) => k !== gi)); }}
+                              title="刪除此景點"
+                              className="shrink-0 p-1 text-slate-300 hover:text-white hover:bg-red-500 rounded-lg transition-colors">
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                           <div className="grid grid-cols-3 gap-2">
                             {[0, 1, 2].map(idx => (
                               <PhotoSlot key={idx} url={g.images[idx]} ratio="aspect-[4/3]" placeholder={`照片 ${idx + 1}`}
@@ -1173,26 +1227,49 @@ Day2 箱根一日遊，蘆之湖海賊船、大涌谷，溫泉飯店會席料理
                             ))}
                           </div>
                         </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {content.gallery!.map((g, i) => (
-                        <span key={i} className="text-xs bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 px-2.5 py-1 rounded-full flex items-center gap-1">
-                          <ImageIcon className="w-3 h-3" /> {g.name}（{g.images.length}）
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
+                      );
+                    })}
+                    {(content.gallery?.length || 0) === 0 && (
+                      <p className="text-[11px] text-slate-400 py-2 px-3 rounded-lg bg-slate-50 dark:bg-slate-700/40">
+                        目前沒有景點美照，點右上「新增景點」開始建立
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {(content.gallery?.length || 0) === 0 && <span className="text-[11px] text-slate-400">尚未建立</span>}
+                    {(content.gallery || []).map((g, i) => (
+                      <span key={i} className="text-[11px] bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 px-2.5 py-1 rounded-full flex items-center gap-1">
+                        <ImageIcon className="w-3 h-3" /> {g.name}（{g.images.filter(Boolean).length}/3）
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
 
-              <div className="flex flex-wrap gap-4 text-xs text-slate-400 pt-2 border-t border-slate-50 dark:border-slate-700">
-                <span>✈️ 航班 {content.flights.length} 筆</span>
-                <span>🖼 景點美照 {content.gallery?.length || 0} 組</span>
-                <span>✅ 費用包含 {content.includes.length} 項</span>
-                <span>❌ 費用不含 {content.excludes.length} 項</span>
-                <span>📌 注意事項 {content.notes.length} 項</span>
+              {/* 費用包含 / 費用不含 / 注意事項 — 逐項可編輯 */}
+              <div className="space-y-3 pt-3 border-t border-slate-100 dark:border-slate-700">
+                <PageListEditor
+                  title="✅ 費用包含" accent="emerald" items={content.includes}
+                  placeholder="例：來回機票、機場稅、燃油附加費"
+                  hint="每一項會在前台「費用包含」區塊列成一條。"
+                  onSave={items => saveContentPatch({ includes: items })}
+                />
+                <PageListEditor
+                  title="❌ 費用不含" accent="rose" items={content.excludes}
+                  placeholder="例：個人消費、床頭小費、旅遊平安險自行加保"
+                  hint="每一項會在前台「費用不含」區塊列成一條。"
+                  onSave={items => saveContentPatch({ excludes: items })}
+                />
+                <PageListEditor
+                  title="📌 注意事項" accent="amber" items={content.notes}
+                  placeholder="例：護照效期需滿六個月、本行程順序可能因天候調整"
+                  hint="每一項會在前台「注意事項」區塊列成一條。"
+                  onSave={items => saveContentPatch({ notes: items })}
+                />
+                <div className="text-[11px] text-slate-400">
+                  ✈️ 航班 {content.flights.length} 筆 — 在下方「航班資訊」區塊編輯
+                </div>
               </div>
             </div>
           )}
