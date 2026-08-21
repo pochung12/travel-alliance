@@ -325,6 +325,73 @@ export default function FlightSummary({ flights, tourId, startDate, endDate, onU
         </div>
       </div>
 
+      {/* 全部航班一覽（一眼看完，不用往下捲） */}
+      <div className="rounded-xl border border-slate-200 dark:border-slate-600 overflow-hidden bg-white/70 dark:bg-slate-800/60">
+        <div className="px-3 py-2 bg-slate-50 dark:bg-slate-700/60 border-b border-slate-200 dark:border-slate-600 flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-bold text-slate-700 dark:text-slate-200">全部航班一覽</span>
+          <span className="text-[11px] text-slate-400">
+            {cards.length} 組 · {flights.length} 筆 · {cards.reduce((n, c) => n + c.flights.length, 0)} 個不同航段
+          </span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-[11px]">
+            <tbody>
+              {cards.map((card, ci) => {
+                const names = card.names.length > 0 ? card.names : defaultNames;
+                const accent = card.names.length === 0 ? ACCENT_OUT : "#7c3aed";
+                const legs = card.flights.slice().sort((a, b) =>
+                  (a.flight_date || "").localeCompare(b.flight_date || "") ||
+                  (a.departure_time || "").localeCompare(b.departure_time || ""));
+                return [
+                  <tr key={`h${ci}`} className="bg-slate-50/80 dark:bg-slate-700/40 border-t border-slate-200 dark:border-slate-600">
+                    <td colSpan={5} className="px-2.5 py-1.5">
+                      <span className="font-bold px-1.5 py-0.5 rounded mr-1.5" style={{ color: accent, background: `${accent}18` }}>
+                        {card.names.length === 0 ? `組 ${ci + 1}・預設` : `組 ${ci + 1}`}
+                      </span>
+                      <span className="text-slate-400">{names.length} 人：</span>
+                      <span className="text-slate-700 dark:text-slate-200">{names.join("、") || "（無）"}</span>
+                    </td>
+                  </tr>,
+                  ...legs.map((f, li) => {
+                    const back = legOf(f, startDate, endDate) === "back";
+                    const dep = airportInfo(f.departure_airport), arr = airportInfo(f.arrival_airport);
+                    const depT = terminalLabel((f.departure_terminal || "").trim() || knownTerminal(f.departure_airport, f.flight_number, f.arrival_airport));
+                    const arrT = terminalLabel((f.arrival_terminal || "").trim() || knownTerminal(f.arrival_airport, f.flight_number, f.departure_airport));
+                    return (
+                      <tr key={`${ci}-${li}`} className="border-t border-slate-100 dark:border-slate-700">
+                        <td className="px-2.5 py-1.5 whitespace-nowrap">
+                          <span className={`font-bold ${back ? "text-orange-600 dark:text-orange-400" : "text-sky-600 dark:text-sky-400"}`}>
+                            {back ? "回" : "去"}
+                          </span>
+                        </td>
+                        <td className="px-2 py-1.5 font-mono font-bold text-slate-700 dark:text-slate-200 whitespace-nowrap">{f.flight_number || "—"}</td>
+                        <td className="px-2 py-1.5 tabular-nums text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                          {fmtMD(f.flight_date)} <span className="text-slate-300 dark:text-slate-500">{weekday(f.flight_date)}</span>
+                        </td>
+                        <td className="px-2 py-1.5 whitespace-nowrap">
+                          <span className="tabular-nums font-semibold text-slate-800 dark:text-slate-100">{f.departure_time || "--:--"}</span>
+                          <span className="text-slate-600 dark:text-slate-300"> {dep?.city || resolveAirportCode(f.departure_airport) || f.departure_airport || "—"}</span>
+                          <span className="font-mono text-slate-400"> {resolveAirportCode(f.departure_airport)}</span>
+                          {depT && <span className="text-amber-600 dark:text-amber-400"> {depT}</span>}
+                        </td>
+                        <td className="px-2 py-1.5 whitespace-nowrap">
+                          <span className="text-slate-300 dark:text-slate-500 mr-1">→</span>
+                          <span className="tabular-nums font-semibold text-slate-800 dark:text-slate-100">{f.arrival_time || "--:--"}</span>
+                          {isOvernight(f.departure_time, f.arrival_time) && <sup className="text-orange-500 font-bold">+1</sup>}
+                          <span className="text-slate-600 dark:text-slate-300"> {arr?.city || resolveAirportCode(f.arrival_airport) || f.arrival_airport || "—"}</span>
+                          <span className="font-mono text-slate-400"> {resolveAirportCode(f.arrival_airport)}</span>
+                          {arrT && <span className="text-amber-600 dark:text-amber-400"> {arrT}</span>}
+                        </td>
+                      </tr>
+                    );
+                  }),
+                ];
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <div className={cards.length > 1 ? "grid lg:grid-cols-2 gap-4" : ""}>
         {cards.map((card, ci) => {
           const out  = card.flights.filter(f => legOf(f, startDate, endDate) === "out")
