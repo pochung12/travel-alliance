@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { supabase, TourFlight } from "@/lib/supabase";
 import { airportInfo, terminalLabel, knownTerminal, resolveAirportCode } from "@/lib/airports";
 import { computeFlightCards, assignPassengerToCard, passengerHasTicketData } from "@/lib/flightGroups";
-import { PlaneTakeoff, PlaneLanding, Users, ArrowRight, Search, Loader2, UserPlus, X, Check } from "lucide-react";
+import { PlaneTakeoff, PlaneLanding, Users, ArrowRight, Search, Loader2, UserPlus, X, Check, Moon } from "lucide-react";
 
 interface Props {
   flights: TourFlight[];
@@ -63,7 +63,12 @@ function Endpoint({
     <div className={`min-w-0 flex-1 ${right ? "text-right" : "text-left"}`}>
       <div className="text-2xl font-black leading-none tabular-nums text-slate-800 dark:text-slate-100">
         {time || "--:--"}
-        {overnight && <sup className="text-[10px] font-bold text-orange-500 ml-0.5">+1</sup>}
+        {overnight && (
+          <span className="ml-1.5 align-middle inline-flex items-center gap-0.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-500/25 dark:text-indigo-200"
+            title="抵達時間為隔天（跨日班機）">
+            <Moon className="w-2.5 h-2.5" /> 過夜 +1
+          </span>
+        )}
       </div>
       {/* 城市 + 機場代碼 */}
       <div className={`flex items-baseline gap-1.5 mt-1.5 flex-wrap ${right ? "justify-end" : ""}`}>
@@ -377,7 +382,12 @@ export default function FlightSummary({ flights, tourId, startDate, endDate, onU
                         <td className="px-2 py-1.5 whitespace-nowrap">
                           <span className="text-slate-300 dark:text-slate-500 mr-1">→</span>
                           <span className="tabular-nums font-semibold text-slate-800 dark:text-slate-100">{f.arrival_time || "--:--"}</span>
-                          {isOvernight(f.departure_time, f.arrival_time) && <sup className="text-orange-500 font-bold">+1</sup>}
+                          {isOvernight(f.departure_time, f.arrival_time) && (
+                            <span className="ml-1 inline-flex items-center gap-0.5 text-[10px] font-bold px-1 py-0.5 rounded bg-indigo-100 text-indigo-700 dark:bg-indigo-500/25 dark:text-indigo-200"
+                              title="抵達時間為隔天（跨日班機）">
+                              <Moon className="w-2.5 h-2.5" />過夜+1
+                            </span>
+                          )}
                           <span className="text-slate-600 dark:text-slate-300"> {arr?.city || resolveAirportCode(f.arrival_airport) || f.arrival_airport || "—"}</span>
                           <span className="font-mono text-slate-400"> {resolveAirportCode(f.arrival_airport)}</span>
                           {arrT && <span className="text-amber-600 dark:text-amber-400"> {arrT}</span>}
