@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase, TourFlight } from "@/lib/supabase";
 import { airportInfo, terminalLabel, knownTerminal } from "@/lib/airports";
 import { computeFlightCards, assignPassengerToCard, passengerHasTicketData } from "@/lib/flightGroups";
@@ -147,6 +147,15 @@ export default function FlightSummary({ flights, tourId, startDate, endDate, onU
   // 指派旅客到航班組
   const [assignIdx, setAssignIdx] = useState<number | null>(null);
   const [partNames, setPartNames] = useState<string[]>([]);
+  // 一進來就載團員名單，讓「預設組」也能列出實際搭乘的旅客
+  useEffect(() => {
+    supabase.from("customer_tours").select("customer:customers(name)").eq("tour_id", tourId)
+      .then(({ data }) => {
+        const names = ((data || []) as unknown as Array<{ customer: { name: string } | null }>)
+          .map(r => (r.customer?.name || "").trim()).filter(Boolean);
+        setPartNames(Array.from(new Set(names)));
+      });
+  }, [tourId]);
   const [selNames, setSelNames] = useState<Set<string>>(new Set());
   const [assignSaving, setAssignSaving] = useState(false);
 
@@ -224,6 +233,9 @@ export default function FlightSummary({ flights, tourId, startDate, endDate, onU
 
   // 依旅客分組 → 相同行程併卡（與旅客分頁的航班組下拉共用同一套邏輯）
   const cards = computeFlightCards(flights);
+  // 預設組實際成員 = 團員名單扣掉已被指派到其他組的人
+  const assignedNames = new Set(cards.flatMap(c => c.names));
+  const defaultNames = partNames.filter(n => !assignedNames.has(n));
 
   // ── 指派旅客 ──────────────────────────────────────────────
   // 每位旅客目前所屬的組（依 passenger_name 分組的卡片索引；不在任何組 = 預設）
@@ -330,9 +342,20 @@ export default function FlightSummary({ flights, tourId, startDate, endDate, onU
                   </span>
                 )}
                 {card.names.length === 0 ? (
-                  <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-                    {cards.length > 1 ? "未指派旅客搭此航班" : "全團適用"}
-                  </span>
+                  cards.length === 1 ? (
+                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">全團適用</span>
+                  ) : defaultNames.length > 0 ? (
+                    <span className="text-xs text-slate-600 dark:text-slate-300 flex items-center gap-1 flex-wrap">
+                      <span className="text-slate-400 shrink-0">{defaultNames.length} 人：</span>
+                      {defaultNames.map(n => (
+                        <span key={n} className="font-semibold bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">
+                          {n}
+                        </span>
+                      ))}
+                    </span>
+                  ) : (
+                    <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">未指派旅客搭此航班</span>
+                  )
                 ) : (
                   <span className="text-xs text-slate-600 dark:text-slate-300 flex items-center gap-1 flex-wrap">
                     <span className="text-slate-400 shrink-0">{card.names.length} 人：</span>
