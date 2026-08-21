@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { supabase, TourFlight } from "@/lib/supabase";
-import { airportInfo, terminalLabel, knownTerminal } from "@/lib/airports";
+import { airportInfo, terminalLabel, knownTerminal, resolveAirportCode } from "@/lib/airports";
 import { computeFlightCards, assignPassengerToCard, passengerHasTicketData } from "@/lib/flightGroups";
 import { PlaneTakeoff, PlaneLanding, Users, ArrowRight, Search, Loader2, UserPlus, X, Check } from "lucide-react";
 
@@ -76,7 +76,7 @@ function Endpoint({
           className="text-[11px] font-bold font-mono px-1.5 py-0.5 rounded"
           style={{ color: accent, background: `${accent}18` }}
         >
-          {(code || "—").toUpperCase()}
+          {resolveAirportCode(code) || (code || "—").toUpperCase()}
         </span>
       </div>
       {/* 機場全名 */}
