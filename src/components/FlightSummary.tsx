@@ -334,9 +334,13 @@ export default function FlightSummary({ flights, tourId, startDate, endDate, onU
                     {cards.length > 1 ? "未指派旅客搭此航班" : "全團適用"}
                   </span>
                 ) : (
-                  <span className="text-xs text-slate-600 dark:text-slate-300" title={card.names.join("、")}>
-                    <span className="font-semibold">{card.names.slice(0, 4).join("、")}</span>
-                    {card.names.length > 4 && <span className="text-slate-400"> 等 {card.names.length} 人</span>}
+                  <span className="text-xs text-slate-600 dark:text-slate-300 flex items-center gap-1 flex-wrap">
+                    <span className="text-slate-400 shrink-0">{card.names.length} 人：</span>
+                    {card.names.map(n => (
+                      <span key={n} className="font-semibold bg-slate-100 dark:bg-slate-700 px-1.5 py-0.5 rounded">
+                        {n}
+                      </span>
+                    ))}
                   </span>
                 )}
                 {cards.length > 1 && (
