@@ -256,7 +256,7 @@ export function knownTerminal(
   flightNumber?: string | null,
   otherAirport?: string | null,
 ): string {
-  const ap = (airport || "").trim().toUpperCase();
+  const ap = resolveAirportCode(airport);
   const al = airlineCode(flightNumber);
   if (!ap || !al) return "";
 
@@ -278,10 +278,54 @@ export function knownTerminal(
   return rule.byAirline?.[al] || rule["*"] || "";
 }
 
-/** 查機場資訊（代碼不分大小寫；查無則回傳 null）*/
+// 中文名反查索引（機場全名 → 代碼；城市名唯一時也可反查）
+// 同名／同城市會標記為 null（例：台北松山機場 與 日本松山機場 同名，不可硬猜）
+let NAME_IDX: { byName: Record<string, string | null>; byCity: Record<string, string | null> } | null = null;
+function nameIndex() {
+  if (NAME_IDX) return NAME_IDX;
+  const byName: Record<string, string | null> = {};
+  const byCity: Record<string, string | null> = {};
+  for (const [code, info] of Object.entries(AIRPORTS)) {
+    if (info.name) byName[info.name] = info.name in byName ? null : code;
+    if (info.city) byCity[info.city] = info.city in byCity ? null : code;
+  }
+  NAME_IDX = { byName, byCity };
+  return NAME_IDX;
+}
+
+/**
+ * 解析機場欄位 → IATA 代碼
+ * 支援：「PVG」「pvg」「PVG 上海浦東國際機場」「上海浦東國際機場」「上海浦東(PVG)」
+ * 中文全名也能反查，讓手打機場名稱的資料一樣能自動帶出城市／航廈
+ */
+export function resolveAirportCode(v?: string | null): string {
+  const raw = (v || "").trim();
+  if (!raw) return "";
+  const up = raw.toUpperCase();
+  if (AIRPORTS[up]) return up;
+  const m = up.match(/(?:^|[^A-Z])([A-Z]{3})(?:[^A-Z]|$)/);   // 混合字串中抓 3 碼
+  if (m && AIRPORTS[m[1]]) return m[1];
+  const { byName, byCity } = nameIndex();
+  // 機場全名比對：取「命中字串最長」的那個，避免短名誤判
+  let bestName = "", bestCode: string | null = null, nameHit = false;
+  for (const [name, code] of Object.entries(byName)) {
+    if (raw.includes(name) && name.length > bestName.length) { bestName = name; bestCode = code; nameHit = true; }
+  }
+  if (bestCode) return bestCode;
+  // 命中的是同名機場（如「松山機場」台北 TSA / 日本 MYJ）→ 直接放棄，不可再用城市猜
+  if (nameHit) return "";
+  // 城市比對：同城多機場（台北 TPE/TSA、上海 PVG/SHA）標記為 null，一律不猜
+  let bestCity = "", bestCityCode: string | null = null;
+  for (const [city, code] of Object.entries(byCity)) {
+    if (raw.includes(city) && city.length > bestCity.length) { bestCity = city; bestCityCode = code; }
+  }
+  return bestCityCode || "";
+}
+
+/** 查機場資訊（吃代碼或中文機場名；查無則回傳 null）*/
 export function airportInfo(code?: string | null): AirportInfo | null {
-  if (!code) return null;
-  return AIRPORTS[code.trim().toUpperCase()] || null;
+  const c = resolveAirportCode(code);
+  return c ? AIRPORTS[c] : null;
 }
 
 /** 航廈格式化：T2 / 2 / 第二航廈 → 「第 2 航廈」；無資料回空字串 */
