@@ -2,7 +2,7 @@
 import { useEffect, useState, useRef } from "react";
 import {
   supabase, Tour, TourPage, TourPagePoster, TourPageContent, TourPageDay,
-  TourPageFlightInfo, TOUR_PAGE_CATEGORIES,
+  TourPageFlightInfo, TourPageGallerySpot, TOUR_PAGE_CATEGORIES,
 } from "@/lib/supabase";
 import {
   Sparkles, Globe, Eye, Loader2, CheckCircle2, AlertCircle,
@@ -10,6 +10,7 @@ import {
   Link as LinkIcon,
 } from "lucide-react";
 import FlightEditor from "@/components/FlightEditor";
+import PageListEditor from "@/components/PageListEditor";
 import ShareKit from "@/components/ShareKit";
 import { Megaphone } from "lucide-react";
 
@@ -636,15 +637,25 @@ export default function TourPageTab({ tour }: Props) {
     setSavingDay(false);
   };
 
-  // 儲存航班（寫入 content.flights）
-  const saveFlights = async (flights: TourPageFlightInfo[]) => {
+  // 局部更新 content 並寫回（費用包含／不含／注意事項／景點美照共用）
+  const saveContentPatch = async (patch: Partial<TourPageContent>) => {
     if (!page) return;
-    const newContent = { ...(page.content as TourPageContent), flights };
+    const newContent = { ...(page.content as TourPageContent), ...patch };
     const { error: e } = await supabase.from("tour_pages")
       .update({ content: newContent, updated_at: new Date().toISOString() })
       .eq("id", page.id);
-    if (!e) setPage(prev => prev ? { ...prev, content: newContent } : prev);
-    else alert("儲存失敗：" + e.message);
+    if (e) { alert("儲存失敗：" + e.message); throw new Error(e.message); }
+    setPage(prev => prev ? { ...prev, content: newContent } : prev);
+  };
+
+  // 儲存航班（寫入 content.flights）
+  const saveFlights = async (flights: TourPageFlightInfo[]) => {
+    await saveContentPatch({ flights });
+  };
+
+  // 景點美照：改名稱／副標、新增、刪除、排序（照片本身用 PhotoSlot 換圖）
+  const updateGallery = async (next: TourPageGallerySpot[]) => {
+    await saveContentPatch({ gallery: next });
   };
 
   // 住宿一覽：一次儲存所有編輯過的飯店
