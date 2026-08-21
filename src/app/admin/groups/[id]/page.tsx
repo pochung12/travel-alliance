@@ -123,7 +123,9 @@ export default function GroupDetailPage() {
   const sidebarCollapsed = useSidebarCollapsed();
   const [tour, setTour]               = useState<Tour | null>(null);
   const [form, setForm]               = useState<Partial<Tour>>({});
-  const [surchargeMode, setSurchargeMode] = useState<"percent" | "amount">("percent");
+  const [surchargeMode, setSurchargeMode] = useState<"off" | "percent" | "amount">("off");
+  // 切到「不顯示」時記住原本的加價設定，切回來可還原
+  const lastSurcharge = useRef<{ pct: number; amt: number }>({ pct: 0, amt: 0 });
   const [participants, setParticipants] = useState<(CustomerTour & { customer: Customer })[]>([]);
   const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -229,7 +231,10 @@ export default function GroupDetailPage() {
     if (!data) { router.push("/admin/groups"); return; }
     setTour(data);
     setForm(data);
-    setSurchargeMode((data.card_surcharge_amount || 0) > 0 ? "amount" : "percent");
+    const sAmt = data.card_surcharge_amount || 0;
+    const sPct = data.card_surcharge_percent || 0;
+    lastSurcharge.current = { pct: sPct, amt: sAmt };
+    setSurchargeMode(sAmt > 0 ? "amount" : sPct > 0 ? "percent" : "off");
   };
 
   const loadParticipants = async () => {
@@ -905,23 +910,42 @@ export default function GroupDetailPage() {
               </div>
             </div>
             <div className="col-span-2">
-              <label className={lbl}>刷卡加價（以團費為現金價，前台另顯示刷卡價）</label>
+              <label className={lbl}>刷卡加價（可選「不顯示」讓前台完全不出現刷卡價）</label>
               <div className="mt-1 space-y-2">
                 <div className="flex items-center gap-2 flex-wrap">
                   {/* 加價方式 */}
                   <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-700 p-0.5 rounded-lg">
                     <button type="button"
-                      onClick={() => { setSurchargeMode("percent"); setForm({ ...form, card_surcharge_amount: 0 }); }}
+                      onClick={() => {
+                        // 記住目前設定，之後切回百分比／固定金額可還原
+                        lastSurcharge.current = {
+                          pct: form.card_surcharge_percent || lastSurcharge.current.pct,
+                          amt: form.card_surcharge_amount  || lastSurcharge.current.amt,
+                        };
+                        setSurchargeMode("off");
+                        setForm({ ...form, card_surcharge_percent: 0, card_surcharge_amount: 0 });
+                      }}
+                      className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${surchargeMode === "off" ? "bg-slate-700 dark:bg-slate-900 text-white shadow-sm" : "text-slate-500"}`}>
+                      🚫 不顯示
+                    </button>
+                    <button type="button"
+                      onClick={() => {
+                        setSurchargeMode("percent");
+                        setForm({ ...form, card_surcharge_percent: form.card_surcharge_percent || lastSurcharge.current.pct || 0, card_surcharge_amount: 0 });
+                      }}
                       className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${surchargeMode === "percent" ? "bg-white dark:bg-slate-600 text-slate-800 dark:text-white shadow-sm" : "text-slate-500"}`}>
                       ％ 百分比
                     </button>
                     <button type="button"
-                      onClick={() => { setSurchargeMode("amount"); setForm({ ...form, card_surcharge_percent: 0 }); }}
+                      onClick={() => {
+                        setSurchargeMode("amount");
+                        setForm({ ...form, card_surcharge_amount: form.card_surcharge_amount || lastSurcharge.current.amt || 0, card_surcharge_percent: 0 });
+                      }}
                       className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${surchargeMode === "amount" ? "bg-white dark:bg-slate-600 text-slate-800 dark:text-white shadow-sm" : "text-slate-500"}`}>
                       NT$ 固定金額
                     </button>
                   </div>
-                  {surchargeMode === "percent" ? (
+                  {surchargeMode === "off" ? null : surchargeMode === "percent" ? (
                     <div className="relative w-28">
                       <input type="number" min="0" step="0.1"
                         className="w-full pr-7 pl-3 border border-slate-200 dark:border-slate-600 rounded-lg py-2 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400 text-right"
@@ -952,6 +976,9 @@ export default function GroupDetailPage() {
                   const amt  = form.card_surcharge_amount || 0;
                   const pct  = form.card_surcharge_percent || 0;
                   const fee  = amt > 0 ? amt : (pct > 0 ? Math.round(cash * pct / 100) : 0);
+                  if (surchargeMode === "off") {
+                    return <p className="text-xs text-slate-500 dark:text-slate-400">🚫 前台不會出現刷卡價，只顯示團費本身</p>;
+                  }
                   if (fee <= 0 || cash <= 0) {
                     return <p className="text-xs text-slate-400 dark:text-slate-500">填 0 則前台不顯示刷卡價；建議刷卡加收 2% 手續費</p>;
                   }
