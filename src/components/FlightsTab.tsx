@@ -57,6 +57,8 @@ const FLIGHT_FIELDS: { key: keyof ParsedFlight; label: string; width: string; mo
   { key: "notes",             label: "備註",        width: "min-w-[80px] max-w-[140px]" },
 ];
 
+import { matchPassengers, PaxCandidate } from "@/lib/paxMatch";
+
 export default function FlightsTab({ tourId }: { tourId: string }) {
   const [flights, setFlights]       = useState<TourFlight[]>([]);
   const [loading, setLoading]       = useState(true);
@@ -68,7 +70,13 @@ export default function FlightsTab({ tourId }: { tourId: string }) {
   const [parsing, setParsing]       = useState(false);
   const [parseError, setParseError] = useState("");
   const [preview, setPreview]       = useState<ParsedFlight[]>([]);
-  const [parseSource, setParseSource] = useState<"gds_parser" | "ai" | null>(null);
+  const [parseSource, setParseSource] = useState<"gds_parser" | "agent_pnr_parser" | "ai" | null>(null);
+  // 英文姓名 → 中文團員 自動對應
+  const [members, setMembers] = useState<PaxCandidate[]>([]);
+  const [allCustomers, setAllCustomers] = useState<PaxCandidate[]>([]);
+  const [nameMap, setNameMap] = useState<Map<string, string>>(new Map());   // 英文原名 → 中文
+  const [nameUnmatched, setNameUnmatched] = useState<string[]>([]);
+  const [inDbOnly, setInDbOnly] = useState<string[]>([]);                   // 客戶庫有、但不在本團
   const [saving, setSaving]         = useState(false);
   const [saved, setSaved]           = useState(false);
 
@@ -95,6 +103,13 @@ export default function FlightsTab({ tourId }: { tourId: string }) {
   useEffect(() => {
     load();
     // 取團的出發/回程日，用來判斷航班屬於去程或回程
+    supabase.from("customer_tours").select("customer:customers(name,name_en)").eq("tour_id", tourId)
+      .then(({ data }) => {
+        const rows = (data || []) as unknown as Array<{ customer: PaxCandidate | null }>;
+        setMembers(rows.map(r => r.customer).filter(Boolean) as PaxCandidate[]);
+      });
+    supabase.from("customers").select("name,name_en")
+      .then(({ data }) => setAllCustomers((data || []) as PaxCandidate[]));
     supabase.from("tours").select("start_date,end_date").eq("id", tourId).single()
       .then(({ data }) => {
         const t = data as { start_date?: string; end_date?: string } | null;
@@ -113,7 +128,34 @@ export default function FlightsTab({ tourId }: { tourId: string }) {
     const data = await res.json();
     if (data.error) throw new Error(data.error);
     setParseSource(data.source ?? null);
-    return (data.flights || []) as ParsedFlight[];
+    return applyNameMatch((data.flights || []) as ParsedFlight[]);
+  };
+
+  /** 把 GDS 英文姓名換成本團團員的中文姓名（只換唯一命中的）*/
+  const applyNameMatch = (list: ParsedFlight[]): ParsedFlight[] => {
+    const names = list.map(f => f.passenger_name).filter(Boolean);
+    if (names.length === 0 || members.length === 0) {
+      setNameMap(new Map()); setNameUnmatched([]); setInDbOnly([]);
+      return list;
+    }
+    const r = matchPassengers(names, members);
+    // 本團找不到的，看看客戶資料庫有沒有（提示尚未加入本團）
+    const rest = [...r.unmatched, ...r.ambiguous];
+    const inDb = rest.length > 0 && allCustomers.length > 0
+      ? Array.from(matchPassengers(rest, allCustomers).matched.keys())
+      : [];
+    setNameMap(r.matched);
+    setNameUnmatched(r.unmatched);
+    setInDbOnly(inDb);
+    if (r.matched.size === 0) return list;
+    return list.map(f => ({ ...f, passenger_name: r.matched.get(f.passenger_name) || f.passenger_name }));
+  };
+
+  /** 還原成原本的英文姓名 */
+  const revertNames = () => {
+    const rev = new Map(Array.from(nameMap.entries()).map(([en, zh]) => [zh, en]));
+    setPreview(prev => prev.map(f => ({ ...f, passenger_name: rev.get(f.passenger_name) || f.passenger_name })));
+    setNameMap(new Map());
   };
 
   const parseText = async () => {
@@ -328,7 +370,7 @@ ALTER TABLE tour_flights ADD COLUMN IF NOT EXISTS arrival_terminal TEXT NOT NULL
               <CheckCircle className="w-4 h-4 text-blue-500" />
               <span className="font-semibold text-sm text-slate-700 dark:text-slate-200">解析結果</span>
               <span className="text-xs bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-full">{preview.length} 筆</span>
-              {parseSource === "gds_parser" && (
+              {(parseSource === "gds_parser" || parseSource === "agent_pnr_parser") && (
                 <span className="text-xs bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-full">✓ GDS 精確解析</span>
               )}
               {parseSource === "ai" && (
@@ -337,7 +379,7 @@ ALTER TABLE tour_flights ADD COLUMN IF NOT EXISTS arrival_terminal TEXT NOT NULL
               <span className="text-xs text-slate-400">請確認後儲存，可直接在格子內修改</span>
             </div>
             <div className="flex gap-2">
-              <button onClick={() => { setPreview([]); setInputMode(null); setParseSource(null); }}
+              <button onClick={() => { setPreview([]); setInputMode(null); setParseSource(null); setNameMap(new Map()); setNameUnmatched([]); setInDbOnly([]); }}
                 className="text-xs px-3 py-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors">
                 <X className="w-3.5 h-3.5 inline mr-1" />捨棄
               </button>
@@ -348,6 +390,51 @@ ALTER TABLE tour_flights ADD COLUMN IF NOT EXISTS arrival_terminal TEXT NOT NULL
               </button>
             </div>
           </div>
+          {/* 英文姓名 → 中文團員 自動對應結果 */}
+          {(nameMap.size > 0 || nameUnmatched.length > 0) && (
+            <div className="px-5 py-2.5 border-b border-blue-100 dark:border-blue-800/40 bg-slate-50/70 dark:bg-slate-700/30 space-y-1.5">
+              {nameMap.size > 0 && (
+                <div className="flex items-start gap-2 flex-wrap">
+                  <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 shrink-0 mt-0.5">
+                    ✓ 已對應團員（{nameMap.size} 位）
+                  </span>
+                  <span className="flex flex-wrap gap-1">
+                    {Array.from(nameMap.entries()).map(([en, zh]) => (
+                      <span key={en} className="text-[10px] bg-emerald-50 dark:bg-emerald-900/25 text-emerald-700 dark:text-emerald-300 px-1.5 py-0.5 rounded">
+                        <span className="font-mono opacity-70">{en}</span> → <span className="font-bold">{zh}</span>
+                      </span>
+                    ))}
+                  </span>
+                  <button onClick={revertNames}
+                    className="ml-auto text-[11px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 underline shrink-0">
+                    還原英文姓名
+                  </button>
+                </div>
+              )}
+              {nameUnmatched.length > 0 && (
+                <div className="flex items-start gap-2 flex-wrap">
+                  <span className="text-[11px] font-bold text-amber-600 dark:text-amber-400 shrink-0 mt-0.5">
+                    ⚠ 本團名單找不到（{nameUnmatched.length} 位，維持英文名）
+                  </span>
+                  <span className="flex flex-wrap gap-1">
+                    {nameUnmatched.map(n => (
+                      <span key={n} className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${
+                        inDbOnly.includes(n)
+                          ? "bg-sky-50 dark:bg-sky-900/25 text-sky-700 dark:text-sky-300"
+                          : "bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400"}`}>
+                        {n}{inDbOnly.includes(n) && " ·客戶庫有"}
+                      </span>
+                    ))}
+                  </span>
+                </div>
+              )}
+              {inDbOnly.length > 0 && (
+                <p className="text-[10px] text-sky-600 dark:text-sky-400">
+                  標「客戶庫有」的 {inDbOnly.length} 位在旅客 CRM 找得到，但還沒加入本團——先到旅客分頁把他們加入，再重新解析就會自動對應。
+                </p>
+              )}
+            </div>
+          )}
           <div className="overflow-x-auto">
             <table className="text-xs w-full min-w-max">
               <thead className="bg-blue-50/50 dark:bg-blue-900/10 text-slate-500 dark:text-slate-400 uppercase text-[10px]">
