@@ -58,6 +58,7 @@ const FLIGHT_FIELDS: { key: keyof ParsedFlight; label: string; width: string; mo
 ];
 
 import { matchPassengers, PaxCandidate } from "@/lib/paxMatch";
+import { mergeRows, splitAgainstExisting, expandToMembers } from "@/lib/flightDedupe";
 
 export default function FlightsTab({ tourId }: { tourId: string }) {
   const [flights, setFlights]       = useState<TourFlight[]>([]);
@@ -77,6 +78,7 @@ export default function FlightsTab({ tourId }: { tourId: string }) {
   const [nameMap, setNameMap] = useState<Map<string, string>>(new Map());   // 英文原名 → 中文
   const [nameUnmatched, setNameUnmatched] = useState<string[]>([]);
   const [inDbOnly, setInDbOnly] = useState<string[]>([]);                   // 客戶庫有、但不在本團
+  const [mergedCount, setMergedCount] = useState(0);                        // 批內合併掉的重複筆數
   const [saving, setSaving]         = useState(false);
   const [saved, setSaved]           = useState(false);
 
@@ -128,7 +130,10 @@ export default function FlightsTab({ tourId }: { tourId: string }) {
     const data = await res.json();
     if (data.error) throw new Error(data.error);
     setParseSource(data.source ?? null);
-    return applyNameMatch((data.flights || []) as ParsedFlight[]);
+    const named = applyNameMatch((data.flights || []) as ParsedFlight[]);
+    const { rows, mergedCount } = mergeRows(named);
+    setMergedCount(mergedCount);
+    return rows;
   };
 
   /** 把 GDS 英文姓名換成本團團員的中文姓名（只換唯一命中的）*/
@@ -149,6 +154,17 @@ export default function FlightsTab({ tourId }: { tourId: string }) {
     setInDbOnly(inDb);
     if (r.matched.size === 0) return list;
     return list.map(f => ({ ...f, passenger_name: r.matched.get(f.passenger_name) || f.passenger_name }));
+  };
+
+  /** 把「沒填旅客姓名」的全團航班展開成每位團員各一筆 */
+  const expandAll = () => {
+    const names = members.map(m => m.name).filter(Boolean) as string[];
+    if (names.length === 0) { alert("本團還沒有團員，請先到旅客分頁加入團員"); return; }
+    setPreview(prev => {
+      const r = expandToMembers(prev, names);
+      setMergedCount(0);
+      return r.rows;
+    });
   };
 
   /** 還原成原本的英文姓名 */
@@ -247,10 +263,24 @@ ALTER TABLE tour_flights ADD COLUMN IF NOT EXISTS arrival_terminal TEXT NOT NULL
   const savePreview = async () => {
     if (preview.length === 0) return;
     setSaving(true);
-    const { error } = await supabase
-      .from("tour_flights")
-      .insert(preview.map(f => ({ ...f, tour_id: tourId })));
+    // 與資料庫既有紀錄比對：已存在的只補空白欄位，不重複新增
+    const { toInsert, toUpdate, unchanged } = splitAgainstExisting(preview, flights);
+    let error = null as { code?: string; message?: string } | null;
+    if (toInsert.length > 0) {
+      const res = await supabase.from("tour_flights")
+        .insert(toInsert.map(f => ({ ...f, tour_id: tourId })));
+      error = res.error;
+    }
+    if (!error) {
+      for (const u of toUpdate) {
+        const res = await supabase.from("tour_flights").update(u.patch).eq("id", u.id);
+        if (res.error) { error = res.error; break; }
+      }
+    }
     setSaving(false);
+    if (!error && (toUpdate.length > 0 || unchanged > 0)) {
+      alert(`匯入完成\n\n新增 ${toInsert.length} 筆\n更新既有 ${toUpdate.length} 筆（只補空白欄位，不覆蓋你已填的內容）\n完全相同略過 ${unchanged} 筆`);
+    }
     if (error) {
       const isMissingTable = error.code === "42P01" || error.message?.includes("does not exist");
       if (isMissingTable) {
@@ -376,10 +406,15 @@ ALTER TABLE tour_flights ADD COLUMN IF NOT EXISTS arrival_terminal TEXT NOT NULL
               {parseSource === "ai" && (
                 <span className="text-xs bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded-full">AI 解析</span>
               )}
+              {mergedCount > 0 && (
+                <span className="text-xs bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300 px-2 py-0.5 rounded-full">
+                  已整合 {mergedCount} 筆重複
+                </span>
+              )}
               <span className="text-xs text-slate-400">請確認後儲存，可直接在格子內修改</span>
             </div>
             <div className="flex gap-2">
-              <button onClick={() => { setPreview([]); setInputMode(null); setParseSource(null); setNameMap(new Map()); setNameUnmatched([]); setInDbOnly([]); }}
+              <button onClick={() => { setPreview([]); setInputMode(null); setParseSource(null); setNameMap(new Map()); setNameUnmatched([]); setInDbOnly([]); setMergedCount(0); }}
                 className="text-xs px-3 py-1.5 text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors">
                 <X className="w-3.5 h-3.5 inline mr-1" />捨棄
               </button>
@@ -390,6 +425,22 @@ ALTER TABLE tour_flights ADD COLUMN IF NOT EXISTS arrival_terminal TEXT NOT NULL
               </button>
             </div>
           </div>
+          {/* 沒填旅客姓名的航班 → 可展開成每位團員各一筆 */}
+          {preview.some(f => !(f.passenger_name || "").trim()) && (
+            <div className="px-5 py-2.5 border-b border-blue-100 dark:border-blue-800/40 bg-amber-50/70 dark:bg-amber-900/15 flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] text-amber-700 dark:text-amber-300">
+                有 {preview.filter(f => !(f.passenger_name || "").trim()).length} 筆沒有旅客姓名（＝全團共用航班）
+              </span>
+              <button onClick={expandAll} disabled={members.length === 0}
+                className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-600 disabled:opacity-40 text-white transition-colors">
+                展開給每位團員（{members.length} 位）
+              </button>
+              <span className="text-[10px] text-amber-600/80 dark:text-amber-400/80">
+                已有個人資料的旅客不會被覆蓋
+              </span>
+            </div>
+          )}
+
           {/* 英文姓名 → 中文團員 自動對應結果 */}
           {(nameMap.size > 0 || nameUnmatched.length > 0) && (
             <div className="px-5 py-2.5 border-b border-blue-100 dark:border-blue-800/40 bg-slate-50/70 dark:bg-slate-700/30 space-y-1.5">
