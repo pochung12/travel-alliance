@@ -12,6 +12,7 @@ import {
   supabase, Tour, TourPage, TourPageContent, TourPagePoster, TOUR_PAGE_CATEGORIES, isChinaTour, isTierPublic,
 } from "@/lib/supabase";
 import PublicNavbar from "@/components/PublicNavbar";
+import PublicFlightGroups from "@/components/PublicFlightGroups";
 import ShareKit from "@/components/ShareKit";
 import { CARD_GRADIENTS, getDays } from "@/components/TourCard";
 
@@ -765,37 +766,15 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
         </div>
 
         {/* 航班 + 旅館 */}
-        {(c.flights.length > 0 || dayHotels.length > 0) && (
-          <div className="grid md:grid-cols-2 gap-5 mt-12 md:mt-16">
-            {c.flights.length > 0 && (
-              <Reveal>
-                <div className="rounded-3xl p-7 h-full shadow-sm" style={{ background: CARD, border: "1px solid #ece3cd" }}>
-                  <h3 className="flex items-center gap-2 font-bold mb-5" style={{ color: RED }}>
-                    <Plane className="w-4.5 h-4.5" /> 參考航班
-                  </h3>
-                  <div className="divide-y" style={{ borderColor: "#ece4d0" }}>
-                    {c.flights.map((f, i) => (
-                      <div key={i} className="py-3.5 flex items-center gap-4">
-                        {/* 日期：大字＋紅色，置於最前 */}
-                        <div className="shrink-0 w-16 text-center">
-                          <div className="serif-tc font-black text-2xl leading-none" style={{ color: RED }}>{fmtMD(f.date)}</div>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="font-bold text-[15px]">{f.flight_no}</div>
-                          <div className="text-xs mt-0.5" style={{ color: "#8a8268" }}>
-                            {f.from}{f.from_terminal ? ` ${f.from_terminal}` : ""} → {f.to}{f.to_terminal ? ` ${f.to_terminal}` : ""}
-                          </div>
-                        </div>
-                        <div className="font-semibold text-sm whitespace-nowrap shrink-0">{f.depart}–{f.arrive}</div>
-                      </div>
-                    ))}
-                  </div>
-                  <p className="text-[11px] mt-4 leading-relaxed" style={{ color: "#a89e86" }}>
-                    ※ 此航班為參考航班時間，實際航班時間與航班號可能有所變動。
-                  </p>
-                </div>
-              </Reveal>
-            )}
+        <div className="grid md:grid-cols-2 gap-5 mt-12 md:mt-16">
+            <Reveal>
+              <PublicFlightGroups
+                tourId={tour.id}
+                startDate={tour.start_date}
+                endDate={tour.end_date}
+                fallback={c.flights}
+              />
+            </Reveal>
             {dayHotels.length > 0 && (
               <Reveal delay={120}>
                 <div className="rounded-3xl p-7 h-full shadow-sm" style={{ background: CARD, border: "1px solid #ece3cd" }}>
@@ -818,8 +797,7 @@ function RichTourPage({ tour, page, days }: { tour: Tour; page: TourPage; days: 
                 </div>
               </Reveal>
             )}
-          </div>
-        )}
+        </div>
       </section>
 
       {/* ── 行程特色：整頁大圖視差 ── */}
