@@ -1,10 +1,10 @@
 // 機場代碼 → 城市 / 機場中文名稱對照（以旅行社常用航線為主）
-export interface AirportInfo { city: string; name: string; country?: string }
+export interface AirportInfo { city: string; name: string; country?: string; label?: string }
 
 export const AIRPORTS: Record<string, AirportInfo> = {
   // ── 台灣 ──
-  TPE: { city: "台北", name: "桃園國際機場", country: "台灣" },
-  TSA: { city: "台北", name: "松山機場", country: "台灣" },
+  TPE: { city: "台北", name: "桃園國際機場", country: "台灣", label: "桃園機場" },
+  TSA: { city: "台北", name: "松山機場", country: "台灣", label: "松山機場" },
   KHH: { city: "高雄", name: "小港國際機場", country: "台灣" },
   RMQ: { city: "台中", name: "清泉崗機場", country: "台灣" },
   TNN: { city: "台南", name: "台南機場", country: "台灣" },
@@ -13,14 +13,14 @@ export const AIRPORTS: Record<string, AirportInfo> = {
   KNH: { city: "金門", name: "金門機場", country: "台灣" },
 
   // ── 中國大陸 ──
-  PEK: { city: "北京", name: "首都國際機場", country: "中國" },
-  PKX: { city: "北京", name: "大興國際機場", country: "中國" },
-  PVG: { city: "上海", name: "浦東國際機場", country: "中國" },
-  SHA: { city: "上海", name: "虹橋國際機場", country: "中國" },
+  PEK: { city: "北京", name: "首都國際機場", country: "中國", label: "北京首都" },
+  PKX: { city: "北京", name: "大興國際機場", country: "中國", label: "北京大興" },
+  PVG: { city: "上海", name: "浦東國際機場", country: "中國", label: "上海浦東" },
+  SHA: { city: "上海", name: "虹橋國際機場", country: "中國", label: "上海虹橋" },
   CAN: { city: "廣州", name: "白雲國際機場", country: "中國" },
   SZX: { city: "深圳", name: "寶安國際機場", country: "中國" },
-  CTU: { city: "成都", name: "雙流國際機場", country: "中國" },
-  TFU: { city: "成都", name: "天府國際機場", country: "中國" },
+  CTU: { city: "成都", name: "雙流國際機場", country: "中國", label: "成都雙流" },
+  TFU: { city: "成都", name: "天府國際機場", country: "中國", label: "成都天府" },
   CKG: { city: "重慶", name: "江北國際機場", country: "中國" },
   KWE: { city: "貴陽", name: "龍洞堡國際機場", country: "中國" },
   CGO: { city: "鄭州", name: "新鄭國際機場", country: "中國" },
@@ -74,10 +74,10 @@ export const AIRPORTS: Record<string, AirportInfo> = {
   MFM: { city: "澳門", name: "澳門國際機場", country: "澳門" },
 
   // ── 日本 ──
-  NRT: { city: "東京", name: "成田國際機場", country: "日本" },
-  HND: { city: "東京", name: "羽田機場", country: "日本" },
-  KIX: { city: "大阪", name: "關西國際機場", country: "日本" },
-  ITM: { city: "大阪", name: "伊丹機場", country: "日本" },
+  NRT: { city: "東京", name: "成田國際機場", country: "日本", label: "東京成田" },
+  HND: { city: "東京", name: "羽田機場", country: "日本", label: "東京羽田" },
+  KIX: { city: "大阪", name: "關西國際機場", country: "日本", label: "大阪關西" },
+  ITM: { city: "大阪", name: "伊丹機場", country: "日本", label: "大阪伊丹" },
   CTS: { city: "札幌", name: "新千歲機場", country: "日本" },
   FUK: { city: "福岡", name: "福岡機場", country: "日本" },
   OKA: { city: "沖繩", name: "那霸機場", country: "日本" },
@@ -95,15 +95,15 @@ export const AIRPORTS: Record<string, AirportInfo> = {
   AOJ: { city: "青森", name: "青森機場", country: "日本" },
 
   // ── 韓國 ──
-  ICN: { city: "首爾", name: "仁川國際機場", country: "韓國" },
-  GMP: { city: "首爾", name: "金浦國際機場", country: "韓國" },
+  ICN: { city: "首爾", name: "仁川國際機場", country: "韓國", label: "首爾仁川" },
+  GMP: { city: "首爾", name: "金浦國際機場", country: "韓國", label: "首爾金浦" },
   PUS: { city: "釜山", name: "金海國際機場", country: "韓國" },
   CJU: { city: "濟州", name: "濟州國際機場", country: "韓國" },
   TAE: { city: "大邱", name: "大邱國際機場", country: "韓國" },
 
   // ── 東南亞 ──
-  BKK: { city: "曼谷", name: "素萬那普國際機場", country: "泰國" },
-  DMK: { city: "曼谷", name: "廊曼國際機場", country: "泰國" },
+  BKK: { city: "曼谷", name: "素萬那普國際機場", country: "泰國", label: "曼谷素萬那普" },
+  DMK: { city: "曼谷", name: "廊曼國際機場", country: "泰國", label: "曼谷廊曼" },
   CNX: { city: "清邁", name: "清邁國際機場", country: "泰國" },
   HKT: { city: "普吉", name: "普吉國際機場", country: "泰國" },
   USM: { city: "蘇美島", name: "蘇美國際機場", country: "泰國" },
@@ -152,10 +152,10 @@ export const AIRPORTS: Record<string, AirportInfo> = {
   NAN: { city: "楠迪", name: "楠迪國際機場", country: "斐濟" },
 
   // ── 歐洲 ──
-  LHR: { city: "倫敦", name: "希斯洛機場", country: "英國" },
-  LGW: { city: "倫敦", name: "蓋威克機場", country: "英國" },
-  CDG: { city: "巴黎", name: "戴高樂機場", country: "法國" },
-  ORY: { city: "巴黎", name: "奧利機場", country: "法國" },
+  LHR: { city: "倫敦", name: "希斯洛機場", country: "英國", label: "倫敦希斯洛" },
+  LGW: { city: "倫敦", name: "蓋威克機場", country: "英國", label: "倫敦蓋威克" },
+  CDG: { city: "巴黎", name: "戴高樂機場", country: "法國", label: "巴黎戴高樂" },
+  ORY: { city: "巴黎", name: "奧利機場", country: "法國", label: "巴黎奧利" },
   FRA: { city: "法蘭克福", name: "法蘭克福機場", country: "德國" },
   MUC: { city: "慕尼黑", name: "慕尼黑機場", country: "德國" },
   AMS: { city: "阿姆斯特丹", name: "史基浦機場", country: "荷蘭" },
@@ -184,8 +184,8 @@ export const AIRPORTS: Record<string, AirportInfo> = {
   LAX: { city: "洛杉磯", name: "洛杉磯國際機場", country: "美國" },
   SFO: { city: "舊金山", name: "舊金山國際機場", country: "美國" },
   SEA: { city: "西雅圖", name: "西雅圖-塔科馬國際機場", country: "美國" },
-  JFK: { city: "紐約", name: "甘迺迪國際機場", country: "美國" },
-  EWR: { city: "紐約", name: "紐華克自由國際機場", country: "美國" },
+  JFK: { city: "紐約", name: "甘迺迪國際機場", country: "美國", label: "紐約甘迺迪" },
+  EWR: { city: "紐約", name: "紐華克自由國際機場", country: "美國", label: "紐約紐華克" },
   ORD: { city: "芝加哥", name: "歐海爾國際機場", country: "美國" },
   IAD: { city: "華盛頓", name: "杜勒斯國際機場", country: "美國" },
   BOS: { city: "波士頓", name: "洛根國際機場", country: "美國" },
@@ -326,6 +326,13 @@ export function resolveAirportCode(v?: string | null): string {
 export function airportInfo(code?: string | null): AirportInfo | null {
   const c = resolveAirportCode(code);
   return c ? AIRPORTS[c] : null;
+}
+
+/** 前台/後台顯示用的機場名稱：同城多機場者用可辨識的名稱（TPE→桃園機場），其餘用城市 */
+export function airportLabel(code?: string | null): string {
+  const info = airportInfo(code);
+  if (!info) return resolveAirportCode(code) || (code || "").trim().toUpperCase();
+  return info.label || info.city;
 }
 
 /** 航廈格式化：T2 / 2 / 第二航廈 → 「第 2 航廈」；無資料回空字串 */

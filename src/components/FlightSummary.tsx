@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { supabase, TourFlight } from "@/lib/supabase";
-import { airportInfo, terminalLabel, knownTerminal, resolveAirportCode } from "@/lib/airports";
+import { airportInfo, airportLabel, terminalLabel, knownTerminal, resolveAirportCode } from "@/lib/airports";
 import { computeFlightCards, assignPassengerToCard, passengerHasTicketData } from "@/lib/flightGroups";
 import { PlaneTakeoff, PlaneLanding, Users, ArrowRight, Search, Loader2, UserPlus, X, Check, Moon } from "lucide-react";
 
@@ -72,9 +72,9 @@ function Endpoint({
       </div>
       {/* 城市 + 機場代碼 */}
       <div className={`flex items-baseline gap-1.5 mt-1.5 flex-wrap ${right ? "justify-end" : ""}`}>
-        {info?.city && (
+        {airportLabel(code) && (
           <span className="text-base font-bold text-slate-800 dark:text-slate-100 leading-tight">
-            {info.city}
+            {airportLabel(code)}
           </span>
         )}
         <span
@@ -375,7 +375,7 @@ export default function FlightSummary({ flights, tourId, startDate, endDate, onU
                         </td>
                         <td className="px-2 py-1.5 whitespace-nowrap">
                           <span className="tabular-nums font-semibold text-slate-800 dark:text-slate-100">{f.departure_time || "--:--"}</span>
-                          <span className="text-slate-600 dark:text-slate-300"> {dep?.city || resolveAirportCode(f.departure_airport) || f.departure_airport || "—"}</span>
+                          <span className="text-slate-600 dark:text-slate-300"> {airportLabel(f.departure_airport) || "—"}</span>
                           <span className="font-mono text-slate-400"> {resolveAirportCode(f.departure_airport)}</span>
                           {depT && <span className="text-amber-600 dark:text-amber-400"> {depT}</span>}
                         </td>
@@ -388,7 +388,7 @@ export default function FlightSummary({ flights, tourId, startDate, endDate, onU
                               <Moon className="w-2.5 h-2.5" />過夜+1
                             </span>
                           )}
-                          <span className="text-slate-600 dark:text-slate-300"> {arr?.city || resolveAirportCode(f.arrival_airport) || f.arrival_airport || "—"}</span>
+                          <span className="text-slate-600 dark:text-slate-300"> {airportLabel(f.arrival_airport) || "—"}</span>
                           <span className="font-mono text-slate-400"> {resolveAirportCode(f.arrival_airport)}</span>
                           {arrT && <span className="text-amber-600 dark:text-amber-400"> {arrT}</span>}
                         </td>

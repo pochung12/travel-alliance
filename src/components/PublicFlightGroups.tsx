@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { supabase, TourFlight, TourPageFlightInfo } from "@/lib/supabase";
 import { computeFlightCards } from "@/lib/flightGroups";
-import { airportInfo, terminalLabel, knownTerminal, resolveAirportCode } from "@/lib/airports";
+import { airportInfo, airportLabel, terminalLabel, knownTerminal, resolveAirportCode } from "@/lib/airports";
 import { Plane, PlaneTakeoff, PlaneLanding } from "lucide-react";
 
 const RED = "#a8453a";
@@ -38,7 +38,7 @@ function port(code?: string | null, term?: string | null, flightNo?: string | nu
   const info = airportInfo(code);
   const t = terminalLabel((term || "").trim() || knownTerminal(code, flightNo, other));
   const iata = resolveAirportCode(code) || (code || "").toUpperCase();
-  return { city: info?.city || iata || "—", iata, term: t };
+  return { city: airportLabel(code) || iata || "—", iata, term: t };
 }
 
 function Leg({ f, start, end }: { f: TourFlight; start?: string; end?: string }) {
@@ -156,8 +156,7 @@ export default function PublicFlightGroups({ tourId, startDate, endDate, fallbac
       {cards.map((card, ci) => {
         const legs = card.flights.slice().sort(sortLegs);
         const route = Array.from(new Set(legs.flatMap(f => [
-          airportInfo(f.departure_airport)?.city || resolveAirportCode(f.departure_airport),
-          airportInfo(f.arrival_airport)?.city || resolveAirportCode(f.arrival_airport),
+          airportLabel(f.departure_airport), airportLabel(f.arrival_airport),
         ]).filter(Boolean)));
         return (
           <div key={ci} className={multi ? "rounded-2xl p-4" : ""}
