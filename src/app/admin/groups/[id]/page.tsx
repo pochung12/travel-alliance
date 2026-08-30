@@ -1119,6 +1119,7 @@ export default function GroupDetailPage() {
             (tour.custom_price_tiers || []).reduce((s, ct) => s + ct.pax * ct.price, 0)
           }
           participants={participants}
+          tour={tour}
           onChanged={loadPayTotals}
           onPaymentCustsChanged={(payId, newIds) => {
             // 直接更新 tourPayments state，不需重新 fetch DB

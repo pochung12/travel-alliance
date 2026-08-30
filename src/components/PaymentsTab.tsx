@@ -6,8 +6,10 @@ import {
 } from "@/lib/supabase";
 import {
   Plus, X, Upload, ZoomIn, TrendingUp, TrendingDown,
-  Scale, Receipt, ChevronDown, ChevronUp, Trash2, ImageIcon,
+  Scale, Receipt, ChevronDown, ChevronUp, Trash2, ImageIcon, Users, AlertCircle,
 } from "lucide-react";
+import { buildReceivables, receivableTotals } from "@/lib/receivables";
+import type { Tour } from "@/lib/supabase";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -24,8 +26,16 @@ interface Props {
   tourId: string;
   pax: number;
   revenue: number;   // 預估收入（各類別人數×售價加總，由父層計算傳入）
-  /** 本團所有報名旅客（用於款項關聯） */
-  participants?: { customer_id: string; customer: { name: string } }[];
+  /** 本團所有報名旅客（用於款項關聯與應收明細） */
+  participants?: {
+    customer_id: string;
+    customer: { name: string };
+    participant_type?: string | null;
+    deposit_amount?: number | null;
+    balance_amount?: number | null;
+  }[];
+  /** 團資料（用於依身份類別計算每人應收）*/
+  tour?: Pick<Tour, "selling_price" | "price_tour_only" | "price_child" | "price_infant" | "custom_price_tiers">;
   /** 新增/刪除紀錄時通知父層重新載入 */
   onChanged?: () => void;
   /** 更新 customer_ids 時即時通知父層（optimistic，不需重新 fetch）*/
@@ -78,10 +88,13 @@ function SummaryCard({
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function PaymentsTab({ tourId, pax, revenue, participants = [], onChanged, onPaymentCustsChanged }: Props) {
+export default function PaymentsTab({ tourId, pax, revenue, participants = [], tour, onChanged, onPaymentCustsChanged }: Props) {
   const [payments,   setPayments]   = useState<TourPayment[]>([]);
   const [tourCosts,  setTourCosts]  = useState<TourCost[]>([]);
   const [filter,     setFilter]     = useState<"all" | "income" | "expense">("all");
+  // 應收客款明細
+  const [rcvOpen,  setRcvOpen]  = useState(false);
+  const [rcvSort,  setRcvSort]  = useState<"outstanding" | "name">("outstanding");
   const [showModal,  setShowModal]  = useState(false);
   const [lightbox,   setLightbox]   = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -130,6 +143,18 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], o
   const netBalance      = actualIncome - actualExpense;
   const incomeGap       = expectedRevenue - actualIncome;   // 尚未收到
   const expenseGap      = estimatedCost   - actualExpense;  // 尚未付出
+
+  // ── 應收客款明細（與旅客分頁共用同一套口徑）──
+  const rcvRows = tour
+    ? buildReceivables(tour, participants, payments.map(p => ({
+        type: p.type, category: p.category, amount: p.amount, customer_ids: p.customer_ids || [],
+      })))
+    : [];
+  const rcvTotal = receivableTotals(rcvRows);
+  const rcvSorted = rcvRows.slice().sort((a, b) =>
+    rcvSort === "name"
+      ? a.name.localeCompare(b.name, "zh-Hant")
+      : (b.outstanding - a.outstanding) || a.name.localeCompare(b.name, "zh-Hant"));
 
   // ── Filtered list ──
   const filtered = payments.filter(p =>
@@ -262,6 +287,104 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], o
           icon={<Scale className="w-5 h-5" />}
         />
       </div>
+
+      {/* ── 應收客款明細 ── */}
+      {rcvRows.length > 0 && (
+        <div className="bg-white dark:bg-slate-800 rounded-xl border border-blue-100 dark:border-blue-900/40 shadow-sm overflow-hidden">
+          <button onClick={() => setRcvOpen(v => !v)}
+            className="w-full px-4 py-3 flex items-center gap-2 flex-wrap text-left hover:bg-blue-50/40 dark:hover:bg-blue-900/10 transition-colors">
+            <Users className="w-4 h-4 text-blue-500 shrink-0" />
+            <span className="font-semibold text-sm text-slate-700 dark:text-slate-200">應收客款明細</span>
+            <span className="text-xs bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded-full">
+              {rcvRows.length} 人
+            </span>
+            {rcvTotal.outstanding > 0 ? (
+              <span className="text-xs bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 px-2 py-0.5 rounded-full font-semibold">
+                未收 {fmt(rcvTotal.outstanding)}・{rcvTotal.unpaidCount} 人
+              </span>
+            ) : (
+              <span className="text-xs bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-full font-semibold">
+                已全數收齊 ✓
+              </span>
+            )}
+            <span className="ml-auto text-xs text-slate-400 flex items-center gap-1">
+              {rcvOpen ? "收合" : "展開"}
+              {rcvOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            </span>
+          </button>
+
+          {rcvOpen && (
+            <div className="border-t border-slate-100 dark:border-slate-700">
+              <div className="px-4 py-2 flex items-center gap-2 text-xs text-slate-400 border-b border-slate-50 dark:border-slate-700/50">
+                排序：
+                {([["outstanding","未收多的優先"],["name","依姓名"]] as const).map(([k, label]) => (
+                  <button key={k} onClick={() => setRcvSort(k)}
+                    className={`px-2 py-0.5 rounded transition-colors ${
+                      rcvSort === k ? "bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 font-semibold"
+                                    : "hover:bg-slate-100 dark:hover:bg-slate-700"}`}>
+                    {label}
+                  </button>
+                ))}
+                <span className="ml-auto flex items-center gap-1">
+                  <AlertCircle className="w-3 h-3" />
+                  已收金額優先採用收付款紀錄勾選的分攤結果，未勾選時採用旅客分頁手動填寫的金額
+                </span>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-50 dark:bg-slate-700/50 text-slate-500 dark:text-slate-400 text-[10px] uppercase">
+                    <tr>
+                      <th className="px-3 py-2 text-left font-semibold">旅客</th>
+                      <th className="px-3 py-2 text-right font-semibold">應收</th>
+                      <th className="px-3 py-2 text-right font-semibold">已收訂金</th>
+                      <th className="px-3 py-2 text-right font-semibold">已收尾款</th>
+                      <th className="px-3 py-2 text-right font-semibold">已收合計</th>
+                      <th className="px-3 py-2 text-right font-semibold">未收</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50 dark:divide-slate-700/50">
+                    {rcvSorted.map(r => (
+                      <tr key={r.customer_id} className={r.outstanding > 0 ? "" : "opacity-60"}>
+                        <td className="px-3 py-2">
+                          <span className="font-medium text-slate-700 dark:text-slate-200">{r.name}</span>
+                          {r.participant_type !== "adult" && (
+                            <span className="ml-1.5 text-[10px] text-slate-400">{r.participant_type}</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums text-slate-600 dark:text-slate-300">{fmt(r.expected)}</td>
+                        <td className="px-3 py-2 text-right tabular-nums text-slate-500 dark:text-slate-400">
+                          {r.depositPaid > 0 ? fmt(r.depositPaid) : "—"}
+                          {r.depositLinked && <span className="ml-1 text-[9px] text-emerald-500" title="來自收付款紀錄">●</span>}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums text-slate-500 dark:text-slate-400">
+                          {r.balancePaid > 0 ? fmt(r.balancePaid) : "—"}
+                          {r.balanceLinked && <span className="ml-1 text-[9px] text-emerald-500" title="來自收付款紀錄">●</span>}
+                        </td>
+                        <td className="px-3 py-2 text-right tabular-nums font-semibold text-emerald-600 dark:text-emerald-400">{fmt(r.received)}</td>
+                        <td className={`px-3 py-2 text-right tabular-nums font-bold ${
+                          r.outstanding > 0 ? "text-red-600 dark:text-red-400" : "text-slate-300 dark:text-slate-600"}`}>
+                          {r.outstanding > 0 ? fmt(r.outstanding) : "✓"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot className="bg-slate-800 text-white font-bold">
+                    <tr>
+                      <td className="px-3 py-2.5">合計（{rcvRows.length} 人）</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums">{fmt(rcvTotal.expected)}</td>
+                      <td colSpan={2} className="px-3 py-2.5 text-right text-[10px] font-normal text-slate-300">
+                        已收齊 {rcvTotal.paidCount} 人／未繳清 {rcvTotal.unpaidCount} 人
+                      </td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-emerald-300">{fmt(rcvTotal.received)}</td>
+                      <td className="px-3 py-2.5 text-right tabular-nums text-yellow-300">{fmt(rcvTotal.outstanding)}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Controls ── */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
