@@ -1,14 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { createClient } from "@supabase/supabase-js";
-import { Tour, Customer, CustomerTour, ParticipantType } from "@/lib/supabase";
-
-// ─── local supabase ───────────────────────────────────────────────────────────
-const sb = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-);
+import { supabase as sb, Tour, Customer, CustomerTour, ParticipantType } from "@/lib/supabase";
+import { buildReceivables, linkedAmount, priceOfType, type PayLite } from "@/lib/receivables";
 
 const TYPE_LABEL: Record<ParticipantType | string, string> = {
   adult: "成人", tour_only: "只參團", child: "兒童", infant: "嬰兒",
@@ -80,16 +74,19 @@ export default function PrintPage() {
   const [tour,    setTour]    = useState<Tour | null>(null);
   const [rows,    setRows]    = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
+  const [payments, setPayments] = useState<PayLite[]>([]);
 
   useEffect(() => {
     (async () => {
-      const [{ data: t }, { data: p }] = await Promise.all([
+      const [{ data: t }, { data: p }, { data: pay }] = await Promise.all([
         sb.from("tours").select("*").eq("id", id).single(),
         sb.from("customer_tours")
           .select("*, customer:customers(id,name,name_en,phone,email,birthday,gender,id_number,passport,passport_expiry,taibao_number,taibao_expiry,address,emergency_contact,emergency_phone,notes,meal_preference)")
           .eq("tour_id", id),
+        sb.from("tour_payments").select("type,category,amount,customer_ids").eq("tour_id", id),
       ]);
       setTour(t as Tour);
+      setPayments((pay || []) as PayLite[]);
 
       let sorted = (p || []) as Row[];
 
@@ -133,6 +130,9 @@ export default function PrintPage() {
     );
   }
 
+  if (layout === "deposit")  return <FeeNotice tour={tour} rows={rows} payments={payments} printDate={printDate} kind="deposit" />;
+  if (layout === "balance")  return <FeeNotice tour={tour} rows={rows} payments={payments} printDate={printDate} kind="balance" />;
+  if (layout === "passport-consent") return <PassportConsent tour={tour} rows={rows} printDate={printDate} />;
   if (layout === "full")    return <FullList    tour={tour} rows={rows} printDate={printDate} />;
   if (layout === "payment") return <PaymentList tour={tour} rows={rows} printDate={printDate} />;
   if (layout === "hotel")   return <HotelList   tour={tour} rows={rows} printDate={printDate} />;
@@ -641,6 +641,208 @@ function HotelList({ tour, rows, printDate }: { tour: Tour; rows: Row[]; printDa
             <span>⚠ 效期標示紅色者已過期，請注意換發。</span>
             <span>共 {rows.length} 位旅客 · 列印日期 {printDate}</span>
           </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ─── Layout 5/6: 訂金單 ／ 尾款單（應收費用明細）───────────────────────────────
+function FeeNotice({
+  tour, rows, payments, printDate, kind,
+}: {
+  tour: Tour; rows: Row[]; payments: PayLite[]; printDate: string; kind: "deposit" | "balance";
+}) {
+  const isDeposit = kind === "deposit";
+  const title = isDeposit ? "訂金繳納明細表" : "尾款繳納明細表";
+  const depositPerPerson = tour.deposit_per_person || 0;
+
+  const items = rows.map((r, i) => {
+    const cid = r.customer.id;
+    const total = priceOfType(tour, r.participant_type);
+    const dLinked = linkedAmount(payments, cid, "deposit");
+    const bLinked = linkedAmount(payments, cid, "balance");
+    const depositPaid = dLinked > 0 ? dLinked : (r.deposit_amount || 0);
+    const balancePaid = bLinked > 0 ? bLinked : (r.balance_amount || 0);
+    // 應繳訂金：招待／領隊等售價 0 的名額不收
+    const depositDue = total > 0 ? (depositPerPerson > 0 ? depositPerPerson : 0) : 0;
+    const balanceDue = Math.max(0, total - depositPaid);
+    const due  = isDeposit ? depositDue : balanceDue;
+    const paid = isDeposit ? depositPaid : balancePaid;
+    return {
+      seq: i + 1, name: r.customer.name, type: TYPE_LABEL[r.participant_type || "adult"] || "成人",
+      room: r.room_number || "", total, depositPaid, due, paid,
+      owed: Math.max(0, due - paid),
+    };
+  });
+
+  const sum = items.reduce((a, x) => ({
+    total: a.total + x.total, due: a.due + x.due, paid: a.paid + x.paid, owed: a.owed + x.owed,
+    depositPaid: a.depositPaid + x.depositPaid,
+  }), { total: 0, due: 0, paid: 0, owed: 0, depositPaid: 0 });
+
+  const fmt = (n: number) => n > 0 ? n.toLocaleString() : "—";
+
+  return (
+    <>
+      <PrintStyles />
+      <div className="action-bar no-print">
+        <span style={{ fontWeight: "bold" }}>{title}</span>
+        <button className="btn-print" onClick={() => window.print()}>🖨 列印 / 存成 PDF</button>
+        <button className="btn-close" onClick={() => window.close()}>關閉</button>
+      </div>
+      <div className="print-body page">
+        <div className="header">
+          <div className="title">{title}</div>
+          <div className="meta">
+            <span data-label="團名">{tour.name}</span>
+            <span data-label="出發">{fmtDate(tour.start_date)}</span>
+            <span data-label="回程">{fmtDate(tour.end_date)}</span>
+            <span data-label="人數">{rows.length} 人</span>
+            <span data-label="製表日">{printDate}</span>
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th style={{ width: "6%" }}>#</th>
+              <th style={{ width: "20%" }}>旅客姓名</th>
+              <th style={{ width: "10%" }}>身份</th>
+              <th style={{ width: "8%" }}>房號</th>
+              {!isDeposit && <th style={{ width: "13%" }}>團費總額</th>}
+              {!isDeposit && <th style={{ width: "13%" }}>已繳訂金</th>}
+              <th style={{ width: "13%" }}>{isDeposit ? "應繳訂金" : "應繳尾款"}</th>
+              <th style={{ width: "13%" }}>已繳金額</th>
+              <th style={{ width: "13%" }}>尚欠金額</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map(x => (
+              <tr key={x.seq}>
+                <td className="num">{x.seq}</td>
+                <td className="bold">{x.name}</td>
+                <td className="c">{x.type}</td>
+                <td className="c">{x.room || "—"}</td>
+                {!isDeposit && <td className="r">{fmt(x.total)}</td>}
+                {!isDeposit && <td className="r dim">{fmt(x.depositPaid)}</td>}
+                <td className="r bold">{fmt(x.due)}</td>
+                <td className="r">{fmt(x.paid)}</td>
+                <td className={`r bold ${x.owed > 0 ? "expired" : ""}`}>
+                  {x.owed > 0 ? x.owed.toLocaleString() : "✓ 已繳清"}
+                </td>
+              </tr>
+            ))}
+            <tr className="section-head">
+              <td colSpan={isDeposit ? 4 : 6} style={{ textAlign: "right" }}>合計</td>
+              <td className="r bold">{sum.due.toLocaleString()}</td>
+              <td className="r bold">{sum.paid.toLocaleString()}</td>
+              <td className="r bold" style={{ color: sum.owed > 0 ? "#dc2626" : "#111" }}>
+                {sum.owed.toLocaleString()}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        {isDeposit && depositPerPerson === 0 && (
+          <p style={{ marginTop: 10, fontSize: "8.5pt", color: "#b45309" }}>
+            ※ 尚未設定「每人訂金金額」，應繳訂金欄為空白。請至基本資料設定後重新列印。
+          </p>
+        )}
+
+        <div style={{ marginTop: 14, border: "1px solid #ccc", padding: "8px 10px" }}>
+          <div style={{ fontWeight: "bold", fontSize: "9pt", marginBottom: 4 }}>匯款資訊</div>
+          <div style={{ fontSize: "8.5pt", lineHeight: 1.9, color: "#333" }}>
+            銀行／分行：_______________________________　　戶名：_______________________________<br />
+            帳號：_______________________________　　繳款期限：_____________________
+          </div>
+        </div>
+
+        <p style={{ marginTop: 10, fontSize: "8pt", color: "#555", lineHeight: 1.7 }}>
+          ※ 本表金額以匯款當日實收為準，如有疑問請與承辦人員聯繫。<br />
+          ※ 匯款後請保留收據並告知帳號末五碼，以利核帳。
+        </p>
+
+        <div className="footer">
+          <span>製表日期：{printDate}</span>
+          <span>承辦：____________　　主管：____________</span>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ─── Layout 7: 護照自帶同意書 ─────────────────────────────────────────────────
+function PassportConsent({ tour, rows, printDate }: { tour: Tour; rows: Row[]; printDate: string }) {
+  return (
+    <>
+      <PrintStyles />
+      <div className="action-bar no-print">
+        <span style={{ fontWeight: "bold" }}>護照自帶同意書</span>
+        <button className="btn-print" onClick={() => window.print()}>🖨 列印 / 存成 PDF</button>
+        <button className="btn-close" onClick={() => window.close()}>關閉</button>
+      </div>
+      <div className="print-body page">
+        <div className="header" style={{ textAlign: "center", marginBottom: 14 }}>
+          <div className="title" style={{ fontSize: "17pt" }}>護照自行攜帶同意書</div>
+          <div style={{ fontSize: "9pt", color: "#444", marginTop: 4 }}>
+            {tour.name}　｜　出發日 {fmtDate(tour.start_date)}
+          </div>
+        </div>
+
+        <div style={{ fontSize: "9.5pt", lineHeight: 2.0, border: "1px solid #999", padding: "12px 14px", marginBottom: 12 }}>
+          本人參加貴公司承辦之上列旅遊行程，茲同意<span style={{ fontWeight: "bold" }}>自行保管並攜帶本人之護照（及台胞證等相關旅行證件）</span>前往機場集合，不交由旅行社代為保管。
+          <br />
+          本人已充分了解並承諾下列事項：
+          <div style={{ paddingLeft: 16, marginTop: 6 }}>
+            一、於集合前自行確認護照效期距回程日仍有六個月以上，且證件完整未破損。<br />
+            二、於出發當日務必攜帶護照及所需簽證／台胞證正本至機場集合。<br />
+            三、如因本人<span style={{ fontWeight: "bold" }}>未攜帶、遺失、效期不足或證件不符</span>致無法出境、無法登機或行程受阻，
+            所生之一切損失（含機票、住宿、地接等已產生且不可退還之費用）由本人自行負擔，
+            與旅行社及其人員無涉，本人不得要求退費或請求賠償。<br />
+            四、如需旅行社協助辦理補件或改期，相關規費與手續費由本人負擔。
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th style={{ width: "6%" }}>#</th>
+              <th style={{ width: "18%" }}>旅客姓名</th>
+              <th style={{ width: "17%" }}>護照號碼</th>
+              <th style={{ width: "14%" }}>護照效期</th>
+              <th style={{ width: "15%" }}>聯絡電話</th>
+              <th style={{ width: "18%" }}>親筆簽名</th>
+              <th style={{ width: "12%" }}>簽署日期</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => {
+              const exp = r.customer.passport_expiry;
+              const soon = exp ? (new Date(exp).getTime() - new Date(tour.end_date).getTime()) / 86400000 < 180 : false;
+              return (
+                <tr key={r.id} style={{ height: "34px" }}>
+                  <td className="num">{i + 1}</td>
+                  <td className="bold">{r.customer.name}</td>
+                  <td className="c">{r.customer.passport || "—"}</td>
+                  <td className={`c ${soon ? "expired" : ""}`}>{fmtDate(r.customer.passport_expiry) || "—"}</td>
+                  <td className="c dim">{r.customer.phone || ""}</td>
+                  <td />
+                  <td />
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+
+        <p style={{ marginTop: 10, fontSize: "8pt", color: "#555", lineHeight: 1.7 }}>
+          ※ 護照效期以紅字標示者，表示效期距回程日不足六個月，請務必於出發前完成換發。<br />
+          ※ 本同意書一式一份，由旅行社留存備查。
+        </p>
+
+        <div className="footer">
+          <span>旅行社：暖心旅行社</span>
+          <span>製表日期：{printDate}</span>
         </div>
       </div>
     </>

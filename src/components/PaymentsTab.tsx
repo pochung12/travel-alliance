@@ -6,7 +6,7 @@ import {
 } from "@/lib/supabase";
 import {
   Plus, X, Upload, ZoomIn, TrendingUp, TrendingDown,
-  Scale, Receipt, ChevronDown, ChevronUp, Trash2, ImageIcon, Users, AlertCircle,
+  Scale, Receipt, ChevronDown, ChevronUp, Trash2, ImageIcon, Users, AlertCircle, Printer,
 } from "lucide-react";
 import { buildReceivables, receivableTotals } from "@/lib/receivables";
 import type { Tour } from "@/lib/supabase";
@@ -312,6 +312,20 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], t
               {rcvOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
             </span>
           </button>
+
+          {/* 一鍵生成應收明細單 */}
+          <div className="px-4 pb-3 -mt-1 flex items-center gap-2 flex-wrap">
+            <span className="text-[11px] text-slate-400">一鍵生成：</span>
+            <button onClick={() => window.open(`/admin/groups/${tourId}/print?layout=deposit`, "_blank")}
+              className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors">
+              <Printer className="w-3 h-3" /> 訂金單
+            </button>
+            <button onClick={() => window.open(`/admin/groups/${tourId}/print?layout=balance`, "_blank")}
+              className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors">
+              <Printer className="w-3 h-3" /> 尾款單
+            </button>
+            <span className="text-[10px] text-slate-400">開新分頁，可直接列印或存成 PDF</span>
+          </div>
 
           {rcvOpen && (
             <div className="border-t border-slate-100 dark:border-slate-700">
