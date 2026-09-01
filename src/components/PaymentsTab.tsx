@@ -288,6 +288,25 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], t
         />
       </div>
 
+      {/* ── 一鍵生成應收明細單（不論有無旅客都可產生）── */}
+      <div className="bg-white dark:bg-slate-800 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm px-4 py-3 flex items-center gap-2 flex-wrap">
+        <Printer className="w-4 h-4 text-slate-400 shrink-0" />
+        <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">一鍵生成應收單據</span>
+        <button onClick={() => window.open(`/admin/groups/${tourId}/print?layout=deposit`, "_blank")}
+          className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors">
+          <Printer className="w-3.5 h-3.5" /> 訂金單
+        </button>
+        <button onClick={() => window.open(`/admin/groups/${tourId}/print?layout=balance`, "_blank")}
+          className="flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors">
+          <Printer className="w-3.5 h-3.5" /> 尾款單
+        </button>
+        <span className="text-[11px] text-slate-400">
+          {rcvRows.length > 0
+            ? `${rcvRows.length} 位旅客・開新分頁可直接列印或存成 PDF`
+            : "本團尚未加入旅客，單據會是空白表格（可先列印當表單用）"}
+        </span>
+      </div>
+
       {/* ── 應收客款明細 ── */}
       {rcvRows.length > 0 && (
         <div className="bg-white dark:bg-slate-800 rounded-xl border border-blue-100 dark:border-blue-900/40 shadow-sm overflow-hidden">
@@ -313,19 +332,6 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], t
             </span>
           </button>
 
-          {/* 一鍵生成應收明細單 */}
-          <div className="px-4 pb-3 -mt-1 flex items-center gap-2 flex-wrap">
-            <span className="text-[11px] text-slate-400">一鍵生成：</span>
-            <button onClick={() => window.open(`/admin/groups/${tourId}/print?layout=deposit`, "_blank")}
-              className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors">
-              <Printer className="w-3 h-3" /> 訂金單
-            </button>
-            <button onClick={() => window.open(`/admin/groups/${tourId}/print?layout=balance`, "_blank")}
-              className="flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white transition-colors">
-              <Printer className="w-3 h-3" /> 尾款單
-            </button>
-            <span className="text-[10px] text-slate-400">開新分頁，可直接列印或存成 PDF</span>
-          </div>
 
           {rcvOpen && (
             <div className="border-t border-slate-100 dark:border-slate-700">
