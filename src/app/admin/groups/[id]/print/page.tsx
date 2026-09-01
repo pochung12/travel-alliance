@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { supabase as sb, Tour, Customer, CustomerTour, ParticipantType } from "@/lib/supabase";
 import { buildReceivables, linkedAmount, priceOfType, type PayLite } from "@/lib/receivables";
-import { loadDocSettings, saveDocSettings, resetDocSettings, DOC_DEFAULTS, DOC_FIELDS, type DocSettings } from "@/lib/docSettings";
+import { loadDocSettings, saveDocSettings, resetDocSettings, DOC_DEFAULTS, DOC_FIELDS, deadlineTextFromDate, daysBefore, type DocSettings } from "@/lib/docSettings";
 
 /** 收付款紀錄（列印用，比 PayLite 多帶日期與說明）*/
 type PayRow = PayLite & { description?: string | null; payment_date?: string | null; note?: string | null };
@@ -850,16 +850,31 @@ function FeeDocStyles() {
 
       /* 設定面板 */
       .cfg { position: fixed; top: 46px; left: 0; right: 0; bottom: 0; z-index: 99; overflow-y: auto;
-             background: #f8f7f4; padding: 18px; font-family: system-ui, sans-serif; }
+             background: #f4f2ee; padding: 18px; font-family: system-ui, sans-serif; color: #111827; }
       .cfg-in { max-width: 780px; margin: 0 auto; }
-      .cfg-g { background: #fff; border: 1px solid #e5e5e5; border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
-      .cfg-gt { font-size: 13px; font-weight: 700; color: ${DOC.brand}; margin-bottom: 10px; }
-      .cfg-f { margin-bottom: 10px; }
-      .cfg-f label { display: block; font-size: 11px; color: #666; margin-bottom: 3px; font-weight: 600; }
-      .cfg-f input, .cfg-f textarea { width: 100%; padding: 7px 9px; border: 1px solid #ddd; border-radius: 6px;
-                                      font-size: 13px; font-family: inherit; }
+      .cfg-lead { font-size: 13px; color: #1f2937; margin-bottom: 12px; line-height: 1.7; }
+      .cfg-g { background: #fff; border: 1px solid #d6d3ce; border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
+      .cfg-gt { font-size: 14px; font-weight: 800; color: ${DOC.brand}; margin-bottom: 10px; }
+      .cfg-f { margin-bottom: 12px; }
+      .cfg-f label { display: block; font-size: 12.5px; color: #111827; margin-bottom: 4px; font-weight: 700; }
+      .cfg-f input, .cfg-f textarea { width: 100%; padding: 8px 10px; border: 1px solid #b9b4ac; border-radius: 6px;
+                                      font-size: 14px; font-family: inherit; color: #111827; background: #fff; }
+      .cfg-f input:focus, .cfg-f textarea:focus { outline: 2px solid ${DOC.brand}; outline-offset: -1px; border-color: ${DOC.brand}; }
+      .cfg-f input::placeholder, .cfg-f textarea::placeholder { color: #8b8680; }
       .cfg-f textarea { min-height: 76px; resize: vertical; line-height: 1.7; }
-      .cfg-hint { font-size: 11px; color: #999; margin-top: 3px; }
+      .cfg-hint { font-size: 12px; color: #4b5563; margin-top: 4px; line-height: 1.6; }
+      /* 快捷鈕（繳款期限） */
+      .cfg-quick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+      .cfg-quick button { font-size: 12px; font-weight: 600; padding: 4px 10px; border-radius: 999px; cursor: pointer;
+                          border: 1px solid #b9b4ac; background: #fff; color: #1f2937; }
+      .cfg-quick button:hover { border-color: ${DOC.brand}; color: ${DOC.brand}; }
+      .cfg-quick button.clr { color: #6b7280; }
+      /* 設定面板固定淺底深字，不跟隨系統深色模式 */
+      @media (prefers-color-scheme: dark) {
+        .cfg { background: #f4f2ee; color: #111827; }
+        .cfg-g { background: #fff; }
+        .cfg-f input, .cfg-f textarea { background: #fff; color: #111827; }
+      }
     `}</style>
   );
 }
@@ -957,6 +972,9 @@ function FeeNotice({
   const legal = [cfg.taxId && `統一編號 ${cfg.taxId}`, cfg.licenseNo].filter(Boolean);
 
   const set = (k: keyof DocSettings, v: string) => setCfg(c => ({ ...c, [k]: v }));
+  // 選日期 → 同步自動帶入繳款期限文字（使用者仍可自行改寫文字）
+  const setDeadline = (iso: string) =>
+    setCfg(c => ({ ...c, deadlineDate: iso, deadlineLabel: deadlineTextFromDate(iso) }));
   const onSave = () => { saveDocSettings(cfg); setEditing(false); };
 
   return (
@@ -983,7 +1001,7 @@ function FeeNotice({
       {editing && (
         <div className="cfg no-print">
           <div className="cfg-in">
-            <p style={{ fontSize: 12, color: "#666", marginBottom: 12 }}>
+            <p className="cfg-lead">
               以下文案會套用到<b>所有團</b>的訂金單與尾款單，設定存在這台電腦的瀏覽器裡。
             </p>
             {DOC_FIELDS.map(g => (
@@ -1010,6 +1028,26 @@ function FeeNotice({
                             </button>
                           </div>
                         )}
+                      </>
+                    ) : f.date ? (
+                      <>
+                        <input type="date" value={String(cfg[f.key] ?? "")}
+                          onChange={e => setDeadline(e.target.value)} />
+                        <div className="cfg-quick">
+                          {[45, 30, 21, 14, 7].map(n => {
+                            const d = daysBefore(tour.start_date, n);
+                            return d ? (
+                              <button key={n} type="button" onClick={() => setDeadline(d)}>
+                                出發前 {n} 天
+                              </button>
+                            ) : null;
+                          })}
+                          <button type="button" className="clr" onClick={() => setDeadline("")}>清除</button>
+                        </div>
+                        <div className="cfg-hint">
+                          選好日期後，下面的「繳款期限文字」會自動帶入（含星期），仍可自行改寫。
+                          {tour.start_date ? `　本團出發日 ${fmtDate(tour.start_date)}。` : ""}
+                        </div>
                       </>
                     ) : f.multiline ? (
                       <>

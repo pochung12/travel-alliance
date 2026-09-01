@@ -17,6 +17,7 @@ export interface DocSettings {
   bankName: string;
   bankAccountName: string;
   bankAccountNo: string;
+  deadlineDate: string;   // YYYY-MM-DD，選了會自動帶入 deadlineLabel
   deadlineLabel: string;
 
   // 內文
@@ -43,6 +44,7 @@ export const DOC_DEFAULTS: DocSettings = {
   bankName: "",
   bankAccountName: "",
   bankAccountNo: "",
+  deadlineDate: "",
   deadlineLabel: "",
 
   depositNote:
@@ -82,7 +84,7 @@ export function resetDocSettings() {
 /** 設定面板的欄位定義（標籤／型別／提示）*/
 export const DOC_FIELDS: {
   group: string;
-  items: { key: keyof DocSettings; label: string; ph?: string; multiline?: boolean; image?: boolean }[];
+  items: { key: keyof DocSettings; label: string; ph?: string; multiline?: boolean; image?: boolean; date?: boolean }[];
 }[] = [
   {
     group: "頁首（抬頭）",
@@ -104,7 +106,8 @@ export const DOC_FIELDS: {
       { key: "bankName",        label: "銀行／分行", ph: "○○銀行 ○○分行（代號 xxx）" },
       { key: "bankAccountName", label: "戶名",       ph: "暖心旅行社股份有限公司" },
       { key: "bankAccountNo",   label: "帳號",       ph: "1234-5678-9012" },
-      { key: "deadlineLabel",   label: "繳款期限",   ph: "請於 2026/09/10 前完成匯款" },
+      { key: "deadlineDate",    label: "繳款期限日期", date: true },
+      { key: "deadlineLabel",   label: "繳款期限文字", ph: "請於 2026/09/10（四）前完成匯款" },
     ],
   },
   {
@@ -123,3 +126,30 @@ export const DOC_FIELDS: {
     ],
   },
 ];
+
+const WEEK = ["日", "一", "二", "三", "四", "五", "六"];
+
+/** "2026-09-10" -> "2026/09/10（四）"；格式不對就原樣回傳 */
+export function fmtDeadlineDate(iso?: string | null): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec((iso || "").trim());
+  if (!m) return iso || "";
+  const [, y, mo, d] = m;
+  const w = WEEK[new Date(Number(y), Number(mo) - 1, Number(d)).getDay()];
+  return `${y}/${mo}/${d}（${w}）`;
+}
+
+/** 由日期自動組出繳款期限文字 */
+export function deadlineTextFromDate(iso?: string | null): string {
+  const t = fmtDeadlineDate(iso);
+  return t ? `請於 ${t} 前完成匯款` : "";
+}
+
+/** 以出發日往前推 n 天，回傳 YYYY-MM-DD */
+export function daysBefore(startDate?: string | null, n = 0): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec((startDate || "").trim());
+  if (!m) return "";
+  const [, y, mo, d] = m;
+  const dt = new Date(Number(y), Number(mo) - 1, Number(d) - n);
+  const pad = (v: number) => String(v).padStart(2, "0");
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+}
