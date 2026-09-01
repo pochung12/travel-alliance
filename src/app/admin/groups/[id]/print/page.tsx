@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { supabase as sb, Tour, Customer, CustomerTour, ParticipantType } from "@/lib/supabase";
 import { buildReceivables, linkedAmount, priceOfType, type PayLite } from "@/lib/receivables";
+import { loadDocSettings, saveDocSettings, resetDocSettings, DOC_DEFAULTS, DOC_FIELDS, type DocSettings } from "@/lib/docSettings";
 
 const TYPE_LABEL: Record<ParticipantType | string, string> = {
   adult: "成人", tour_only: "只參團", child: "兒童", infant: "嬰兒",
@@ -649,188 +650,6 @@ function HotelList({ tour, rows, printDate }: { tour: Tour; rows: Row[]; printDa
 }
 
 // ─── Layout 5/6: 訂金單 ／ 尾款單（應收費用明細）───────────────────────────────
-function FeeNotice({
-  tour, rows, payments, printDate, kind, mode,
-}: {
-  tour: Tour; rows: Row[]; payments: PayLite[]; printDate: string;
-  kind: "deposit" | "balance"; mode: "summary" | "detail";
-}) {
-  const isDeposit = kind === "deposit";
-  const isSummary = mode === "summary";
-  const title = isSummary
-    ? (isDeposit ? "訂金請款單" : "尾款請款單")
-    : (isDeposit ? "訂金繳納明細表" : "尾款繳納明細表");
-  const depositPerPerson = tour.deposit_per_person || 0;
-
-  const items = rows.map((r, i) => {
-    const cid = r.customer.id;
-    const total = priceOfType(tour, r.participant_type);
-    const dLinked = linkedAmount(payments, cid, "deposit");
-    const bLinked = linkedAmount(payments, cid, "balance");
-    const depositPaid = dLinked > 0 ? dLinked : (r.deposit_amount || 0);
-    const balancePaid = bLinked > 0 ? bLinked : (r.balance_amount || 0);
-    // 應繳訂金：招待／領隊等售價 0 的名額不收
-    const depositDue = total > 0 ? (depositPerPerson > 0 ? depositPerPerson : 0) : 0;
-    const balanceDue = Math.max(0, total - depositPaid);
-    const due  = isDeposit ? depositDue : balanceDue;
-    const paid = isDeposit ? depositPaid : balancePaid;
-    return {
-      seq: i + 1, name: r.customer.name, type: TYPE_LABEL[r.participant_type || "adult"] || "成人",
-      room: r.room_number || "", total, depositPaid, due, paid,
-      owed: Math.max(0, due - paid),
-    };
-  });
-
-  const sum = items.reduce((a, x) => ({
-    total: a.total + x.total, due: a.due + x.due, paid: a.paid + x.paid, owed: a.owed + x.owed,
-    depositPaid: a.depositPaid + x.depositPaid,
-  }), { total: 0, due: 0, paid: 0, owed: 0, depositPaid: 0 });
-
-  const fmt = (n: number) => n > 0 ? n.toLocaleString() : "—";
-
-  return (
-    <>
-      <PrintStyles />
-      <div className="action-bar no-print">
-        <span style={{ fontWeight: "bold" }}>{title}</span>
-        <button className="btn-print" onClick={() => window.print()}>🖨 列印 / 存成 PDF</button>
-        <button className="btn-close" onClick={() => window.close()}>關閉</button>
-      </div>
-      <div className="print-body page">
-        <div className="header">
-          <div className="title">{title}</div>
-          <div className="meta">
-            <span data-label="團名">{tour.name}</span>
-            <span data-label="出發">{fmtDate(tour.start_date)}</span>
-            <span data-label="回程">{fmtDate(tour.end_date)}</span>
-            <span data-label="人數">{rows.length} 人</span>
-            <span data-label="製表日">{printDate}</span>
-          </div>
-        </div>
-
-        {isSummary ? (
-          <>
-            <table style={{ marginTop: 10 }}>
-              <tbody>
-                <tr>
-                  <td style={{ width: "38%", background: "#f1f5f9", fontWeight: "bold", padding: "9px 10px" }}>項目</td>
-                  <td style={{ width: "24%", background: "#f1f5f9", fontWeight: "bold", textAlign: "right", padding: "9px 10px" }}>金額</td>
-                  <td style={{ background: "#f1f5f9", fontWeight: "bold", padding: "9px 10px" }}>說明</td>
-                </tr>
-                <tr>
-                  <td style={{ padding: "9px 10px" }}>{isDeposit ? "應收訂金總額" : "團費總額"}</td>
-                  <td style={{ textAlign: "right", padding: "9px 10px", fontWeight: "bold", fontSize: "10.5pt" }}>
-                    NT$ {(isDeposit ? sum.due : sum.total).toLocaleString()}
-                  </td>
-                  <td style={{ padding: "9px 10px", color: "#555" }}>
-                    {isDeposit
-                      ? `每人 NT$${depositPerPerson.toLocaleString()} × ${items.filter(x => x.due > 0).length} 人`
-                      : `全團 ${items.length} 人合計`}
-                  </td>
-                </tr>
-                {!isDeposit && (
-                  <tr>
-                    <td style={{ padding: "9px 10px" }}>減：已收訂金</td>
-                    <td style={{ textAlign: "right", padding: "9px 10px" }}>− NT$ {sum.depositPaid.toLocaleString()}</td>
-                    <td style={{ padding: "9px 10px", color: "#555" }}>已入帳之訂金</td>
-                  </tr>
-                )}
-                <tr>
-                  <td style={{ padding: "9px 10px" }}>減：{isDeposit ? "已收訂金" : "已收尾款"}</td>
-                  <td style={{ textAlign: "right", padding: "9px 10px" }}>− NT$ {sum.paid.toLocaleString()}</td>
-                  <td style={{ padding: "9px 10px", color: "#555" }}>
-                    已繳清 {items.filter(x => x.due > 0 && x.owed === 0).length} 人／未繳清 {items.filter(x => x.owed > 0).length} 人
-                  </td>
-                </tr>
-                <tr>
-                  <td style={{ padding: "11px 10px", fontWeight: "bold", background: "#1e3a5f", color: "#fff", fontSize: "10pt" }}>
-                    本次應收金額
-                  </td>
-                  <td style={{ textAlign: "right", padding: "11px 10px", fontWeight: "bold", background: "#1e3a5f",
-                               color: sum.owed > 0 ? "#fde047" : "#86efac", fontSize: "13pt" }}>
-                    NT$ {sum.owed.toLocaleString()}
-                  </td>
-                  <td style={{ padding: "11px 10px", background: "#1e3a5f", color: "#cbd5e1" }}>
-                    {sum.owed > 0 ? "請於期限前完成匯款" : "已全數收訖，感謝配合"}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-            <p style={{ marginTop: 8, fontSize: "8pt", color: "#666" }}>
-              ※ 本單為全團彙總金額，如需個別旅客明細請另索取「{isDeposit ? "訂金繳納明細表" : "尾款繳納明細表"}」。
-            </p>
-          </>
-        ) : (
-        <table>
-          <thead>
-            <tr>
-              <th style={{ width: "6%" }}>#</th>
-              <th style={{ width: "20%" }}>旅客姓名</th>
-              <th style={{ width: "10%" }}>身份</th>
-              <th style={{ width: "8%" }}>房號</th>
-              {!isDeposit && <th style={{ width: "13%" }}>團費總額</th>}
-              {!isDeposit && <th style={{ width: "13%" }}>已繳訂金</th>}
-              <th style={{ width: "13%" }}>{isDeposit ? "應繳訂金" : "應繳尾款"}</th>
-              <th style={{ width: "13%" }}>已繳金額</th>
-              <th style={{ width: "13%" }}>尚欠金額</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map(x => (
-              <tr key={x.seq}>
-                <td className="num">{x.seq}</td>
-                <td className="bold">{x.name}</td>
-                <td className="c">{x.type}</td>
-                <td className="c">{x.room || "—"}</td>
-                {!isDeposit && <td className="r">{fmt(x.total)}</td>}
-                {!isDeposit && <td className="r dim">{fmt(x.depositPaid)}</td>}
-                <td className="r bold">{fmt(x.due)}</td>
-                <td className="r">{fmt(x.paid)}</td>
-                <td className={`r bold ${x.owed > 0 ? "expired" : ""}`}>
-                  {x.owed > 0 ? x.owed.toLocaleString() : "✓ 已繳清"}
-                </td>
-              </tr>
-            ))}
-            <tr className="section-head">
-              <td colSpan={isDeposit ? 4 : 6} style={{ textAlign: "right" }}>合計</td>
-              <td className="r bold">{sum.due.toLocaleString()}</td>
-              <td className="r bold">{sum.paid.toLocaleString()}</td>
-              <td className="r bold" style={{ color: sum.owed > 0 ? "#dc2626" : "#111" }}>
-                {sum.owed.toLocaleString()}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-        )}
-
-        {isDeposit && depositPerPerson === 0 && (
-          <p style={{ marginTop: 10, fontSize: "8.5pt", color: "#b45309" }}>
-            ※ 尚未設定「每人訂金金額」，應繳訂金欄為空白。請至基本資料設定後重新列印。
-          </p>
-        )}
-
-        <div style={{ marginTop: 14, border: "1px solid #ccc", padding: "8px 10px" }}>
-          <div style={{ fontWeight: "bold", fontSize: "9pt", marginBottom: 4 }}>匯款資訊</div>
-          <div style={{ fontSize: "8.5pt", lineHeight: 1.9, color: "#333" }}>
-            銀行／分行：_______________________________　　戶名：_______________________________<br />
-            帳號：_______________________________　　繳款期限：_____________________
-          </div>
-        </div>
-
-        <p style={{ marginTop: 10, fontSize: "8pt", color: "#555", lineHeight: 1.7 }}>
-          ※ 本表金額以匯款當日實收為準，如有疑問請與承辦人員聯繫。<br />
-          ※ 匯款後請保留收據並告知帳號末五碼，以利核帳。
-        </p>
-
-        <div className="footer">
-          <span>製表日期：{printDate}</span>
-          <span>承辦：____________　　主管：____________</span>
-        </div>
-      </div>
-    </>
-  );
-}
-
 // ─── Layout 7: 護照自帶同意書 ─────────────────────────────────────────────────
 function PassportConsent({ tour, rows, printDate }: { tour: Tour; rows: Row[]; printDate: string }) {
   return (
@@ -902,6 +721,420 @@ function PassportConsent({ tour, rows, printDate }: { tour: Tour; rows: Row[]; p
         <div className="footer">
           <span>旅行社：暖心旅行社</span>
           <span>製表日期：{printDate}</span>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ═══ 對客單據：訂金／尾款請款單 ═══════════════════════════════════════════════
+const DOC = {
+  ink:   "#2b2b2b",
+  brand: "#a8453a",
+  muted: "#8a8268",
+  line:  "#e3dbc9",
+  soft:  "#faf7f0",
+  head:  "#f3ecda",
+};
+
+function FeeDocStyles() {
+  return (
+    <style>{`
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body { font-family: "Noto Serif TC","Microsoft JhengHei","蘋方-繁",serif; font-size: 10pt; color: ${DOC.ink}; background: #fff; }
+      @page { size: A4 portrait; margin: 14mm 14mm; }
+      @media print { .no-print { display: none !important; } .doc-body { padding-top: 0 !important; } }
+
+      .doc-body { padding-top: 54px; }
+      .sheet { max-width: 182mm; margin: 0 auto; }
+
+      /* 頁首 */
+      .dh { display: flex; align-items: flex-start; gap: 16px; padding-bottom: 12px; }
+      .dh-logo { width: 54px; height: 54px; object-fit: contain; flex-shrink: 0; }
+      .dh-main { flex: 1; min-width: 0; }
+      .dh-name { font-size: 17pt; font-weight: 700; letter-spacing: .04em; color: ${DOC.brand}; line-height: 1.2; }
+      .dh-en   { font-size: 7.5pt; letter-spacing: .16em; color: ${DOC.muted}; text-transform: uppercase; margin-top: 3px; }
+      .dh-tag  { font-size: 8.5pt; color: ${DOC.muted}; margin-top: 5px; }
+      .dh-meta { text-align: right; font-size: 7.8pt; color: ${DOC.muted}; line-height: 1.75; flex-shrink: 0; }
+      .rule { height: 2px; background: ${DOC.brand}; }
+      .rule-thin { height: 1px; background: ${DOC.line}; margin: 14px 0; }
+
+      /* 標題列 */
+      .dt { display: flex; align-items: flex-end; justify-content: space-between; margin: 16px 0 12px; gap: 12px; }
+      .dt-title { font-size: 20pt; font-weight: 700; letter-spacing: .1em; color: ${DOC.ink}; }
+      .dt-sub   { font-size: 8pt; letter-spacing: .18em; color: ${DOC.muted}; text-transform: uppercase; margin-top: 3px; }
+      .dt-date  { font-size: 8.5pt; color: ${DOC.muted}; text-align: right; line-height: 1.8; }
+
+      /* 團資訊 */
+      .info { background: ${DOC.soft}; border: 1px solid ${DOC.line}; border-radius: 4px; padding: 11px 14px; margin-bottom: 16px; }
+      .info-name { font-size: 11pt; font-weight: 700; line-height: 1.45; margin-bottom: 7px; }
+      .info-row { display: flex; flex-wrap: wrap; gap: 22px; font-size: 8.5pt; color: ${DOC.muted}; }
+      .info-row b { color: ${DOC.ink}; font-weight: 600; margin-left: 5px; }
+
+      /* 金額表 */
+      table.amt { width: 100%; border-collapse: collapse; }
+      table.amt th { background: ${DOC.head}; color: ${DOC.ink}; font-size: 8.5pt; font-weight: 700;
+                     padding: 8px 12px; text-align: left; border-bottom: 1px solid ${DOC.line}; letter-spacing: .05em; }
+      table.amt td { padding: 9px 12px; border-bottom: 1px solid ${DOC.line}; font-size: 9.5pt; vertical-align: middle; }
+      .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+      .muted { color: ${DOC.muted}; font-size: 8.5pt; }
+      .neg { color: ${DOC.muted}; }
+
+      /* 應收總額 */
+      .total { display: flex; align-items: center; justify-content: space-between;
+               background: ${DOC.brand}; color: #fff; padding: 14px 18px; border-radius: 4px; margin-top: 2px; }
+      .total-l { font-size: 10.5pt; font-weight: 700; letter-spacing: .08em; }
+      .total-n { font-size: 21pt; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: .01em; }
+      .total-s { font-size: 7.5pt; opacity: .85; margin-top: 2px; text-align: right; }
+
+      /* 明細表 */
+      table.det { width: 100%; border-collapse: collapse; margin-top: 2px; }
+      table.det th { background: ${DOC.head}; font-size: 8pt; font-weight: 700; padding: 7px 8px;
+                     border-bottom: 1px solid ${DOC.line}; letter-spacing: .04em; }
+      table.det td { padding: 6px 8px; border-bottom: 1px solid #f0ebdd; font-size: 8.8pt; }
+      table.det tr:nth-child(even) td { background: #fcfaf5; }
+      .owed { color: ${DOC.brand}; font-weight: 700; }
+      .paid-ok { color: #6b8f5e; }
+
+      /* 匯款資訊 */
+      .pay { border: 1px solid ${DOC.line}; border-radius: 4px; overflow: hidden; margin-top: 18px; }
+      .pay-h { background: ${DOC.head}; padding: 7px 14px; font-size: 8.5pt; font-weight: 700; letter-spacing: .06em; }
+      .pay-b { padding: 11px 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px 22px; font-size: 9pt; }
+      .pay-b div { display: flex; gap: 8px; }
+      .pay-b span.k { color: ${DOC.muted}; min-width: 62px; font-size: 8.5pt; }
+      .pay-b span.v { border-bottom: 1px dotted ${DOC.line}; flex: 1; min-height: 15px; }
+
+      /* 注意事項 */
+      .note { margin-top: 16px; font-size: 8.3pt; color: #57534e; line-height: 1.95; }
+      .note-h { font-size: 8.5pt; font-weight: 700; color: ${DOC.ink}; margin-bottom: 4px; letter-spacing: .06em; }
+      .note li { margin-left: 15px; }
+
+      /* 頁尾 */
+      .foot { margin-top: 22px; padding-top: 12px; border-top: 1px solid ${DOC.line}; }
+      .foot-msg { font-size: 8.5pt; color: ${DOC.brand}; text-align: center; letter-spacing: .05em; margin-bottom: 16px; }
+      .sign { display: flex; gap: 40px; }
+      .sign div { flex: 1; }
+      .sign-l { font-size: 8pt; color: ${DOC.muted}; margin-bottom: 26px; }
+      .sign-u { border-bottom: 1px solid ${DOC.line}; }
+      .foot-co { margin-top: 14px; text-align: center; font-size: 7.3pt; color: #a8a29e; line-height: 1.7; }
+
+      /* 操作列 */
+      .bar { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: ${DOC.ink}; color: #fff;
+             padding: 9px 16px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+             box-shadow: 0 2px 10px rgba(0,0,0,.25); font-family: system-ui, sans-serif; }
+      .bar button { padding: 6px 15px; border-radius: 6px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; }
+      .bar .p { background: ${DOC.brand}; color: #fff; }
+      .bar .g { background: rgba(255,255,255,.16); color: #fff; }
+      @media print { .bar { display: none; } }
+
+      /* 設定面板 */
+      .cfg { position: fixed; top: 46px; left: 0; right: 0; bottom: 0; z-index: 99; overflow-y: auto;
+             background: #f8f7f4; padding: 18px; font-family: system-ui, sans-serif; }
+      .cfg-in { max-width: 780px; margin: 0 auto; }
+      .cfg-g { background: #fff; border: 1px solid #e5e5e5; border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
+      .cfg-gt { font-size: 13px; font-weight: 700; color: ${DOC.brand}; margin-bottom: 10px; }
+      .cfg-f { margin-bottom: 10px; }
+      .cfg-f label { display: block; font-size: 11px; color: #666; margin-bottom: 3px; font-weight: 600; }
+      .cfg-f input, .cfg-f textarea { width: 100%; padding: 7px 9px; border: 1px solid #ddd; border-radius: 6px;
+                                      font-size: 13px; font-family: inherit; }
+      .cfg-f textarea { min-height: 76px; resize: vertical; line-height: 1.7; }
+      .cfg-hint { font-size: 11px; color: #999; margin-top: 3px; }
+    `}</style>
+  );
+}
+
+function FeeNotice({
+  tour, rows, payments, printDate, kind, mode,
+}: {
+  tour: Tour; rows: Row[]; payments: PayLite[]; printDate: string;
+  kind: "deposit" | "balance"; mode: "summary" | "detail";
+}) {
+  const [cfg, setCfg] = useState<DocSettings>(DOC_DEFAULTS);
+  const [editing, setEditing] = useState(false);
+  useEffect(() => { setCfg(loadDocSettings()); }, []);
+
+  const isDeposit = kind === "deposit";
+  const isSummary = mode === "summary";
+  const title = isSummary
+    ? (isDeposit ? "訂金請款單" : "尾款請款單")
+    : (isDeposit ? "訂金繳納明細" : "尾款繳納明細");
+  const titleEn = isDeposit ? "Deposit Statement" : "Balance Statement";
+  const depositPerPerson = tour.deposit_per_person || 0;
+
+  const items = rows.map((r, i) => {
+    const cid = r.customer.id;
+    const total = priceOfType(tour, r.participant_type);
+    const dLinked = linkedAmount(payments, cid, "deposit");
+    const bLinked = linkedAmount(payments, cid, "balance");
+    const depositPaid = dLinked > 0 ? dLinked : (r.deposit_amount || 0);
+    const balancePaid = bLinked > 0 ? bLinked : (r.balance_amount || 0);
+    const depositDue = total > 0 ? depositPerPerson : 0;
+    const balanceDue = Math.max(0, total - depositPaid);
+    const due  = isDeposit ? depositDue : balanceDue;
+    const paid = isDeposit ? depositPaid : balancePaid;
+    return {
+      seq: i + 1, name: r.customer.name,
+      type: TYPE_LABEL[r.participant_type || "adult"] || "成人",
+      room: r.room_number || "", total, depositPaid, due, paid,
+      owed: Math.max(0, due - paid),
+    };
+  });
+  const sum = items.reduce((a, x) => ({
+    total: a.total + x.total, due: a.due + x.due, paid: a.paid + x.paid,
+    owed: a.owed + x.owed, depositPaid: a.depositPaid + x.depositPaid,
+  }), { total: 0, due: 0, paid: 0, owed: 0, depositPaid: 0 });
+
+  const nt = (n: number) => "NT$ " + n.toLocaleString();
+  const cell = (n: number) => n > 0 ? n.toLocaleString() : "—";
+  const paidCount = items.filter(x => x.due > 0 && x.owed === 0).length;
+  const openCount = items.filter(x => x.owed > 0).length;
+  const noteLines = (isDeposit ? cfg.depositNote : cfg.balanceNote)
+    .split("\n").map(l => l.trim()).filter(Boolean);
+  const contact = [cfg.phone && `電話 ${cfg.phone}`, cfg.email, cfg.address].filter(Boolean);
+  const legal = [cfg.taxId && `統一編號 ${cfg.taxId}`, cfg.licenseNo].filter(Boolean);
+
+  const set = (k: keyof DocSettings, v: string) => setCfg(c => ({ ...c, [k]: v }));
+  const onSave = () => { saveDocSettings(cfg); setEditing(false); };
+
+  return (
+    <>
+      <FeeDocStyles />
+      <div className="bar no-print">
+        <strong style={{ fontSize: 14 }}>{title}</strong>
+        <span style={{ opacity: .6, fontSize: 12 }}>{isSummary ? "全團總額" : "逐人明細"}</span>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button className="g" onClick={() => setEditing(e => !e)}>
+            {editing ? "← 回到預覽" : "✎ 編輯抬頭 / 頁尾"}
+          </button>
+          {!editing && <button className="p" onClick={() => window.print()}>🖨 列印 / 存成 PDF</button>}
+          {editing && <button className="p" onClick={onSave}>儲存設定</button>}
+          {editing && (
+            <button className="g" onClick={() => { if (confirm("回復所有文案為預設值？")) { resetDocSettings(); setCfg(DOC_DEFAULTS); } }}>
+              回復預設
+            </button>
+          )}
+          <button className="g" onClick={() => window.close()}>關閉</button>
+        </div>
+      </div>
+
+      {editing && (
+        <div className="cfg no-print">
+          <div className="cfg-in">
+            <p style={{ fontSize: 12, color: "#666", marginBottom: 12 }}>
+              以下文案會套用到<b>所有團</b>的訂金單與尾款單，設定存在這台電腦的瀏覽器裡。
+            </p>
+            {DOC_FIELDS.map(g => (
+              <div className="cfg-g" key={g.group}>
+                <div className="cfg-gt">{g.group}</div>
+                {g.items.map(f => (
+                  <div className="cfg-f" key={f.key}>
+                    <label>{f.label}</label>
+                    {f.image ? (
+                      <>
+                        <input type="file" accept="image/*" onChange={e => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          const rd = new FileReader();
+                          rd.onload = () => set(f.key, String(rd.result));
+                          rd.readAsDataURL(file);
+                        }} />
+                        {cfg.logo && (
+                          <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 10 }}>
+                            <img src={cfg.logo} alt="" style={{ height: 40 }} />
+                            <button onClick={() => set("logo", "")}
+                              style={{ fontSize: 11, padding: "3px 9px", borderRadius: 5, border: "1px solid #ddd", cursor: "pointer", background: "#fff" }}>
+                              移除
+                            </button>
+                          </div>
+                        )}
+                      </>
+                    ) : f.multiline ? (
+                      <>
+                        <textarea value={String(cfg[f.key] ?? "")} placeholder={f.ph}
+                          onChange={e => set(f.key, e.target.value)} />
+                        <div className="cfg-hint">一行一條，會自動編號列出</div>
+                      </>
+                    ) : (
+                      <input value={String(cfg[f.key] ?? "")} placeholder={f.ph}
+                        onChange={e => set(f.key, e.target.value)} />
+                    )}
+                  </div>
+                ))}
+              </div>
+            ))}
+            <div style={{ height: 30 }} />
+          </div>
+        </div>
+      )}
+
+      <div className="doc-body">
+        <div className="sheet">
+          {/* 頁首 */}
+          <div className="dh">
+            {cfg.logo && <img className="dh-logo" src={cfg.logo} alt="" />}
+            <div className="dh-main">
+              <div className="dh-name">{cfg.companyName}</div>
+              {cfg.companyNameEn && <div className="dh-en">{cfg.companyNameEn}</div>}
+              {cfg.tagline && <div className="dh-tag">{cfg.tagline}</div>}
+            </div>
+            {(contact.length > 0 || legal.length > 0) && (
+              <div className="dh-meta">
+                {contact.map((l, i) => <div key={i}>{l}</div>)}
+                {legal.map((l, i) => <div key={`l${i}`}>{l}</div>)}
+              </div>
+            )}
+          </div>
+          <div className="rule" />
+
+          {/* 標題 */}
+          <div className="dt">
+            <div>
+              <div className="dt-title">{title}</div>
+              <div className="dt-sub">{titleEn}</div>
+            </div>
+            <div className="dt-date">
+              <div>製表日期　{printDate}</div>
+              {cfg.deadlineLabel && <div style={{ color: DOC.brand, fontWeight: 700 }}>{cfg.deadlineLabel}</div>}
+            </div>
+          </div>
+
+          {/* 團資訊 */}
+          <div className="info">
+            <div className="info-name">{tour.name}</div>
+            <div className="info-row">
+              <span>出發<b>{fmtDate(tour.start_date)}</b></span>
+              <span>回程<b>{fmtDate(tour.end_date)}</b></span>
+              <span>人數<b>{rows.length} 人</b></span>
+              {tour.destination && <span>目的地<b>{tour.destination}</b></span>}
+            </div>
+          </div>
+
+          {/* 金額 */}
+          {isSummary ? (
+            <>
+              <table className="amt">
+                <thead>
+                  <tr><th style={{ width: "42%" }}>項目</th><th className="num" style={{ width: "26%" }}>金額</th><th>說明</th></tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>{isDeposit ? "應收訂金總額" : "團費總額"}</td>
+                    <td className="num">{nt(isDeposit ? sum.due : sum.total)}</td>
+                    <td className="muted">
+                      {isDeposit
+                        ? `每人 ${nt(depositPerPerson)} × ${items.filter(x => x.due > 0).length} 人`
+                        : `全團 ${items.length} 人合計`}
+                    </td>
+                  </tr>
+                  {!isDeposit && (
+                    <tr>
+                      <td>減：已收訂金</td>
+                      <td className="num neg">− {sum.depositPaid.toLocaleString()}</td>
+                      <td className="muted">已入帳之訂金</td>
+                    </tr>
+                  )}
+                  <tr>
+                    <td>減：{isDeposit ? "已收訂金" : "已收尾款"}</td>
+                    <td className="num neg">− {sum.paid.toLocaleString()}</td>
+                    <td className="muted">已繳清 {paidCount} 人／未繳清 {openCount} 人</td>
+                  </tr>
+                </tbody>
+              </table>
+              <div className="total">
+                <div className="total-l">本次應收金額</div>
+                <div>
+                  <div className="total-n">{nt(sum.owed)}</div>
+                  <div className="total-s">{sum.owed > 0 ? "請於期限前完成匯款" : "已全數收訖，感謝您的配合"}</div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <table className="det">
+                <thead>
+                  <tr>
+                    <th style={{ width: "6%" }}>#</th>
+                    <th style={{ width: "20%", textAlign: "left" }}>旅客姓名</th>
+                    <th style={{ width: "10%" }}>身份</th>
+                    <th style={{ width: "8%" }}>房號</th>
+                    {!isDeposit && <th className="num" style={{ width: "13%" }}>團費總額</th>}
+                    {!isDeposit && <th className="num" style={{ width: "13%" }}>已繳訂金</th>}
+                    <th className="num" style={{ width: "13%" }}>{isDeposit ? "應繳訂金" : "應繳尾款"}</th>
+                    <th className="num" style={{ width: "13%" }}>已繳金額</th>
+                    <th className="num" style={{ width: "13%" }}>尚欠金額</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items.map(x => (
+                    <tr key={x.seq}>
+                      <td style={{ textAlign: "center", color: DOC.muted }}>{x.seq}</td>
+                      <td style={{ fontWeight: 600 }}>{x.name}</td>
+                      <td style={{ textAlign: "center" }} className="muted">{x.type}</td>
+                      <td style={{ textAlign: "center" }} className="muted">{x.room || "—"}</td>
+                      {!isDeposit && <td className="num">{cell(x.total)}</td>}
+                      {!isDeposit && <td className="num muted">{cell(x.depositPaid)}</td>}
+                      <td className="num" style={{ fontWeight: 600 }}>{cell(x.due)}</td>
+                      <td className="num">{cell(x.paid)}</td>
+                      <td className={`num ${x.owed > 0 ? "owed" : "paid-ok"}`}>
+                        {x.owed > 0 ? x.owed.toLocaleString() : "已繳清"}
+                      </td>
+                    </tr>
+                  ))}
+                  {items.length === 0 && (
+                    <tr><td colSpan={isDeposit ? 7 : 9} style={{ textAlign: "center", padding: "26px", color: DOC.muted }}>
+                      本團尚未加入旅客
+                    </td></tr>
+                  )}
+                </tbody>
+              </table>
+              <div className="total">
+                <div className="total-l">合計應收（{items.length} 人）</div>
+                <div>
+                  <div className="total-n">{nt(sum.owed)}</div>
+                  <div className="total-s">已繳清 {paidCount} 人／未繳清 {openCount} 人</div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {isDeposit && depositPerPerson === 0 && (
+            <p style={{ marginTop: 10, fontSize: "8.3pt", color: DOC.brand }}>
+              ※ 尚未於「基本資料」設定每人訂金金額，應繳訂金欄為 0。
+            </p>
+          )}
+
+          {/* 匯款資訊 */}
+          <div className="pay">
+            <div className="pay-h">匯款資訊　REMITTANCE</div>
+            <div className="pay-b">
+              <div><span className="k">銀行／分行</span><span className="v">{cfg.bankName}</span></div>
+              <div><span className="k">戶名</span><span className="v">{cfg.bankAccountName}</span></div>
+              <div><span className="k">帳號</span><span className="v">{cfg.bankAccountNo}</span></div>
+              <div><span className="k">繳款期限</span><span className="v">{cfg.deadlineLabel}</span></div>
+            </div>
+          </div>
+
+          {/* 注意事項 */}
+          {noteLines.length > 0 && (
+            <div className="note">
+              <div className="note-h">注意事項</div>
+              <ol>{noteLines.map((l, i) => <li key={i}>{l}</li>)}</ol>
+            </div>
+          )}
+
+          {/* 頁尾 */}
+          <div className="foot">
+            {cfg.footerNote && <div className="foot-msg">{cfg.footerNote}</div>}
+            <div className="sign">
+              <div><div className="sign-l">{cfg.signLeft}</div><div className="sign-u" /></div>
+              <div><div className="sign-l">{cfg.signRight}</div><div className="sign-u" /></div>
+            </div>
+            <div className="foot-co">
+              {cfg.companyName}
+              {contact.length > 0 && <>　·　{contact.join("　·　")}</>}
+              {legal.length > 0 && <div>{legal.join("　·　")}</div>}
+            </div>
+          </div>
         </div>
       </div>
     </>
