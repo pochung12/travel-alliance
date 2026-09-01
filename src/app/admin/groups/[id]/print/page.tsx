@@ -895,6 +895,31 @@ function FeeNotice({
     owed: a.owed + x.owed, depositPaid: a.depositPaid + x.depositPaid,
   }), { total: 0, due: 0, paid: 0, owed: 0, depositPaid: 0 });
 
+  // ── 總應收：依「基本資料」分頁的人數 × 售價計算（不看實際報名人數）──
+  // 單房差／房差／加價這類自訂類別＝費用加項，金額計入總額但人數不計入總人數
+  const isSurcharge = (label: string) => /房差|單房|加價|補差|差額|升等/.test(label || "");
+  const priceLines = [
+    { label: "成人團費",   pax: tour.pax_adult     || 0, price: tour.selling_price   || 0, head: true },
+    { label: "只參團",     pax: tour.pax_tour_only || 0, price: tour.price_tour_only || 0, head: true },
+    { label: "兒童",       pax: tour.pax_child     || 0, price: tour.price_child     || 0, head: true },
+    { label: "嬰兒",       pax: tour.pax_infant    || 0, price: tour.price_infant    || 0, head: true },
+    ...(tour.custom_price_tiers || []).map(ct => ({
+      label: ct.label || "自訂類別", pax: ct.pax || 0, price: ct.price || 0,
+      head: !isSurcharge(ct.label || ""),
+    })),
+  ].filter(l => l.pax > 0 && l.price > 0);
+
+  const grandTotal = priceLines.reduce((a, l) => a + l.pax * l.price, 0);
+  const headCount  = priceLines.filter(l => l.head).reduce((a, l) => a + l.pax, 0);
+  const depositTotalDue = (tour.deposit_per_person || 0) * headCount;
+  const sumBy = (cat: (c: string) => boolean) =>
+    payments.filter(p2 => p2.type === "income" && cat(p2.category)).reduce((a, p2) => a + (p2.amount || 0), 0);
+  const depositReceived = sumBy(c => c === "deposit");
+  const balanceReceived = sumBy(c => c !== "deposit");   // 尾款＋其他收入
+  const summaryOwed = Math.max(0, isDeposit
+    ? depositTotalDue - depositReceived
+    : grandTotal - depositReceived - balanceReceived);
+
   // 已收款項：收付款分頁的「收入」紀錄，訂金單只列訂金、尾款單列全部收入
   const incomeRows = payments
     .filter(p => p.type === "income")
@@ -1042,37 +1067,53 @@ function FeeNotice({
             <>
               <table className="amt">
                 <thead>
-                  <tr><th style={{ width: "42%" }}>項目</th><th className="num" style={{ width: "26%" }}>金額</th><th>說明</th></tr>
+                  <tr><th style={{ width: "40%" }}>項目</th><th className="num" style={{ width: "24%" }}>金額</th><th>說明</th></tr>
                 </thead>
                 <tbody>
-                  <tr>
-                    <td>{isDeposit ? "應收訂金總額" : "團費總額"}</td>
-                    <td className="num">{nt(isDeposit ? sum.due : sum.total)}</td>
-                    <td className="muted">
-                      {isDeposit
-                        ? `每人 ${nt(depositPerPerson)} × ${items.filter(x => x.due > 0).length} 人`
-                        : `全團 ${items.length} 人合計`}
-                    </td>
-                  </tr>
-                  {!isDeposit && (
+                  {isDeposit ? (
                     <tr>
-                      <td>減：已收訂金</td>
-                      <td className="num neg">− {sum.depositPaid.toLocaleString()}</td>
-                      <td className="muted">已入帳之訂金</td>
+                      <td>應收訂金總額</td>
+                      <td className="num">{nt(depositTotalDue)}</td>
+                      <td className="muted">每人 {nt(tour.deposit_per_person || 0)} × {headCount} 人</td>
                     </tr>
+                  ) : (
+                    <>
+                      {priceLines.map((l, i) => (
+                        <tr key={i}>
+                          <td>{l.label}</td>
+                          <td className="num">{nt(l.pax * l.price)}</td>
+                          <td className="muted">
+                            {l.pax} {l.head ? "人" : "筆"} × {nt(l.price)}
+                            {!l.head && "（不計入總人數）"}
+                          </td>
+                        </tr>
+                      ))}
+                      <tr>
+                        <td style={{ fontWeight: 700 }}>應收總額</td>
+                        <td className="num" style={{ fontWeight: 700 }}>{nt(grandTotal)}</td>
+                        <td className="muted">全團 {headCount} 人</td>
+                      </tr>
+                      <tr>
+                        <td>減：已收訂金</td>
+                        <td className="num neg">− {depositReceived.toLocaleString()}</td>
+                        <td className="muted">已入帳之訂金</td>
+                      </tr>
+                    </>
                   )}
                   <tr>
                     <td>減：{isDeposit ? "已收訂金" : "已收尾款"}</td>
-                    <td className="num neg">− {sum.paid.toLocaleString()}</td>
-                    <td className="muted">已繳清 {paidCount} 人／未繳清 {openCount} 人</td>
+                    <td className="num neg">− {(isDeposit ? depositReceived : balanceReceived).toLocaleString()}</td>
+                    <td className="muted">
+                      {incomeRows.length > 0 ? `共 ${incomeRows.filter(p2 => isDeposit ? p2.category === "deposit" : p2.category !== "deposit").length} 筆收款紀錄` : "尚無收款紀錄"}
+                    </td>
                   </tr>
                 </tbody>
               </table>
               <div className="total">
                 <div className="total-l">本次應收金額</div>
                 <div>
-                  <div className="total-n">{nt(sum.owed)}</div>
-                  <div className="total-s">{sum.owed > 0 ? "請於期限前完成匯款" : "已全數收訖，感謝您的配合"}</div>
+                  <div className="total-n">{nt(summaryOwed)}</div>
+                  <div className="total-s">{summaryOwed > 0 ? "請於期限前完成匯款" : "已全數收訖，感謝您的配合"}</div>
                 </div>
               </div>
             </>

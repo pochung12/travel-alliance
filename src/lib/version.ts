@@ -1,2 +1,2 @@
 // 系統版本號 — 每次修改程式碼時請更新此版本
-export const APP_VERSION = "V2.33.0";
+export const APP_VERSION = "V2.34.0";
