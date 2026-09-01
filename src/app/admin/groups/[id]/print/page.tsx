@@ -159,7 +159,10 @@ function PrintStyles({ landscape }: { landscape?: boolean }) {
         table { page-break-inside: auto; }
         tr    { page-break-inside: avoid; }
         thead { display: table-header-group; }
+        nav, header, aside { display: none !important; }
+        main { padding: 0 !important; overflow: visible !important; }
       }
+      nav.fixed { display: none; }
       .page { padding: 0; }
       .header { margin-bottom: 8px; }
       .title  { font-size: 15pt; font-weight: bold; margin-bottom: 3px; }
@@ -737,7 +740,7 @@ function PassportConsent({ tour, rows, printDate }: { tour: Tour; rows: Row[]; p
 const DOC = {
   ink:   "#2b2b2b",
   brand: "#a8453a",
-  muted: "#5f594c",
+  muted: "#3d3a34",
   line:  "#e3dbc9",
   soft:  "#faf7f0",
   head:  "#f3ecda",
@@ -752,9 +755,16 @@ function FeeDocStyles() {
       @media print {
         .no-print { display: none !important; }
         .doc-body { padding-top: 0 !important; }
-        .muted, .neg, .dh-en, .dh-tag, .dh-meta, .dt-sub, .dt-date,
-        .info-row, .pay-b span.k, .sign-l, .foot-co { color: #4f4a40 !important; }
+        /* 後台外框（側邊欄／手機頁首／底部導覽）不印出來 */
+        nav, header, aside { display: none !important; }
+        main { padding: 0 !important; overflow: visible !important; }
+        /* 內文一律實黑，避免印出來太淡 */
+        .muted, .neg, .info-row, .pay-b span.k,
+        table.amt td, table.det td { color: #000 !important; }
+        .dh-en, .dh-tag, .dh-meta, .dt-sub, .dt-date, .sign-l, .foot-co { color: #333 !important; }
       }
+      /* 螢幕上也不顯示後台底部導覽，避免擋住單據 */
+      nav.fixed { display: none; }
 
       .doc-body { padding-top: 54px; }
       .sheet { max-width: 182mm; margin: 0 auto; }
@@ -788,8 +798,8 @@ function FeeDocStyles() {
                      padding: 8px 12px; text-align: left; border-bottom: 1px solid ${DOC.line}; letter-spacing: .05em; }
       table.amt td { padding: 9px 12px; border-bottom: 1px solid ${DOC.line}; font-size: 9.5pt; vertical-align: middle; }
       .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-      .muted { color: ${DOC.muted}; font-size: 8.5pt; }
-      .neg { color: ${DOC.muted}; }
+      .muted { color: ${DOC.ink}; font-size: 8.5pt; }
+      .neg { color: ${DOC.ink}; }
 
       /* 應收總額 */
       .total { display: flex; align-items: center; justify-content: space-between;
@@ -802,7 +812,7 @@ function FeeDocStyles() {
       table.det { width: 100%; border-collapse: collapse; margin-top: 2px; }
       table.det th { background: ${DOC.head}; font-size: 8pt; font-weight: 700; padding: 7px 8px;
                      border-bottom: 1px solid ${DOC.line}; letter-spacing: .04em; }
-      table.det td { padding: 6px 8px; border-bottom: 1px solid #f0ebdd; font-size: 8.8pt; }
+      table.det td { padding: 6px 8px; border-bottom: 1px solid #f0ebdd; font-size: 8.8pt; color: ${DOC.ink}; }
       table.det tr:nth-child(even) td { background: #fcfaf5; }
       .owed { color: ${DOC.brand}; font-weight: 700; }
       .paid-ok { color: #6b8f5e; }
