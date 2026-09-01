@@ -130,8 +130,9 @@ export default function PrintPage() {
     );
   }
 
-  if (layout === "deposit")  return <FeeNotice tour={tour} rows={rows} payments={payments} printDate={printDate} kind="deposit" />;
-  if (layout === "balance")  return <FeeNotice tour={tour} rows={rows} payments={payments} printDate={printDate} kind="balance" />;
+  const feeMode = (searchParams.get("mode") === "summary" ? "summary" : "detail") as "summary" | "detail";
+  if (layout === "deposit")  return <FeeNotice tour={tour} rows={rows} payments={payments} printDate={printDate} kind="deposit" mode={feeMode} />;
+  if (layout === "balance")  return <FeeNotice tour={tour} rows={rows} payments={payments} printDate={printDate} kind="balance" mode={feeMode} />;
   if (layout === "passport-consent") return <PassportConsent tour={tour} rows={rows} printDate={printDate} />;
   if (layout === "full")    return <FullList    tour={tour} rows={rows} printDate={printDate} />;
   if (layout === "payment") return <PaymentList tour={tour} rows={rows} printDate={printDate} />;
@@ -649,12 +650,16 @@ function HotelList({ tour, rows, printDate }: { tour: Tour; rows: Row[]; printDa
 
 // ─── Layout 5/6: 訂金單 ／ 尾款單（應收費用明細）───────────────────────────────
 function FeeNotice({
-  tour, rows, payments, printDate, kind,
+  tour, rows, payments, printDate, kind, mode,
 }: {
-  tour: Tour; rows: Row[]; payments: PayLite[]; printDate: string; kind: "deposit" | "balance";
+  tour: Tour; rows: Row[]; payments: PayLite[]; printDate: string;
+  kind: "deposit" | "balance"; mode: "summary" | "detail";
 }) {
   const isDeposit = kind === "deposit";
-  const title = isDeposit ? "訂金繳納明細表" : "尾款繳納明細表";
+  const isSummary = mode === "summary";
+  const title = isSummary
+    ? (isDeposit ? "訂金請款單" : "尾款請款單")
+    : (isDeposit ? "訂金繳納明細表" : "尾款繳納明細表");
   const depositPerPerson = tour.deposit_per_person || 0;
 
   const items = rows.map((r, i) => {
@@ -703,6 +708,59 @@ function FeeNotice({
           </div>
         </div>
 
+        {isSummary ? (
+          <>
+            <table style={{ marginTop: 10 }}>
+              <tbody>
+                <tr>
+                  <td style={{ width: "38%", background: "#f1f5f9", fontWeight: "bold", padding: "9px 10px" }}>項目</td>
+                  <td style={{ width: "24%", background: "#f1f5f9", fontWeight: "bold", textAlign: "right", padding: "9px 10px" }}>金額</td>
+                  <td style={{ background: "#f1f5f9", fontWeight: "bold", padding: "9px 10px" }}>說明</td>
+                </tr>
+                <tr>
+                  <td style={{ padding: "9px 10px" }}>{isDeposit ? "應收訂金總額" : "團費總額"}</td>
+                  <td style={{ textAlign: "right", padding: "9px 10px", fontWeight: "bold", fontSize: "10.5pt" }}>
+                    NT$ {(isDeposit ? sum.due : sum.total).toLocaleString()}
+                  </td>
+                  <td style={{ padding: "9px 10px", color: "#555" }}>
+                    {isDeposit
+                      ? `每人 NT$${depositPerPerson.toLocaleString()} × ${items.filter(x => x.due > 0).length} 人`
+                      : `全團 ${items.length} 人合計`}
+                  </td>
+                </tr>
+                {!isDeposit && (
+                  <tr>
+                    <td style={{ padding: "9px 10px" }}>減：已收訂金</td>
+                    <td style={{ textAlign: "right", padding: "9px 10px" }}>− NT$ {sum.depositPaid.toLocaleString()}</td>
+                    <td style={{ padding: "9px 10px", color: "#555" }}>已入帳之訂金</td>
+                  </tr>
+                )}
+                <tr>
+                  <td style={{ padding: "9px 10px" }}>減：{isDeposit ? "已收訂金" : "已收尾款"}</td>
+                  <td style={{ textAlign: "right", padding: "9px 10px" }}>− NT$ {sum.paid.toLocaleString()}</td>
+                  <td style={{ padding: "9px 10px", color: "#555" }}>
+                    已繳清 {items.filter(x => x.due > 0 && x.owed === 0).length} 人／未繳清 {items.filter(x => x.owed > 0).length} 人
+                  </td>
+                </tr>
+                <tr>
+                  <td style={{ padding: "11px 10px", fontWeight: "bold", background: "#1e3a5f", color: "#fff", fontSize: "10pt" }}>
+                    本次應收金額
+                  </td>
+                  <td style={{ textAlign: "right", padding: "11px 10px", fontWeight: "bold", background: "#1e3a5f",
+                               color: sum.owed > 0 ? "#fde047" : "#86efac", fontSize: "13pt" }}>
+                    NT$ {sum.owed.toLocaleString()}
+                  </td>
+                  <td style={{ padding: "11px 10px", background: "#1e3a5f", color: "#cbd5e1" }}>
+                    {sum.owed > 0 ? "請於期限前完成匯款" : "已全數收訖，感謝配合"}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <p style={{ marginTop: 8, fontSize: "8pt", color: "#666" }}>
+              ※ 本單為全團彙總金額，如需個別旅客明細請另索取「{isDeposit ? "訂金繳納明細表" : "尾款繳納明細表"}」。
+            </p>
+          </>
+        ) : (
         <table>
           <thead>
             <tr>
@@ -743,6 +801,7 @@ function FeeNotice({
             </tr>
           </tbody>
         </table>
+        )}
 
         {isDeposit && depositPerPerson === 0 && (
           <p style={{ marginTop: 10, fontSize: "8.5pt", color: "#b45309" }}>
