@@ -19,6 +19,11 @@ function LoginForm() {
 
   const noAccess = params.get("msg") === "no_access";
   const sessionExpired = params.get("msg") === "session_expired";
+  // 被踢回登入前的目的地（只接受本站相對路徑，避免開放轉址）
+  const nextPath = (() => {
+    const n = params.get("next") || "";
+    return n.startsWith("/") && !n.startsWith("//") ? n : "";
+  })();
 
   // If already logged in, redirect
   useEffect(() => {
@@ -27,9 +32,9 @@ function LoginForm() {
       const { data: prof } = await supabase
         .from("profiles").select("role").eq("id", session.user.id).maybeSingle();
       if (prof?.role === "customer") router.replace("/customer");
-      else if (prof) router.replace("/admin");
+      else if (prof) router.replace(nextPath || "/admin");
     });
-  }, [router]);
+  }, [router, nextPath]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -85,7 +90,7 @@ function LoginForm() {
     if (prof?.role === "customer") {
       router.replace("/customer");
     } else {
-      router.replace("/admin");
+      router.replace(nextPath || "/admin");
     }
   };
 

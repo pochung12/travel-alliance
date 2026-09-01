@@ -28,7 +28,12 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
       return;
     }
     if (!session) {
-      router.replace("/login?msg=session_expired");
+      // 帶上原本要去的網址，登入後直接回到這一頁（例如新分頁開的請款單）
+      const back = typeof window !== "undefined"
+        ? window.location.pathname + window.location.search
+        : "";
+      const q = back && back !== "/admin" ? `&next=${encodeURIComponent(back)}` : "";
+      router.replace(`/login?msg=session_expired${q}`);
       return;
     }
 
