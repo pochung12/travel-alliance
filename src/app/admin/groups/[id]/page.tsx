@@ -14,7 +14,7 @@ import ScanEnrollTools from "@/components/ScanEnrollTools";
 import MergeParticipants from "@/components/MergeParticipants";
 import ParticipantDetailModal from "@/components/ParticipantDetailModal";
 import { useSidebarCollapsed } from "@/components/AdminShell";
-import { ArrowLeft, Save, Trash2, UserPlus, X, Search, BedDouble, Pencil, UtensilsCrossed, SlidersHorizontal, GripVertical, Users, Printer, Plus, Link2, Copy, ExternalLink, CheckCheck, Loader2, ChevronDown, Eye, EyeOff, Plane } from "lucide-react";
+import { ArrowLeft, Save, Trash2, UserPlus, X, Search, BedDouble, Pencil, UtensilsCrossed, SlidersHorizontal, GripVertical, Users, Printer, Plus, Link2, Copy, ExternalLink, CheckCheck, Loader2, ChevronDown, Eye, EyeOff, Plane, FileSignature } from "lucide-react";
 
 // ─── Meal options ──────────────────────────────────────────────────────────────
 const MEAL_OPTIONS = [
@@ -174,6 +174,7 @@ export default function GroupDetailPage() {
   const [dragPartIdx,   setDragPartIdx]   = useState<number | null>(null);
   // 列印名單
   const [showPrintMenu,   setShowPrintMenu]   = useState(false);
+  const [showConsentMenu, setShowConsentMenu] = useState(false);
   // 欄位寬度（可拖曳調整，自動存 localStorage，重整不跳回）
   const [colWidths, setColWidths] = useState<Record<string, number>>(COL_WIDTHS_DEFAULT);
   const widthsLoaded = useRef(false);
@@ -1330,7 +1331,6 @@ export default function GroupDetailPage() {
                           { layout: "payment",  label: "收付款狀態", desc: "A4 直式，金額" },
                           { layout: "boarding", label: "登機名單",   desc: "A4 橫式，精簡" },
                           { layout: "hotel",    label: "飯店名單",   desc: "A4 橫式，欄位可選" },
-                          { layout: "passport-consent", label: "護照自帶同意書", desc: "A4 直式，含簽名欄" },
                         ].map(({ layout, label, desc }) => (
                           <button
                             key={layout}
@@ -1346,6 +1346,48 @@ export default function GroupDetailPage() {
                             <span className="text-[10px] text-slate-400 dark:text-slate-500">{desc}</span>
                           </button>
                         ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+                {/* 護照自帶同意書 */}
+                <div className="relative">
+                  <button
+                    onClick={() => setShowConsentMenu(s => !s)}
+                    title="生成護照自行攜帶同意書（可選全團一張或每人一份）"
+                    className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg transition-colors ${
+                      showConsentMenu
+                        ? "bg-amber-700 text-white"
+                        : "bg-amber-600 text-white hover:bg-amber-700"
+                    }`}>
+                    <FileSignature className="w-3.5 h-3.5" />
+                    <span>護照同意書</span>
+                  </button>
+                  {showConsentMenu && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setShowConsentMenu(false)} />
+                      <div className="absolute right-0 top-full mt-2 z-20 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-100 dark:border-slate-700 p-1.5 min-w-[200px]">
+                        {[
+                          { mode: "individual", label: "逐人一頁（給客人簽）", desc: `每位旅客一份，共 ${orderedParts.length} 頁` },
+                          { mode: "roster",     label: "全團名冊（一張紙）",   desc: "一頁列出全團，逐列簽名" },
+                        ].map(({ mode, label, desc }) => (
+                          <button
+                            key={mode}
+                            onClick={() => {
+                              const orderParam = rowOrder.length > 0
+                                ? encodeURIComponent(JSON.stringify(rowOrder))
+                                : encodeURIComponent(JSON.stringify(orderedParts.map(p => p.id)));
+                              window.open(`/admin/groups/${id}/print?layout=passport-consent&mode=${mode}&order=${orderParam}`, "_blank");
+                              setShowConsentMenu(false);
+                            }}
+                            className="flex flex-col w-full text-left px-3 py-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors">
+                            <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">{label}</span>
+                            <span className="text-[10px] text-slate-400 dark:text-slate-500">{desc}</span>
+                          </button>
+                        ))}
+                        <div className="px-3 pt-1.5 pb-1 text-[10px] text-slate-400 dark:text-slate-500 leading-relaxed border-t border-slate-100 dark:border-slate-700 mt-1">
+                          條款文字可在單據頁的「✎ 編輯抬頭 / 條款」修改
+                        </div>
                       </div>
                     </>
                   )}

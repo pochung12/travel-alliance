@@ -24,6 +24,12 @@ export interface DocSettings {
   depositNote: string;  // 訂金單注意事項（每行一條）
   balanceNote: string;  // 尾款單注意事項
 
+  // 護照自帶同意書
+  consentTitle: string;    // 文件標題
+  consentIntro: string;    // 開頭聲明段
+  consentTerms: string;    // 條款（每行一條，自動編號）
+  consentTail: string;     // 表格下方的補充說明（每行一條）
+
   // 頁尾
   footerNote: string;
   signLeft: string;
@@ -55,6 +61,18 @@ export const DOC_DEFAULTS: DocSettings = {
     "本單金額以實際入帳為準，匯款後請保留收據並告知帳號末五碼，以利核帳。\n" +
     "尾款請於出發前完成繳納，以確保各項預訂順利進行。\n" +
     "行前說明會資料與電子機票將於尾款收訖後寄送。",
+
+  consentTitle: "護照自行攜帶同意書",
+  consentIntro:
+    "本人參加貴公司承辦之上列旅遊行程，茲同意自行保管並攜帶本人之護照（及台胞證等相關旅行證件）前往機場集合，不交由旅行社代為保管。本人已充分了解並承諾下列事項：",
+  consentTerms:
+    "於集合前自行確認護照效期距回程日仍有六個月以上，且證件完整未破損。\n" +
+    "於出發當日務必攜帶護照及所需簽證／台胞證正本至機場集合。\n" +
+    "如因本人未攜帶、遺失、效期不足或證件不符致無法出境、無法登機或行程受阻，所生之一切損失（含機票、住宿、地接等已產生且不可退還之費用）由本人自行負擔，與旅行社及其人員無涉，本人不得要求退費或請求賠償。\n" +
+    "如需旅行社協助辦理補件或改期，相關規費與手續費由本人負擔。",
+  consentTail:
+    "護照效期以紅字標示者，表示效期距回程日不足六個月，請務必於出發前完成換發。\n" +
+    "本同意書一式一份，由旅行社留存備查。",
 
   footerNote: "感謝您的支持與信任，期待與您一同啟程。",
   signLeft: "承辦人員",
@@ -115,6 +133,15 @@ export const DOC_FIELDS: {
     items: [
       { key: "depositNote", label: "訂金單條文", multiline: true },
       { key: "balanceNote", label: "尾款單條文", multiline: true },
+    ],
+  },
+  {
+    group: "護照自帶同意書",
+    items: [
+      { key: "consentTitle", label: "文件標題", ph: "護照自行攜帶同意書" },
+      { key: "consentIntro", label: "開頭聲明", multiline: true },
+      { key: "consentTerms", label: "承諾條款（一行一條，自動編號）", multiline: true },
+      { key: "consentTail",  label: "表格下方補充說明（一行一條）", multiline: true },
     ],
   },
   {

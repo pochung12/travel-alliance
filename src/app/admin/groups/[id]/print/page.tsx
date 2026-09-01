@@ -140,7 +140,10 @@ export default function PrintPage() {
   const feeMode = (searchParams.get("mode") === "summary" ? "summary" : "detail") as "summary" | "detail";
   if (layout === "deposit")  return <FeeNotice tour={tour} rows={rows} payments={payments} printDate={printDate} kind="deposit" mode={feeMode} />;
   if (layout === "balance")  return <FeeNotice tour={tour} rows={rows} payments={payments} printDate={printDate} kind="balance" mode={feeMode} />;
-  if (layout === "passport-consent") return <PassportConsent tour={tour} rows={rows} printDate={printDate} />;
+  if (layout === "passport-consent") {
+    const cMode = searchParams.get("mode") === "individual" ? "individual" : "roster";
+    return <PassportConsent tour={tour} rows={rows} printDate={printDate} mode={cMode} />;
+  }
   if (layout === "full")    return <FullList    tour={tour} rows={rows} printDate={printDate} />;
   if (layout === "payment") return <PaymentList tour={tour} rows={rows} printDate={printDate} />;
   if (layout === "hotel")   return <HotelList   tour={tour} rows={rows} printDate={printDate} />;
@@ -660,77 +663,190 @@ function HotelList({ tour, rows, printDate }: { tour: Tour; rows: Row[]; printDa
 
 // ─── Layout 5/6: 訂金單 ／ 尾款單（應收費用明細）───────────────────────────────
 // ─── Layout 7: 護照自帶同意書 ─────────────────────────────────────────────────
-function PassportConsent({ tour, rows, printDate }: { tour: Tour; rows: Row[]; printDate: string }) {
+// mode=roster     全團名冊式：一張紙，每人一列簽名（旅行社留存用）
+// mode=individual 逐人一頁：每位旅客一份完整同意書（給客人親簽，法律效力較完整）
+function PassportConsent({ tour, rows, printDate, mode }: {
+  tour: Tour; rows: Row[]; printDate: string; mode: "roster" | "individual";
+}) {
+  const { cfg, editing, setEditing, set, setDeadline, onSave, contact, legal } = useDocCfg();
+
+  const terms = (cfg.consentTerms || "").split("\n").map(l => l.trim()).filter(Boolean);
+  const tails = (cfg.consentTail  || "").split("\n").map(l => l.trim()).filter(Boolean);
+  const title = cfg.consentTitle || "護照自行攜帶同意書";
+
+  /** 護照效期距回程日不足 6 個月 */
+  const expSoon = (exp?: string | null) => {
+    if (!exp || !tour.end_date) return false;
+    return (new Date(exp).getTime() - new Date(tour.end_date).getTime()) / 86400000 < 180;
+  };
+
+  const tourInfo = (showPax: boolean) => (
+    <div className="info">
+      <div className="info-name">{tour.name}</div>
+      <div className="info-row">
+        <span>出發<b>{fmtDate(tour.start_date)}</b></span>
+        <span>回程<b>{fmtDate(tour.end_date)}</b></span>
+        {tour.destination && <span>目的地<b>{tour.destination}</b></span>}
+        {showPax && <span>人數<b>{rows.length} 人</b></span>}
+      </div>
+    </div>
+  );
+
+  const clauses = (
+    <div className="pc-box">
+      {cfg.consentIntro && <p className="pc-intro">{cfg.consentIntro}</p>}
+      {terms.length > 0 && (
+        <ol className="pc-terms">{terms.map((t, i) => <li key={i}>{t}</li>)}</ol>
+      )}
+    </div>
+  );
+
+  const docTitle = (extra?: React.ReactNode) => (
+    <div className="dt">
+      <div>
+        <div className="dt-title">{title}</div>
+        <div className="dt-sub">Passport Custody Consent</div>
+      </div>
+      <div className="dt-date">
+        <div>製表日期　{printDate}</div>
+        {extra}
+      </div>
+    </div>
+  );
+
   return (
     <>
-      <PrintStyles />
-      <div className="action-bar no-print">
-        <span style={{ fontWeight: "bold" }}>護照自帶同意書</span>
-        <button className="btn-print" onClick={() => window.print()}>🖨 列印 / 存成 PDF</button>
-        <button className="btn-close" onClick={() => window.close()}>關閉</button>
+      <FeeDocStyles />
+      <div className="bar no-print">
+        <strong style={{ fontSize: 14 }}>{title}</strong>
+        <span style={{ opacity: .6, fontSize: 12 }}>
+          {mode === "roster" ? "全團名冊式（1 頁）" : `逐人一頁（${rows.length} 頁）`}
+        </span>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button className="g" onClick={() => setEditing(e => !e)}>
+            {editing ? "← 回到預覽" : "✎ 編輯抬頭 / 條款"}
+          </button>
+          {!editing && <button className="p" onClick={() => window.print()}>🖨 列印 / 存成 PDF</button>}
+          {editing && <button className="p" onClick={onSave}>儲存設定</button>}
+          {editing && (
+            <button className="g" onClick={() => {
+              if (confirm("回復所有文案為預設值？")) { resetDocSettings(); window.location.reload(); }
+            }}>回復預設</button>
+          )}
+          <button className="g" onClick={() => window.close()}>關閉</button>
+        </div>
       </div>
-      <div className="print-body page">
-        <div className="header" style={{ textAlign: "center", marginBottom: 14 }}>
-          <div className="title" style={{ fontSize: "17pt" }}>護照自行攜帶同意書</div>
-          <div style={{ fontSize: "9pt", color: "#444", marginTop: 4 }}>
-            {tour.name}　｜　出發日 {fmtDate(tour.start_date)}
-          </div>
-        </div>
 
-        <div style={{ fontSize: "9.5pt", lineHeight: 2.0, border: "1px solid #999", padding: "12px 14px", marginBottom: 12 }}>
-          本人參加貴公司承辦之上列旅遊行程，茲同意<span style={{ fontWeight: "bold" }}>自行保管並攜帶本人之護照（及台胞證等相關旅行證件）</span>前往機場集合，不交由旅行社代為保管。
-          <br />
-          本人已充分了解並承諾下列事項：
-          <div style={{ paddingLeft: 16, marginTop: 6 }}>
-            一、於集合前自行確認護照效期距回程日仍有六個月以上，且證件完整未破損。<br />
-            二、於出發當日務必攜帶護照及所需簽證／台胞證正本至機場集合。<br />
-            三、如因本人<span style={{ fontWeight: "bold" }}>未攜帶、遺失、效期不足或證件不符</span>致無法出境、無法登機或行程受阻，
-            所生之一切損失（含機票、住宿、地接等已產生且不可退還之費用）由本人自行負擔，
-            與旅行社及其人員無涉，本人不得要求退費或請求賠償。<br />
-            四、如需旅行社協助辦理補件或改期，相關規費與手續費由本人負擔。
-          </div>
-        </div>
+      {editing && <DocConfigPanel cfg={cfg} set={set} setDeadline={setDeadline} tour={tour}
+                    lead="以下文案會套用到所有團的訂金單、尾款單與同意書，設定存在這台電腦的瀏覽器裡。" />}
 
-        <table>
-          <thead>
-            <tr>
-              <th style={{ width: "6%" }}>#</th>
-              <th style={{ width: "18%" }}>旅客姓名</th>
-              <th style={{ width: "17%" }}>護照號碼</th>
-              <th style={{ width: "14%" }}>護照效期</th>
-              <th style={{ width: "15%" }}>聯絡電話</th>
-              <th style={{ width: "18%" }}>親筆簽名</th>
-              <th style={{ width: "12%" }}>簽署日期</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r, i) => {
-              const exp = r.customer.passport_expiry;
-              const soon = exp ? (new Date(exp).getTime() - new Date(tour.end_date).getTime()) / 86400000 < 180 : false;
-              return (
-                <tr key={r.id} style={{ height: "34px" }}>
-                  <td className="num">{i + 1}</td>
-                  <td className="bold">{r.customer.name}</td>
-                  <td className="c">{r.customer.passport || "—"}</td>
-                  <td className={`c ${soon ? "expired" : ""}`}>{fmtDate(r.customer.passport_expiry) || "—"}</td>
-                  <td className="c dim">{r.customer.phone || ""}</td>
-                  <td />
-                  <td />
+      <div className="doc-body">
+        {mode === "roster" ? (
+          <div className="sheet">
+            <DocHeader cfg={cfg} contact={contact} legal={legal} />
+            {docTitle()}
+            {tourInfo(true)}
+            {clauses}
+            <table className="amt pc-tbl">
+              <thead>
+                <tr>
+                  <th style={{ width: "6%", textAlign: "center" }}>#</th>
+                  <th style={{ width: "17%" }}>旅客姓名</th>
+                  <th style={{ width: "17%", textAlign: "center" }}>護照號碼</th>
+                  <th style={{ width: "14%", textAlign: "center" }}>護照效期</th>
+                  <th style={{ width: "15%", textAlign: "center" }}>聯絡電話</th>
+                  <th style={{ width: "19%", textAlign: "center" }}>親筆簽名</th>
+                  <th style={{ width: "12%", textAlign: "center" }}>簽署日期</th>
                 </tr>
-              );
-            })}
-          </tbody>
-        </table>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => {
+                  const soon = expSoon(r.customer.passport_expiry);
+                  return (
+                    <tr key={r.id} className="pc-row">
+                      <td style={{ textAlign: "center" }}>{i + 1}</td>
+                      <td style={{ fontWeight: 600 }}>{r.customer.name}</td>
+                      <td style={{ textAlign: "center" }}>{r.customer.passport || "—"}</td>
+                      <td className={soon ? "pc-exp" : ""} style={{ textAlign: "center" }}>
+                        {fmtDate(r.customer.passport_expiry || "") || "—"}
+                      </td>
+                      <td style={{ textAlign: "center" }}>{r.customer.phone || ""}</td>
+                      <td />
+                      <td />
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {tails.length > 0 && (
+              <div className="note">
+                {tails.map((t, i) => <div key={i}>※ {t}</div>)}
+              </div>
+            )}
+            <DocFooter cfg={cfg} contact={contact} legal={legal} />
+          </div>
+        ) : (
+          rows.map((r, i) => {
+            const soon = expSoon(r.customer.passport_expiry);
+            return (
+              <div className="sheet pc-page" key={r.id}>
+                <DocHeader cfg={cfg} contact={contact} legal={legal} />
+                {docTitle(<div>第 {i + 1} / {rows.length} 份</div>)}
+                {tourInfo(false)}
 
-        <p style={{ marginTop: 10, fontSize: "8pt", color: "#555", lineHeight: 1.7 }}>
-          ※ 護照效期以紅字標示者，表示效期距回程日不足六個月，請務必於出發前完成換發。<br />
-          ※ 本同意書一式一份，由旅行社留存備查。
-        </p>
+                <table className="amt pc-me">
+                  <tbody>
+                    <tr>
+                      <th>旅客姓名</th><td style={{ fontWeight: 700 }}>{r.customer.name}</td>
+                      <th>英文姓名</th><td>{r.customer.name_en || "—"}</td>
+                    </tr>
+                    <tr>
+                      <th>護照號碼</th><td>{r.customer.passport || "—"}</td>
+                      <th>護照效期</th>
+                      <td className={soon ? "pc-exp" : ""}>
+                        {fmtDate(r.customer.passport_expiry || "") || "—"}
+                        {soon && "（不足 6 個月）"}
+                      </td>
+                    </tr>
+                    <tr>
+                      <th>台胞證號</th><td>{r.customer.taibao_number || "—"}</td>
+                      <th>台胞證效期</th><td>{fmtDate(r.customer.taibao_expiry || "") || "—"}</td>
+                    </tr>
+                    <tr>
+                      <th>聯絡電話</th><td>{r.customer.phone || "—"}</td>
+                      <th>房號</th><td>{r.room_number || "—"}</td>
+                    </tr>
+                  </tbody>
+                </table>
 
-        <div className="footer">
-          <span>旅行社：暖心旅行社</span>
-          <span>製表日期：{printDate}</span>
-        </div>
+                {clauses}
+
+                {tails.length > 0 && (
+                  <div className="note">
+                    {tails.map((t, k) => <div key={k}>※ {t}</div>)}
+                  </div>
+                )}
+
+                <div className="pc-sign">
+                  <div className="pc-sign-c">
+                    <div className="pc-sign-l">立同意書人（親筆簽名）</div>
+                    <div className="pc-sign-u" />
+                  </div>
+                  <div className="pc-sign-c">
+                    <div className="pc-sign-l">身分證字號</div>
+                    <div className="pc-sign-u" />
+                  </div>
+                  <div className="pc-sign-c">
+                    <div className="pc-sign-l">簽署日期</div>
+                    <div className="pc-sign-u pc-sign-d">　　年　　　月　　　日</div>
+                  </div>
+                </div>
+
+                <DocFooter cfg={cfg} contact={contact} legal={legal} />
+              </div>
+            );
+          })
+        )}
       </div>
     </>
   );
@@ -760,7 +876,9 @@ function FeeDocStyles() {
         main { padding: 0 !important; overflow: visible !important; }
         /* 內文一律實黑，避免印出來太淡 */
         .muted, .neg, .info-row, .pay-b span.k,
-        table.amt td, table.det td { color: #000 !important; }
+        table.amt td, table.det td,
+        .pc-intro, .pc-terms, .pc-terms li, table.pc-me th, table.pc-me td { color: #000 !important; }
+        .pc-exp { color: #c0392b !important; }
         .dh-en, .dh-tag, .dh-meta, .dt-sub, .dt-date, .sign-l, .foot-co { color: #333 !important; }
       }
       /* 螢幕上也不顯示後台底部導覽，避免擋住單據 */
@@ -848,6 +966,27 @@ function FeeDocStyles() {
       .bar .g { background: rgba(255,255,255,.16); color: #fff; }
       @media print { .bar { display: none; } }
 
+      /* 護照自帶同意書 */
+      .pc-page { page-break-after: always; }
+      .pc-page:last-child { page-break-after: auto; }
+      .pc-box { border: 1px solid ${DOC.line}; background: ${DOC.soft}; border-radius: 4px;
+                padding: 12px 15px; margin-bottom: 14px; }
+      .pc-intro { font-size: 9pt; line-height: 1.95; color: ${DOC.ink}; }
+      .pc-terms { margin: 8px 0 0 18px; font-size: 8.8pt; line-height: 1.9; color: ${DOC.ink}; }
+      .pc-terms li { margin-bottom: 4px; padding-left: 3px; }
+      table.pc-tbl td { font-size: 9pt; height: 30px; }
+      .pc-row td { border-bottom: 1px solid ${DOC.line}; }
+      .pc-exp { color: #c0392b; font-weight: 700; }
+      table.pc-me { margin-bottom: 14px; }
+      table.pc-me th { background: ${DOC.head}; font-size: 8.5pt; font-weight: 700; padding: 8px 12px;
+                       text-align: left; white-space: nowrap; width: 15%; border-bottom: 1px solid ${DOC.line}; }
+      table.pc-me td { font-size: 9.5pt; padding: 8px 12px; border-bottom: 1px solid ${DOC.line}; width: 35%; }
+      .pc-sign { display: flex; gap: 26px; margin-top: 26px; }
+      .pc-sign-c { flex: 1; }
+      .pc-sign-l { font-size: 8.2pt; color: ${DOC.muted}; margin-bottom: 30px; font-weight: 600; }
+      .pc-sign-u { border-bottom: 1px solid ${DOC.ink}; min-height: 15px; }
+      .pc-sign-d { font-size: 8.5pt; color: ${DOC.muted}; text-align: right; padding-bottom: 2px; }
+
       /* 設定面板 */
       .cfg { position: fixed; top: 46px; left: 0; right: 0; bottom: 0; z-index: 99; overflow-y: auto;
              background: #f4f2ee; padding: 18px; font-family: system-ui, sans-serif; color: #111827; }
@@ -878,6 +1017,137 @@ function FeeDocStyles() {
     `}</style>
   );
 }
+
+// ── 對客單據共用：頁首／頁尾／設定面板 ──────────────────────────────────────
+function DocHeader({ cfg, contact, legal }: { cfg: DocSettings; contact: string[]; legal: string[] }) {
+  return (
+    <>
+      <div className="dh">
+        {cfg.logo && <img className="dh-logo" src={cfg.logo} alt="" />}
+        <div className="dh-main">
+          <div className="dh-name">{cfg.companyName}</div>
+          {cfg.companyNameEn && <div className="dh-en">{cfg.companyNameEn}</div>}
+          {cfg.tagline && <div className="dh-tag">{cfg.tagline}</div>}
+        </div>
+        {(contact.length > 0 || legal.length > 0) && (
+          <div className="dh-meta">
+            {contact.map((l, i) => <div key={i}>{l}</div>)}
+            {legal.map((l, i) => <div key={`l${i}`}>{l}</div>)}
+          </div>
+        )}
+      </div>
+      <div className="rule" />
+    </>
+  );
+}
+
+function DocFooter({ cfg, contact, legal }: { cfg: DocSettings; contact: string[]; legal: string[] }) {
+  return (
+    <div className="foot">
+      {cfg.footerNote && <div className="foot-msg">{cfg.footerNote}</div>}
+      <div className="sign">
+        <div><div className="sign-l">{cfg.signLeft}</div><div className="sign-u" /></div>
+        <div><div className="sign-l">{cfg.signRight}</div><div className="sign-u" /></div>
+      </div>
+      <div className="foot-co">
+        {cfg.companyName}
+        {contact.length > 0 && <>　·　{contact.join("　·　")}</>}
+        {legal.length > 0 && <div>{legal.join("　·　")}</div>}
+      </div>
+    </div>
+  );
+}
+
+function DocConfigPanel({ cfg, set, setDeadline, tour, lead }: {
+  cfg: DocSettings;
+  set: (k: keyof DocSettings, v: string) => void;
+  setDeadline: (iso: string) => void;
+  tour: Tour;
+  lead: string;
+}) {
+  return (
+    <div className="cfg no-print">
+      <div className="cfg-in">
+        <p className="cfg-lead">{lead}</p>
+        {DOC_FIELDS.map(g => (
+          <div className="cfg-g" key={g.group}>
+            <div className="cfg-gt">{g.group}</div>
+            {g.items.map(f => (
+              <div className="cfg-f" key={f.key}>
+                <label>{f.label}</label>
+                {f.image ? (
+                  <>
+                    <input type="file" accept="image/*" onChange={e => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const rd = new FileReader();
+                      rd.onload = () => set(f.key, String(rd.result));
+                      rd.readAsDataURL(file);
+                    }} />
+                    {cfg.logo && (
+                      <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 10 }}>
+                        <img src={cfg.logo} alt="" style={{ height: 40 }} />
+                        <button onClick={() => set("logo", "")}
+                          style={{ fontSize: 11, padding: "3px 9px", borderRadius: 5, border: "1px solid #ddd", cursor: "pointer", background: "#fff" }}>
+                          移除
+                        </button>
+                      </div>
+                    )}
+                  </>
+                ) : f.date ? (
+                  <>
+                    <input type="date" value={String(cfg[f.key] ?? "")}
+                      onChange={e => setDeadline(e.target.value)} />
+                    <div className="cfg-quick">
+                      {[45, 30, 21, 14, 7].map(n => {
+                        const d = daysBefore(tour.start_date, n);
+                        return d ? (
+                          <button key={n} type="button" onClick={() => setDeadline(d)}>
+                            出發前 {n} 天
+                          </button>
+                        ) : null;
+                      })}
+                      <button type="button" className="clr" onClick={() => setDeadline("")}>清除</button>
+                    </div>
+                    <div className="cfg-hint">
+                      選好日期後，下面的「繳款期限文字」會自動帶入（含星期），仍可自行改寫。
+                      {tour.start_date ? `　本團出發日 ${fmtDate(tour.start_date)}。` : ""}
+                    </div>
+                  </>
+                ) : f.multiline ? (
+                  <>
+                    <textarea value={String(cfg[f.key] ?? "")} placeholder={f.ph}
+                      onChange={e => set(f.key, e.target.value)} />
+                    <div className="cfg-hint">一行一條，會自動編號列出</div>
+                  </>
+                ) : (
+                  <input value={String(cfg[f.key] ?? "")} placeholder={f.ph}
+                    onChange={e => set(f.key, e.target.value)} />
+                )}
+              </div>
+            ))}
+          </div>
+        ))}
+        <div style={{ height: 30 }} />
+      </div>
+    </div>
+  );
+}
+
+/** 對客單據共用的設定狀態 */
+function useDocCfg() {
+  const [cfg, setCfg] = useState<DocSettings>(DOC_DEFAULTS);
+  const [editing, setEditing] = useState(false);
+  useEffect(() => { setCfg(loadDocSettings()); }, []);
+  const set = (k: keyof DocSettings, v: string) => setCfg(c => ({ ...c, [k]: v }));
+  const setDeadline = (iso: string) =>
+    setCfg(c => ({ ...c, deadlineDate: iso, deadlineLabel: deadlineTextFromDate(iso) }));
+  const onSave = () => { saveDocSettings(cfg); setEditing(false); };
+  const contact = [cfg.phone && `電話 ${cfg.phone}`, cfg.email, cfg.address].filter(Boolean) as string[];
+  const legal   = [cfg.taxId && `統一編號 ${cfg.taxId}`, cfg.licenseNo].filter(Boolean) as string[];
+  return { cfg, setCfg, editing, setEditing, set, setDeadline, onSave, contact, legal };
+}
+
 
 function FeeNotice({
   tour, rows, payments, printDate, kind, mode,
@@ -998,94 +1268,12 @@ function FeeNotice({
         </div>
       </div>
 
-      {editing && (
-        <div className="cfg no-print">
-          <div className="cfg-in">
-            <p className="cfg-lead">
-              以下文案會套用到<b>所有團</b>的訂金單與尾款單，設定存在這台電腦的瀏覽器裡。
-            </p>
-            {DOC_FIELDS.map(g => (
-              <div className="cfg-g" key={g.group}>
-                <div className="cfg-gt">{g.group}</div>
-                {g.items.map(f => (
-                  <div className="cfg-f" key={f.key}>
-                    <label>{f.label}</label>
-                    {f.image ? (
-                      <>
-                        <input type="file" accept="image/*" onChange={e => {
-                          const file = e.target.files?.[0];
-                          if (!file) return;
-                          const rd = new FileReader();
-                          rd.onload = () => set(f.key, String(rd.result));
-                          rd.readAsDataURL(file);
-                        }} />
-                        {cfg.logo && (
-                          <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 10 }}>
-                            <img src={cfg.logo} alt="" style={{ height: 40 }} />
-                            <button onClick={() => set("logo", "")}
-                              style={{ fontSize: 11, padding: "3px 9px", borderRadius: 5, border: "1px solid #ddd", cursor: "pointer", background: "#fff" }}>
-                              移除
-                            </button>
-                          </div>
-                        )}
-                      </>
-                    ) : f.date ? (
-                      <>
-                        <input type="date" value={String(cfg[f.key] ?? "")}
-                          onChange={e => setDeadline(e.target.value)} />
-                        <div className="cfg-quick">
-                          {[45, 30, 21, 14, 7].map(n => {
-                            const d = daysBefore(tour.start_date, n);
-                            return d ? (
-                              <button key={n} type="button" onClick={() => setDeadline(d)}>
-                                出發前 {n} 天
-                              </button>
-                            ) : null;
-                          })}
-                          <button type="button" className="clr" onClick={() => setDeadline("")}>清除</button>
-                        </div>
-                        <div className="cfg-hint">
-                          選好日期後，下面的「繳款期限文字」會自動帶入（含星期），仍可自行改寫。
-                          {tour.start_date ? `　本團出發日 ${fmtDate(tour.start_date)}。` : ""}
-                        </div>
-                      </>
-                    ) : f.multiline ? (
-                      <>
-                        <textarea value={String(cfg[f.key] ?? "")} placeholder={f.ph}
-                          onChange={e => set(f.key, e.target.value)} />
-                        <div className="cfg-hint">一行一條，會自動編號列出</div>
-                      </>
-                    ) : (
-                      <input value={String(cfg[f.key] ?? "")} placeholder={f.ph}
-                        onChange={e => set(f.key, e.target.value)} />
-                    )}
-                  </div>
-                ))}
-              </div>
-            ))}
-            <div style={{ height: 30 }} />
-          </div>
-        </div>
-      )}
+      {editing && <DocConfigPanel cfg={cfg} set={set} setDeadline={setDeadline} tour={tour}
+                    lead="以下文案會套用到所有團的訂金單、尾款單與同意書，設定存在這台電腦的瀏覽器裡。" />}
 
       <div className="doc-body">
         <div className="sheet">
-          {/* 頁首 */}
-          <div className="dh">
-            {cfg.logo && <img className="dh-logo" src={cfg.logo} alt="" />}
-            <div className="dh-main">
-              <div className="dh-name">{cfg.companyName}</div>
-              {cfg.companyNameEn && <div className="dh-en">{cfg.companyNameEn}</div>}
-              {cfg.tagline && <div className="dh-tag">{cfg.tagline}</div>}
-            </div>
-            {(contact.length > 0 || legal.length > 0) && (
-              <div className="dh-meta">
-                {contact.map((l, i) => <div key={i}>{l}</div>)}
-                {legal.map((l, i) => <div key={`l${i}`}>{l}</div>)}
-              </div>
-            )}
-          </div>
-          <div className="rule" />
+          <DocHeader cfg={cfg} contact={contact} legal={legal} />
 
           {/* 標題 */}
           <div className="dt">
@@ -1277,19 +1465,7 @@ function FeeNotice({
             </div>
           )}
 
-          {/* 頁尾 */}
-          <div className="foot">
-            {cfg.footerNote && <div className="foot-msg">{cfg.footerNote}</div>}
-            <div className="sign">
-              <div><div className="sign-l">{cfg.signLeft}</div><div className="sign-u" /></div>
-              <div><div className="sign-l">{cfg.signRight}</div><div className="sign-u" /></div>
-            </div>
-            <div className="foot-co">
-              {cfg.companyName}
-              {contact.length > 0 && <>　·　{contact.join("　·　")}</>}
-              {legal.length > 0 && <div>{legal.join("　·　")}</div>}
-            </div>
-          </div>
+          <DocFooter cfg={cfg} contact={contact} legal={legal} />
         </div>
       </div>
     </>
