@@ -5,6 +5,12 @@ import { supabase as sb, Tour, Customer, CustomerTour, ParticipantType } from "@
 import { buildReceivables, linkedAmount, priceOfType, type PayLite } from "@/lib/receivables";
 import { loadDocSettings, saveDocSettings, resetDocSettings, DOC_DEFAULTS, DOC_FIELDS, type DocSettings } from "@/lib/docSettings";
 
+/** 收付款紀錄（列印用，比 PayLite 多帶日期與說明）*/
+type PayRow = PayLite & { description?: string | null; payment_date?: string | null; note?: string | null };
+const INCOME_CAT_LABEL: Record<string, string> = {
+  deposit: "客款訂金", balance: "客款尾款", other_in: "其他收入",
+};
+
 const TYPE_LABEL: Record<ParticipantType | string, string> = {
   adult: "成人", tour_only: "只參團", child: "兒童", infant: "嬰兒",
 };
@@ -75,7 +81,7 @@ export default function PrintPage() {
   const [tour,    setTour]    = useState<Tour | null>(null);
   const [rows,    setRows]    = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
-  const [payments, setPayments] = useState<PayLite[]>([]);
+  const [payments, setPayments] = useState<PayRow[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -84,10 +90,10 @@ export default function PrintPage() {
         sb.from("customer_tours")
           .select("*, customer:customers(id,name,name_en,phone,email,birthday,gender,id_number,passport,passport_expiry,taibao_number,taibao_expiry,address,emergency_contact,emergency_phone,notes,meal_preference)")
           .eq("tour_id", id),
-        sb.from("tour_payments").select("type,category,amount,customer_ids").eq("tour_id", id),
+        sb.from("tour_payments").select("type,category,amount,customer_ids,description,payment_date,note").eq("tour_id", id).order("payment_date"),
       ]);
       setTour(t as Tour);
-      setPayments((pay || []) as PayLite[]);
+      setPayments((pay || []) as PayRow[]);
 
       let sorted = (p || []) as Row[];
 
@@ -731,7 +737,7 @@ function PassportConsent({ tour, rows, printDate }: { tour: Tour; rows: Row[]; p
 const DOC = {
   ink:   "#2b2b2b",
   brand: "#a8453a",
-  muted: "#8a8268",
+  muted: "#5f594c",
   line:  "#e3dbc9",
   soft:  "#faf7f0",
   head:  "#f3ecda",
@@ -743,7 +749,12 @@ function FeeDocStyles() {
       * { box-sizing: border-box; margin: 0; padding: 0; }
       body { font-family: "Noto Serif TC","Microsoft JhengHei","蘋方-繁",serif; font-size: 10pt; color: ${DOC.ink}; background: #fff; }
       @page { size: A4 portrait; margin: 14mm 14mm; }
-      @media print { .no-print { display: none !important; } .doc-body { padding-top: 0 !important; } }
+      @media print {
+        .no-print { display: none !important; }
+        .doc-body { padding-top: 0 !important; }
+        .muted, .neg, .dh-en, .dh-tag, .dh-meta, .dt-sub, .dt-date,
+        .info-row, .pay-b span.k, .sign-l, .foot-co { color: #4f4a40 !important; }
+      }
 
       .doc-body { padding-top: 54px; }
       .sheet { max-width: 182mm; margin: 0 auto; }
@@ -816,7 +827,7 @@ function FeeDocStyles() {
       .sign div { flex: 1; }
       .sign-l { font-size: 8pt; color: ${DOC.muted}; margin-bottom: 26px; }
       .sign-u { border-bottom: 1px solid ${DOC.line}; }
-      .foot-co { margin-top: 14px; text-align: center; font-size: 7.3pt; color: #a8a29e; line-height: 1.7; }
+      .foot-co { margin-top: 14px; text-align: center; font-size: 7.3pt; color: #625d54; line-height: 1.7; }
 
       /* 操作列 */
       .bar { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: ${DOC.ink}; color: #fff;
@@ -846,7 +857,7 @@ function FeeDocStyles() {
 function FeeNotice({
   tour, rows, payments, printDate, kind, mode,
 }: {
-  tour: Tour; rows: Row[]; payments: PayLite[]; printDate: string;
+  tour: Tour; rows: Row[]; payments: PayRow[]; printDate: string;
   kind: "deposit" | "balance"; mode: "summary" | "detail";
 }) {
   const [cfg, setCfg] = useState<DocSettings>(DOC_DEFAULTS);
@@ -883,6 +894,23 @@ function FeeNotice({
     total: a.total + x.total, due: a.due + x.due, paid: a.paid + x.paid,
     owed: a.owed + x.owed, depositPaid: a.depositPaid + x.depositPaid,
   }), { total: 0, due: 0, paid: 0, owed: 0, depositPaid: 0 });
+
+  // 已收款項：收付款分頁的「收入」紀錄，訂金單只列訂金、尾款單列全部收入
+  const incomeRows = payments
+    .filter(p => p.type === "income")
+    .filter(p => isDeposit ? p.category === "deposit" : true)
+    .slice()
+    .sort((a, b) => (a.payment_date || "").localeCompare(b.payment_date || ""));
+  const incomeTotal = incomeRows.reduce((s2, p) => s2 + (p.amount || 0), 0);
+  // 該筆款項對應到本團的哪些旅客（顯示用，超過 3 位省略）
+  const nameOf = new Map(rows.map(r => [r.customer.id, r.customer.name]));
+  const payeeOf = (p: PayRow) => {
+    const ids = p.customer_ids || [];
+    if (ids.length === 0) return "全團";
+    const ns = ids.map(i => nameOf.get(i)).filter(Boolean) as string[];
+    if (ns.length === 0) return "—";
+    return ns.length <= 3 ? ns.join("、") : `${ns.slice(0, 3).join("、")} 等 ${ns.length} 人`;
+  };
 
   const nt = (n: number) => "NT$ " + n.toLocaleString();
   const cell = (n: number) => n > 0 ? n.toLocaleString() : "—";
@@ -1101,6 +1129,44 @@ function FeeNotice({
             <p style={{ marginTop: 10, fontSize: "8.3pt", color: DOC.brand }}>
               ※ 尚未於「基本資料」設定每人訂金金額，應繳訂金欄為 0。
             </p>
+          )}
+
+          {/* 已收款項明細（來自收付款分頁的收入紀錄）*/}
+          {incomeRows.length > 0 && (
+            <div style={{ marginTop: 18 }}>
+              <div className="note-h" style={{ marginBottom: 6 }}>
+                已收款項明細　RECEIPTS
+                <span style={{ fontWeight: 400, color: DOC.muted, marginLeft: 8, fontSize: "8pt" }}>
+                  共 {incomeRows.length} 筆
+                </span>
+              </div>
+              <table className="det">
+                <thead>
+                  <tr>
+                    <th style={{ width: "13%" }}>收款日期</th>
+                    <th style={{ width: "14%" }}>款項別</th>
+                    <th style={{ width: "30%", textAlign: "left" }}>說明</th>
+                    <th style={{ width: "26%", textAlign: "left" }}>對應旅客</th>
+                    <th className="num" style={{ width: "17%" }}>金額</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {incomeRows.map((p, i) => (
+                    <tr key={i}>
+                      <td style={{ textAlign: "center" }} className="muted">{fmtDate(p.payment_date || "") || "—"}</td>
+                      <td style={{ textAlign: "center" }}>{INCOME_CAT_LABEL[p.category] || p.category}</td>
+                      <td>{p.description || p.note || "—"}</td>
+                      <td className="muted">{payeeOf(p)}</td>
+                      <td className="num" style={{ fontWeight: 600 }}>{(p.amount || 0).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                  <tr>
+                    <td colSpan={4} style={{ textAlign: "right", fontWeight: 700, background: DOC.soft }}>已收合計</td>
+                    <td className="num" style={{ fontWeight: 700, background: DOC.soft }}>{incomeTotal.toLocaleString()}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           )}
 
           {/* 匯款資訊 */}
