@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { supabase, Tour, TourStatus, Customer, CustomerTour, CustomPriceTier, TourFlight } from "@/lib/supabase";
+import { supabase, Tour, TourStatus, Customer, CustomerTour, CustomPriceTier, TourFlight, tierCountsPax, fixedTierCountsPax } from "@/lib/supabase";
 import { computeFlightCards, groupIndexOf, cardShortLabel, assignPassengerToCard, passengerHasTicketData } from "@/lib/flightGroups";
 import CostSpreadsheet from "@/components/CostSpreadsheet";
 import PaymentsTab from "@/components/PaymentsTab";
@@ -83,6 +83,9 @@ const PRICE_TIERS: {
   { key:"child",     label:"兒童",   icon:"🧒", paxKey:"pax_child",     priceKey:"price_child"     },
   { key:"infant",    label:"嬰兒",   icon:"👶", paxKey:"pax_infant",    priceKey:"price_infant"    },
 ];
+
+// 各類別人數與售價表的欄寬：類別｜人數｜×｜售價｜小計｜不計人｜前台｜刪除
+const GRID_COLS = "5rem 1fr 0.6rem 1fr 5rem 2.6rem 1.5rem 1.5rem";
 
 const STATUS_OPTIONS: { value: TourStatus; label: string }[] = [
   { value: "planning",  label: "規劃中" },
@@ -362,11 +365,20 @@ export default function GroupDetailPage() {
     const paxTourOnly = form.pax_tour_only || 0;
     const paxChild    = form.pax_child     || 0;
     const paxInfant   = form.pax_infant    || 0;
-    const customPax   = (form.custom_price_tiers || []).reduce((s, ct) => s + ct.pax, 0);
-    const totalPax    = paxAdult + paxTourOnly + paxChild + paxInfant + customPax;
+    const noCountKeys = form.no_count_tiers || [];
+    // 勾選「不計人數，只計費用」的列不加進總人數（費用照算）
+    // 舊資料沒有 noCount 欄位時，依名稱推得的判斷在存檔時固化成明確值
+    const tiers = (form.custom_price_tiers || []).map(ct => ({ ...ct, noCount: !tierCountsPax(ct) }));
+    const customPax   = tiers.reduce((s, ct) => s + (ct.noCount ? 0 : ct.pax), 0);
+    const totalPax =
+      (fixedTierCountsPax(noCountKeys, "adult")     ? paxAdult    : 0) +
+      (fixedTierCountsPax(noCountKeys, "tour_only") ? paxTourOnly : 0) +
+      (fixedTierCountsPax(noCountKeys, "child")     ? paxChild    : 0) +
+      (fixedTierCountsPax(noCountKeys, "infant")    ? paxInfant   : 0) +
+      customPax;
 
     // 嘗試含新欄位的完整儲存
-    const { error } = await supabase.from("tours").update({
+    const fullPayload = {
       name: form.name, destination: form.destination,
       start_date: form.start_date, end_date: form.end_date,
       pax:             totalPax > 0 ? totalPax : (form.pax || 0),
@@ -382,21 +394,39 @@ export default function GroupDetailPage() {
       price_tour_only: form.price_tour_only || 0,
       price_child:     form.price_child     || 0,
       price_infant:    form.price_infant    || 0,
-      custom_price_tiers: form.custom_price_tiers || [],
+      custom_price_tiers: tiers,
+      no_count_tiers: noCountKeys,
       deposit_per_person: form.deposit_per_person || 0,
       tip_per_day:  form.tip_per_day || 0,
       tip_included: !!form.tip_included,
       single_supplement: form.single_supplement || 0,
       status: form.status, notes: form.notes,
-    }).eq("id", id);
+    };
+    const isMissingCol = (e: { code?: string; message?: string } | null) => !!e && (
+      e.code === "42703"
+      || !!e.message?.includes("does not exist")
+      || !!e.message?.includes("schema cache")
+      || !!e.message?.includes("Could not find"));
+
+    let { error } = await supabase.from("tours").update(fullPayload).eq("id", id);
+
+    // no_count_tiers 是新欄位；DB 還沒建時，把它拿掉重存一次，其餘欄位照常寫入
+    if (isMissingCol(error)) {
+      const { no_count_tiers: _omit, ...withoutNoCount } = fullPayload;
+      const retry = await supabase.from("tours").update(withoutNoCount).eq("id", id);
+      if (!retry.error) {
+        setSaving(false);
+        await loadTour();
+        if (noCountKeys.length > 0) {
+          alert("已儲存，但「成人／只參團／兒童／嬰兒」這四列的『不計人數』設定沒有存進資料庫（欄位尚未建立）。\n\n請在 Supabase SQL Editor 執行這一行：\n\nALTER TABLE tours ADD COLUMN IF NOT EXISTS no_count_tiers JSONB NOT NULL DEFAULT '[]'::jsonb;\n\n（自訂類別那幾列的『不計人數』不受影響，已正常存檔。）");
+        }
+        return;
+      }
+      error = retry.error;
+    }
 
     if (error) {
-      // 若 DB 尚未執行 migration（欄位不存在），降級改存已知欄位
-      const isMissingCol = error.code === "42703"
-        || error.message?.includes("does not exist")
-        || error.message?.includes("schema cache")
-        || error.message?.includes("Could not find");
-      if (isMissingCol) {
+      if (isMissingCol(error)) {
         // 先嘗試含舊有自訂欄位（不含 deposit_per_person）的中間版本
         const { error: e2 } = await supabase.from("tours").update({
           name: form.name, destination: form.destination,
@@ -410,12 +440,12 @@ export default function GroupDetailPage() {
           price_tour_only: form.price_tour_only || 0,
           price_child:     form.price_child     || 0,
           price_infant:    form.price_infant    || 0,
-          custom_price_tiers: form.custom_price_tiers || [],
+          custom_price_tiers: tiers,
           status: form.status, notes: form.notes,
         }).eq("id", id);
         setSaving(false);
         if (e2) { alert("儲存失敗：" + e2.message); return; }
-        alert("基本資料已儲存（部分新欄位尚未建立）。\n\n請在 Supabase SQL Editor 執行：\n\nALTER TABLE tours\n  ADD COLUMN IF NOT EXISTS deposit_per_person NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS tip_per_day NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS tip_included BOOLEAN NOT NULL DEFAULT false,\n  ADD COLUMN IF NOT EXISTS original_price NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS price_type TEXT NOT NULL DEFAULT '',\n  ADD COLUMN IF NOT EXISTS card_surcharge_percent NUMERIC(6,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS card_surcharge_amount NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS single_supplement NUMERIC(10,2) NOT NULL DEFAULT 0;");
+        alert("基本資料已儲存（部分新欄位尚未建立）。\n\n請在 Supabase SQL Editor 執行：\n\nALTER TABLE tours\n  ADD COLUMN IF NOT EXISTS deposit_per_person NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS tip_per_day NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS tip_included BOOLEAN NOT NULL DEFAULT false,\n  ADD COLUMN IF NOT EXISTS original_price NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS price_type TEXT NOT NULL DEFAULT '',\n  ADD COLUMN IF NOT EXISTS card_surcharge_percent NUMERIC(6,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS card_surcharge_amount NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS single_supplement NUMERIC(10,2) NOT NULL DEFAULT 0,\n  ADD COLUMN IF NOT EXISTS no_count_tiers JSONB NOT NULL DEFAULT '[]'::jsonb;");
         await loadTour();
         return;
       }
@@ -706,12 +736,13 @@ export default function GroupDetailPage() {
               <div className="mt-1 rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
                 {/* header */}
                 <div className="grid items-center bg-slate-50 dark:bg-slate-700/40 px-3 py-1.5 text-[10px] font-semibold text-slate-400 uppercase tracking-wide gap-x-2"
-                  style={{ gridTemplateColumns: "5.5rem 1fr 0.75rem 1fr 5.5rem 1.5rem 1.5rem" }}>
+                  style={{ gridTemplateColumns: GRID_COLS }}>
                   <span>類別</span>
                   <span className="text-center">人數</span>
                   <span />
                   <span className="text-center">售價 (NT$)</span>
                   <span className="text-right">小計</span>
+                  <span className="text-center text-[9px] leading-tight" title="勾選＝不把這一列的人數加進總人數，費用照算">不計人</span>
                   <span className="text-center" title="在前台隱藏">前台</span>
                   <span />
                 </div>
@@ -720,10 +751,16 @@ export default function GroupDetailPage() {
                   const paxVal   = (form[t.paxKey]   as number) || 0;
                   const priceVal = (form[t.priceKey] as number) || 0;
                   const sub      = paxVal * priceVal;
+                  const counted  = fixedTierCountsPax(form.no_count_tiers, t.key);
+                  const toggleFixedCount = () => {
+                    const cur = new Set(form.no_count_tiers || []);
+                    if (cur.has(t.key)) cur.delete(t.key); else cur.add(t.key);
+                    setForm({ ...form, no_count_tiers: Array.from(cur) });
+                  };
                   return (
                     <div key={t.key}
                       className="grid items-center px-3 py-2 border-t border-slate-100 dark:border-slate-700/50 gap-x-2"
-                      style={{ gridTemplateColumns: "5.5rem 1fr 0.75rem 1fr 5.5rem 1.5rem" }}>
+                      style={{ gridTemplateColumns: GRID_COLS }}>
                       <span className="text-xs font-medium text-slate-600 dark:text-slate-300">{t.icon} {t.label}</span>
                       <input type="number" min="0" placeholder="0"
                         className="w-full text-center border border-slate-200 dark:border-slate-600 rounded-lg px-2 py-1.5 text-sm bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-400"
@@ -738,6 +775,11 @@ export default function GroupDetailPage() {
                         sub > 0 ? "text-emerald-700 dark:text-emerald-400" : "text-slate-300 dark:text-slate-600"
                       }`}>
                         {sub > 0 ? `NT$${sub.toLocaleString()}` : "—"}
+                      </span>
+                      <span className="flex justify-center">
+                        <input type="checkbox" checked={!counted} onChange={toggleFixedCount}
+                          title="勾選＝不計人數，只計費用"
+                          className="w-3.5 h-3.5 accent-amber-500 cursor-pointer" />
                       </span>
                       <span />
                       <span />
@@ -758,10 +800,11 @@ export default function GroupDetailPage() {
                   };
                   const autoHidden = ["領隊", "優待"].some(k => (ct.label || "").includes(k));
                   const isHidden = autoHidden || !!ct.hidden;
+                  const counted  = tierCountsPax(ct);
                   return (
                     <div key={ct.id}
                       className="grid items-center px-3 py-2 border-t border-slate-100 dark:border-slate-700/50 gap-x-2"
-                      style={{ gridTemplateColumns: "5.5rem 1fr 0.75rem 1fr 5.5rem 1.5rem 1.5rem" }}>
+                      style={{ gridTemplateColumns: GRID_COLS }}>
                       <input
                         type="text"
                         placeholder="類別名稱"
@@ -782,6 +825,12 @@ export default function GroupDetailPage() {
                         sub > 0 ? "text-emerald-700 dark:text-emerald-400" : "text-slate-300 dark:text-slate-600"
                       }`}>
                         {sub > 0 ? `NT$${sub.toLocaleString()}` : "—"}
+                      </span>
+                      <span className="flex justify-center">
+                        <input type="checkbox" checked={!counted}
+                          onChange={() => updateCustomTier({ noCount: counted })}
+                          title="勾選＝不計人數，只計費用（例：單房差）"
+                          className="w-3.5 h-3.5 accent-amber-500 cursor-pointer" />
                       </span>
                       <button
                         onClick={() => { if (!autoHidden) updateCustomTier({ hidden: !ct.hidden }); }}
@@ -821,6 +870,7 @@ export default function GroupDetailPage() {
                         label: "",
                         pax: 0,
                         price: 0,
+                        noCount: false,
                       };
                       setForm({ ...form, custom_price_tiers: [...(form.custom_price_tiers || []), newTier] });
                     }}
@@ -832,25 +882,33 @@ export default function GroupDetailPage() {
                 </div>
                 {/* total row */}
                 {(() => {
-                  const fixedPax = PRICE_TIERS.reduce((s, t) => s + ((form[t.paxKey] as number) || 0), 0);
+                  const fixedPax = PRICE_TIERS.reduce((s, t) =>
+                    s + (fixedTierCountsPax(form.no_count_tiers, t.key) ? ((form[t.paxKey] as number) || 0) : 0), 0);
                   const fixedRev = PRICE_TIERS.reduce((s, t) =>
                     s + ((form[t.paxKey] as number) || 0) * ((form[t.priceKey] as number) || 0), 0);
-                  const customPax = (form.custom_price_tiers || []).reduce((s, ct) => s + ct.pax, 0);
+                  const customPax = (form.custom_price_tiers || [])
+                    .reduce((s, ct) => s + (tierCountsPax(ct) ? ct.pax : 0), 0);
                   const customRev = (form.custom_price_tiers || []).reduce((s, ct) => s + ct.pax * ct.price, 0);
+                  const rawPax = PRICE_TIERS.reduce((s, t) => s + ((form[t.paxKey] as number) || 0), 0)
+                    + (form.custom_price_tiers || []).reduce((s, ct) => s + ct.pax, 0);
                   const totalPax = fixedPax + customPax;
                   const totalRev = fixedRev + customRev;
+                  const excluded = rawPax - totalPax;
                   return (
                     <div className="grid items-center px-3 py-2.5 bg-slate-50 dark:bg-slate-700/30 border-t border-slate-200 dark:border-slate-700 gap-x-2"
-                      style={{ gridTemplateColumns: "5.5rem 1fr 0.75rem 1fr 5.5rem 1.5rem" }}>
+                      style={{ gridTemplateColumns: GRID_COLS }}>
                       <span className="text-xs font-bold text-slate-600 dark:text-slate-300">合計</span>
                       <span className="text-center text-xs font-bold text-slate-700 dark:text-slate-200 tabular-nums">{totalPax} 人</span>
-                      <span /><span />
+                      <span />
+                      <span className="text-[10px] text-amber-600 dark:text-amber-400 whitespace-nowrap">
+                        {excluded > 0 ? `不計人數 ${excluded} 筆` : ""}
+                      </span>
                       <span className={`text-right text-sm font-bold tabular-nums ${
                         totalRev > 0 ? "text-blue-600 dark:text-blue-400" : "text-slate-300 dark:text-slate-600"
                       }`}>
                         {totalRev > 0 ? `NT$${totalRev.toLocaleString()}` : "—"}
                       </span>
-                      <span />
+                      <span /><span /><span />
                     </div>
                   );
                 })()}
@@ -1006,9 +1064,12 @@ export default function GroupDetailPage() {
                 <span className="text-xs text-slate-400 dark:text-slate-500">不含招待／領隊等售價為 0 的名額</span>
               </div>
               {(() => {
-                const freePax  = (form.custom_price_tiers || []).filter(ct => ct.price === 0).reduce((s, ct) => s + ct.pax, 0);
-                const fixedPax = PRICE_TIERS.reduce((s, t) => s + ((form[t.paxKey] as number) || 0), 0);
-                const customPax= (form.custom_price_tiers || []).reduce((s, ct) => s + ct.pax, 0);
+                const freePax  = (form.custom_price_tiers || [])
+                  .filter(ct => ct.price === 0 && tierCountsPax(ct)).reduce((s, ct) => s + ct.pax, 0);
+                const fixedPax = PRICE_TIERS.reduce((s, t) =>
+                  s + (fixedTierCountsPax(form.no_count_tiers, t.key) ? ((form[t.paxKey] as number) || 0) : 0), 0);
+                const customPax= (form.custom_price_tiers || [])
+                  .reduce((s, ct) => s + (tierCountsPax(ct) ? ct.pax : 0), 0);
                 const totalPax = fixedPax + customPax;
                 const payingPax = totalPax - freePax;
                 const dep = form.deposit_per_person || 0;

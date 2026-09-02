@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { supabase as sb, Tour, Customer, CustomerTour, ParticipantType } from "@/lib/supabase";
+import { supabase as sb, Tour, Customer, CustomerTour, ParticipantType, tierCountsPax, fixedTierCountsPax } from "@/lib/supabase";
 import { buildReceivables, linkedAmount, priceOfType, type PayLite } from "@/lib/receivables";
 import { loadDocSettings, saveDocSettings, resetDocSettings, DOC_DEFAULTS, DOC_FIELDS, deadlineTextFromDate, daysBefore, type DocSettings } from "@/lib/docSettings";
 
@@ -1191,16 +1191,16 @@ function FeeNotice({
   }), { total: 0, due: 0, paid: 0, owed: 0, depositPaid: 0 });
 
   // ── 總應收：依「基本資料」分頁的人數 × 售價計算（不看實際報名人數）──
-  // 單房差／房差／加價這類自訂類別＝費用加項，金額計入總額但人數不計入總人數
-  const isSurcharge = (label: string) => /房差|單房|加價|補差|差額|升等/.test(label || "");
+  // 勾選「不計人數，只計費用」的列（例：單房差）＝金額計入總額，人數不計入總人數
+  const nc = tour.no_count_tiers;
   const priceLines = [
-    { label: "成人團費",   pax: tour.pax_adult     || 0, price: tour.selling_price   || 0, head: true },
-    { label: "只參團",     pax: tour.pax_tour_only || 0, price: tour.price_tour_only || 0, head: true },
-    { label: "兒童",       pax: tour.pax_child     || 0, price: tour.price_child     || 0, head: true },
-    { label: "嬰兒",       pax: tour.pax_infant    || 0, price: tour.price_infant    || 0, head: true },
+    { label: "成人團費",   pax: tour.pax_adult     || 0, price: tour.selling_price   || 0, head: fixedTierCountsPax(nc, "adult")     },
+    { label: "只參團",     pax: tour.pax_tour_only || 0, price: tour.price_tour_only || 0, head: fixedTierCountsPax(nc, "tour_only") },
+    { label: "兒童",       pax: tour.pax_child     || 0, price: tour.price_child     || 0, head: fixedTierCountsPax(nc, "child")     },
+    { label: "嬰兒",       pax: tour.pax_infant    || 0, price: tour.price_infant    || 0, head: fixedTierCountsPax(nc, "infant")    },
     ...(tour.custom_price_tiers || []).map(ct => ({
       label: ct.label || "自訂類別", pax: ct.pax || 0, price: ct.price || 0,
-      head: !isSurcharge(ct.label || ""),
+      head: tierCountsPax(ct),
     })),
   ].filter(l => l.pax > 0 && l.price > 0);
 
