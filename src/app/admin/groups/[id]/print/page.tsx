@@ -188,7 +188,7 @@ function PrintStyles({ landscape }: { landscape?: boolean }) {
       .r     { text-align: right; }
       .c     { text-align: center; }
       .bold  { font-weight: bold; }
-      .dim   { color: #888; font-size: 7.5pt; }
+      .dim   { color: #333; font-size: 7.8pt; }
       .meal  { font-size: 7.5pt; color: #b45309; }
       .expired { color: #dc2626; font-weight: bold; }
       .footer { margin-top: 8px; font-size: 7.5pt; color: #666; display: flex; justify-content: space-between; }
@@ -854,9 +854,9 @@ function PassportConsent({ tour, rows, printDate, mode }: {
 
 // ═══ 對客單據：訂金／尾款請款單 ═══════════════════════════════════════════════
 const DOC = {
-  ink:   "#2b2b2b",
-  brand: "#a8453a",
-  muted: "#3d3a34",
+  ink:   "#141414",   // 內文：接近全黑
+  brand: "#9c3d33",
+  muted: "#2c2924",   // 次要文字：仍是深色，不做淺灰
   line:  "#e3dbc9",
   soft:  "#faf7f0",
   head:  "#f3ecda",
@@ -879,7 +879,9 @@ function FeeDocStyles() {
         table.amt td, table.det td,
         .pc-intro, .pc-terms, .pc-terms li, table.pc-me th, table.pc-me td { color: #000 !important; }
         .pc-exp { color: #c0392b !important; }
-        .dh-en, .dh-tag, .dh-meta, .dt-sub, .dt-date, .sign-l, .foot-co { color: #333 !important; }
+        .dh-en, .dh-tag, .dt-sub { color: #333 !important; }
+        .dh-meta, .dt-date, .sign-l, .foot-co { color: #000 !important; }
+        .dt-due { color: ${DOC.brand} !important; }
       }
       /* 螢幕上也不顯示後台底部導覽，避免擋住單據 */
       nav.fixed { display: none; }
@@ -894,7 +896,7 @@ function FeeDocStyles() {
       .dh-name { font-size: 17pt; font-weight: 700; letter-spacing: .04em; color: ${DOC.brand}; line-height: 1.2; }
       .dh-en   { font-size: 7.5pt; letter-spacing: .16em; color: ${DOC.muted}; text-transform: uppercase; margin-top: 3px; }
       .dh-tag  { font-size: 8.5pt; color: ${DOC.muted}; margin-top: 5px; }
-      .dh-meta { text-align: right; font-size: 7.8pt; color: ${DOC.muted}; line-height: 1.75; flex-shrink: 0; }
+      .dh-meta { text-align: right; font-size: 8.1pt; color: ${DOC.ink}; line-height: 1.75; flex-shrink: 0; }
       .rule { height: 2px; background: ${DOC.brand}; }
       .rule-thin { height: 1px; background: ${DOC.line}; margin: 14px 0; }
 
@@ -902,12 +904,13 @@ function FeeDocStyles() {
       .dt { display: flex; align-items: flex-end; justify-content: space-between; margin: 16px 0 12px; gap: 12px; }
       .dt-title { font-size: 20pt; font-weight: 700; letter-spacing: .1em; color: ${DOC.ink}; }
       .dt-sub   { font-size: 8pt; letter-spacing: .18em; color: ${DOC.muted}; text-transform: uppercase; margin-top: 3px; }
-      .dt-date  { font-size: 8.5pt; color: ${DOC.muted}; text-align: right; line-height: 1.8; }
+      .dt-date  { font-size: 8.8pt; color: ${DOC.ink}; text-align: right; line-height: 1.8; }
+      .dt-due   { color: ${DOC.brand}; font-weight: 700; }
 
       /* 團資訊 */
       .info { background: ${DOC.soft}; border: 1px solid ${DOC.line}; border-radius: 4px; padding: 11px 14px; margin-bottom: 16px; }
       .info-name { font-size: 11pt; font-weight: 700; line-height: 1.45; margin-bottom: 7px; }
-      .info-row { display: flex; flex-wrap: wrap; gap: 22px; font-size: 8.5pt; color: ${DOC.muted}; }
+      .info-row { display: flex; flex-wrap: wrap; gap: 22px; font-size: 8.8pt; color: ${DOC.ink}; }
       .info-row b { color: ${DOC.ink}; font-weight: 600; margin-left: 5px; }
 
       /* 金額表 */
@@ -916,7 +919,7 @@ function FeeDocStyles() {
                      padding: 8px 12px; text-align: left; border-bottom: 1px solid ${DOC.line}; letter-spacing: .05em; }
       table.amt td { padding: 9px 12px; border-bottom: 1px solid ${DOC.line}; font-size: 9.5pt; vertical-align: middle; }
       .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-      .muted { color: ${DOC.ink}; font-size: 8.5pt; }
+      .muted { color: ${DOC.ink}; font-size: 8.8pt; }
       .neg { color: ${DOC.ink}; }
 
       /* 應收總額 */
@@ -930,7 +933,7 @@ function FeeDocStyles() {
       table.det { width: 100%; border-collapse: collapse; margin-top: 2px; }
       table.det th { background: ${DOC.head}; font-size: 8pt; font-weight: 700; padding: 7px 8px;
                      border-bottom: 1px solid ${DOC.line}; letter-spacing: .04em; }
-      table.det td { padding: 6px 8px; border-bottom: 1px solid #f0ebdd; font-size: 8.8pt; color: ${DOC.ink}; }
+      table.det td { padding: 6px 8px; border-bottom: 1px solid #e8e2d2; font-size: 9pt; color: ${DOC.ink}; }
       table.det tr:nth-child(even) td { background: #fcfaf5; }
       .owed { color: ${DOC.brand}; font-weight: 700; }
       .paid-ok { color: #6b8f5e; }
@@ -940,11 +943,11 @@ function FeeDocStyles() {
       .pay-h { background: ${DOC.head}; padding: 7px 14px; font-size: 8.5pt; font-weight: 700; letter-spacing: .06em; }
       .pay-b { padding: 11px 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px 22px; font-size: 9pt; }
       .pay-b div { display: flex; gap: 8px; }
-      .pay-b span.k { color: ${DOC.muted}; min-width: 62px; font-size: 8.5pt; }
+      .pay-b span.k { color: ${DOC.ink}; min-width: 62px; font-size: 8.8pt; font-weight: 600; }
       .pay-b span.v { border-bottom: 1px dotted ${DOC.line}; flex: 1; min-height: 15px; }
 
       /* 注意事項 */
-      .note { margin-top: 16px; font-size: 8.3pt; color: #57534e; line-height: 1.95; }
+      .note { margin-top: 16px; font-size: 8.6pt; color: ${DOC.ink}; line-height: 1.95; }
       .note-h { font-size: 8.5pt; font-weight: 700; color: ${DOC.ink}; margin-bottom: 4px; letter-spacing: .06em; }
       .note li { margin-left: 15px; }
 
@@ -953,9 +956,37 @@ function FeeDocStyles() {
       .foot-msg { font-size: 8.5pt; color: ${DOC.brand}; text-align: center; letter-spacing: .05em; margin-bottom: 16px; }
       .sign { display: flex; gap: 40px; }
       .sign div { flex: 1; }
-      .sign-l { font-size: 8pt; color: ${DOC.muted}; margin-bottom: 26px; }
+      .sign-l { font-size: 8.3pt; color: ${DOC.ink}; margin-bottom: 26px; font-weight: 600; }
       .sign-u { border-bottom: 1px solid ${DOC.line}; }
-      .foot-co { margin-top: 14px; text-align: center; font-size: 7.3pt; color: #625d54; line-height: 1.7; }
+      .foot-co { margin-top: 14px; text-align: center; font-size: 7.6pt; color: #3a352d; line-height: 1.7; }
+
+      /* 螢幕上把為 A4 設計的小字等比放大，列印時不受影響 */
+      @media screen {
+        .doc-body { font-size: 112%; }
+        .dh-en   { font-size: 8.6pt; }
+        .dh-tag  { font-size: 9.5pt; }
+        .dh-meta { font-size: 9.2pt; }
+        .dt-sub  { font-size: 9pt; }
+        .dt-date { font-size: 10pt; }
+        .info-row { font-size: 10pt; }
+        table.amt th { font-size: 9.6pt; }
+        table.amt td { font-size: 10.6pt; }
+        table.det th { font-size: 9.2pt; }
+        table.det td { font-size: 10.2pt; }
+        .muted   { font-size: 10pt; }
+        .pay-h   { font-size: 9.6pt; }
+        .pay-b   { font-size: 10.2pt; }
+        .pay-b span.k { font-size: 10pt; }
+        .note    { font-size: 9.8pt; }
+        .note-h  { font-size: 9.6pt; }
+        .foot-msg { font-size: 9.6pt; }
+        .sign-l  { font-size: 9.4pt; }
+        .foot-co { font-size: 8.8pt; }
+        .pc-intro { font-size: 10.2pt; }
+        .pc-terms { font-size: 10pt; }
+        table.pc-me th, table.pc-me td { font-size: 10.4pt; }
+        .pc-sign-l { font-size: 9.6pt; }
+      }
 
       /* 操作列 */
       .bar { position: fixed; top: 0; left: 0; right: 0; z-index: 100; background: ${DOC.ink}; color: #fff;
@@ -983,9 +1014,9 @@ function FeeDocStyles() {
       table.pc-me td { font-size: 9.5pt; padding: 8px 12px; border-bottom: 1px solid ${DOC.line}; width: 35%; }
       .pc-sign { display: flex; gap: 26px; margin-top: 26px; }
       .pc-sign-c { flex: 1; }
-      .pc-sign-l { font-size: 8.2pt; color: ${DOC.muted}; margin-bottom: 30px; font-weight: 600; }
+      .pc-sign-l { font-size: 8.5pt; color: ${DOC.ink}; margin-bottom: 30px; font-weight: 600; }
       .pc-sign-u { border-bottom: 1px solid ${DOC.ink}; min-height: 15px; }
-      .pc-sign-d { font-size: 8.5pt; color: ${DOC.muted}; text-align: right; padding-bottom: 2px; }
+      .pc-sign-d { font-size: 8.8pt; color: ${DOC.ink}; text-align: right; padding-bottom: 2px; }
 
       /* 設定面板 */
       .cfg { position: fixed; top: 46px; left: 0; right: 0; bottom: 0; z-index: 99; overflow-y: auto;
@@ -1283,7 +1314,7 @@ function FeeNotice({
             </div>
             <div className="dt-date">
               <div>製表日期　{printDate}</div>
-              {cfg.deadlineLabel && <div style={{ color: DOC.brand, fontWeight: 700 }}>{cfg.deadlineLabel}</div>}
+              {cfg.deadlineLabel && <div className="dt-due">{cfg.deadlineLabel}</div>}
             </div>
           </div>
 
