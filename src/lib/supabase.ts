@@ -28,6 +28,7 @@ export interface CustomPriceTier {
   pax: number;   // 人數
   price: number; // 售價 (NT$)
   hidden?: boolean; // 在前台隱藏此類別價格
+  noCount?: boolean; // 不計人數，只計費用（例：單房差、艙等升等）
 }
 
 /** 這些類別名稱一律不顯示在前台（避免洩漏優惠價格） */
@@ -37,6 +38,39 @@ export const AUTO_HIDDEN_TIER_KEYWORDS = ["領隊", "優待"];
 export function isTierPublic(ct: CustomPriceTier): boolean {
   if (ct.hidden) return false;
   return !AUTO_HIDDEN_TIER_KEYWORDS.some(k => (ct.label || "").includes(k));
+}
+
+/** 名稱看起來像「加價／差額」而非一個人頭。
+ *  僅在該列尚未明確設定 noCount 時作為預設值使用（相容舊資料）。*/
+export const SURCHARGE_KEYWORDS = ["房差", "單房", "加價", "補差", "差額", "升等"];
+export function looksLikeSurcharge(label?: string | null): boolean {
+  return SURCHARGE_KEYWORDS.some(k => (label || "").includes(k));
+}
+
+/** 此自訂類別是否計入總人數（明確設定優先，未設定則沿用名稱判斷）*/
+export function tierCountsPax(ct: CustomPriceTier): boolean {
+  return ct.noCount === undefined ? !looksLikeSurcharge(ct.label) : !ct.noCount;
+}
+
+/** 固定四類（adult / tour_only / child / infant）是否計入總人數 */
+export function fixedTierCountsPax(noCountTiers: string[] | undefined | null, key: string): boolean {
+  return !(noCountTiers || []).includes(key);
+}
+
+/** 依「不計人數」設定計算總人數 */
+export function countedPax(t: {
+  pax_adult?: number; pax_tour_only?: number; pax_child?: number; pax_infant?: number;
+  custom_price_tiers?: CustomPriceTier[]; no_count_tiers?: string[];
+}): number {
+  const nc = t.no_count_tiers;
+  const fixed =
+    (fixedTierCountsPax(nc, "adult")     ? (t.pax_adult     || 0) : 0) +
+    (fixedTierCountsPax(nc, "tour_only") ? (t.pax_tour_only || 0) : 0) +
+    (fixedTierCountsPax(nc, "child")     ? (t.pax_child     || 0) : 0) +
+    (fixedTierCountsPax(nc, "infant")    ? (t.pax_infant    || 0) : 0);
+  const custom = (t.custom_price_tiers || [])
+    .reduce((s, ct) => s + (tierCountsPax(ct) ? (ct.pax || 0) : 0), 0);
+  return fixed + custom;
 }
 
 export interface Tour {
@@ -59,6 +93,7 @@ export interface Tour {
   price_child: number;      // 兒童售價 (NT$)
   price_infant: number;     // 嬰兒售價 (NT$)
   custom_price_tiers?: CustomPriceTier[]; // 自訂類別（JSONB）
+  no_count_tiers?: string[];              // 固定四類中「不計人數，只計費用」的 key（adult/tour_only/child/infant）
   deposit_per_person?: number;            // 每人訂金金額
   tip_per_day?: number;                   // 司機/導遊/領隊小費（元/天）
   tip_included?: boolean;                 // 前台標示：true=已含於團費 / false=不含
