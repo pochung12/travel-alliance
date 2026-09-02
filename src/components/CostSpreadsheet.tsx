@@ -172,7 +172,15 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
   }, [colWidths, tourId]);
 
   // ── Init ──────────────────────────────────────────────────────────────────────
-  useEffect(() => { initLoad(); }, [tourId]);
+  // 收付款分頁的實際支出（已付／應付），用來算實際利潤
+  const [pays, setPays] = useState<{ type: string; amount: number; is_payable: boolean | null }[]>([]);
+  const loadPays = useCallback(async () => {
+    const { data } = await supabase
+      .from("tour_payments").select("type,amount,is_payable").eq("tour_id", tourId);
+    setPays((data || []) as { type: string; amount: number; is_payable: boolean | null }[]);
+  }, [tourId]);
+
+  useEffect(() => { initLoad(); loadPays(); }, [tourId]);
   useEffect(() => { if (activeVersionId) loadRows(activeVersionId); }, [activeVersionId]);
 
   const initLoad = async () => {
@@ -596,6 +604,14 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
   const profit      = revenue - totalCost;
   const margin      = revenue > 0 ? profit / revenue * 100 : 0;
   const costPerPax  = pax > 0 ? totalCost / pax : 0;
+
+  // ── 實際利潤：總應收 −（已付 ＋ 應付）── 資料來自「收付款」分頁 ──
+  const paidExpense    = pays.filter(p => p.type === "expense" && !p.is_payable).reduce((s, p) => s + (p.amount || 0), 0);
+  const payableExpense = pays.filter(p => p.type === "expense" &&  p.is_payable).reduce((s, p) => s + (p.amount || 0), 0);
+  const spentTotal     = paidExpense + payableExpense;
+  const netProfit      = revenue - spentTotal;
+  const netMargin      = revenue > 0 ? netProfit / revenue * 100 : 0;
+  const netPerPax      = pax > 0 ? netProfit / pax : 0;
   const hasDirty    = rows.some(r => r.dirty);
   const hasNewImgs  = images.some(i => i.isNew);
   const activeVersion = versions.find(v => v.id === activeVersionId);
@@ -1175,6 +1191,79 @@ export default function CostSpreadsheet({ tourId, pax, revenue, onSaved }: Props
             )}
           </div>
         )}
+      </div>
+
+      {/* 利潤計算（實際收付）*/}
+      <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50 dark:bg-slate-700/40 border-b border-slate-200 dark:border-slate-700">
+          <h4 className="text-xs font-bold text-slate-600 dark:text-slate-300 flex items-center gap-1.5">
+            <BarChart2 className="w-3.5 h-3.5" /> 利潤計算
+          </h4>
+          <span className="text-[10px] text-slate-400 dark:text-slate-500">總應收 −（已付 ＋ 應付）</span>
+        </div>
+
+        <div className="divide-y divide-slate-100 dark:divide-slate-700/60">
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <span className="text-sm text-slate-600 dark:text-slate-300">
+              總應收
+              <span className="ml-2 text-[10px] text-slate-400">基本資料 人數 × 售價</span>
+            </span>
+            <span className="text-sm font-semibold tabular-nums text-blue-600 dark:text-blue-400">
+              NT${revenue.toLocaleString()}
+            </span>
+          </div>
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <span className="text-sm text-slate-600 dark:text-slate-300">
+              已付支出
+              <span className="ml-2 text-[10px] text-slate-400">收付款分頁·已實際付款</span>
+            </span>
+            <span className="text-sm font-semibold tabular-nums text-slate-700 dark:text-slate-200">
+              − NT${paidExpense.toLocaleString()}
+            </span>
+          </div>
+          <div className="flex items-center justify-between px-4 py-2.5">
+            <span className="text-sm text-slate-600 dark:text-slate-300">
+              應付（未付）
+              <span className="ml-2 text-[10px] text-slate-400">收付款分頁·勾選應付</span>
+            </span>
+            <span className="text-sm font-semibold tabular-nums text-red-600 dark:text-red-400">
+              − NT${payableExpense.toLocaleString()}
+            </span>
+          </div>
+          <div className={`flex items-center justify-between px-4 py-3 ${
+            netProfit >= 0 ? "bg-emerald-50 dark:bg-emerald-900/20" : "bg-red-50 dark:bg-red-900/20"
+          }`}>
+            <span className="text-sm font-bold text-slate-700 dark:text-slate-200">
+              實際利潤
+              {pax > 0 && (
+                <span className="ml-2 text-[10px] font-normal text-slate-500 dark:text-slate-400">
+                  每人 NT${Math.round(netPerPax).toLocaleString()}
+                </span>
+              )}
+            </span>
+            <span className="flex items-baseline gap-3">
+              <span className={`text-[11px] font-semibold tabular-nums ${
+                netProfit >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-red-500 dark:text-red-400"
+              }`}>
+                {netMargin.toFixed(1)}%
+              </span>
+              <span className={`text-lg font-bold tabular-nums ${
+                netProfit >= 0 ? "text-emerald-700 dark:text-emerald-300" : "text-red-600 dark:text-red-400"
+              }`}>
+                NT${netProfit.toLocaleString()}
+              </span>
+            </span>
+          </div>
+        </div>
+
+        {pays.length === 0 && (
+          <div className="px-4 py-2 text-[11px] text-slate-400 dark:text-slate-500 border-t border-slate-100 dark:border-slate-700/60">
+            「收付款」分頁還沒有支出紀錄，目前實際利潤等於總應收。
+          </div>
+        )}
+        <div className="px-4 py-2 text-[11px] text-amber-600 dark:text-amber-400 bg-amber-50/60 dark:bg-amber-900/10 border-t border-slate-100 dark:border-slate-700/60 leading-relaxed">
+          口徑不同不可直比：本區用<b>收付款分頁的實際支出</b>；下方「預估毛利」用<b>本頁費用試算的估算成本</b>。
+        </div>
       </div>
 
       {/* Summary cards */}
