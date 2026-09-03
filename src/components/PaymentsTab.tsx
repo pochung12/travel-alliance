@@ -6,7 +6,7 @@ import {
 } from "@/lib/supabase";
 import {
   Plus, X, Upload, ZoomIn, TrendingUp, TrendingDown,
-  Scale, Receipt, ChevronDown, ChevronUp, Trash2, ImageIcon, Users, AlertCircle, Printer,
+  Scale, Receipt, ChevronDown, ChevronUp, Trash2, ImageIcon, Users, AlertCircle, Printer, Pencil,
 } from "lucide-react";
 import { buildReceivables, receivableTotals } from "@/lib/receivables";
 import type { Tour } from "@/lib/supabase";
@@ -114,6 +114,28 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], t
     note: "", image: "", customer_ids: [],
   });
   const [form, setForm] = useState<Partial<TourPayment>>(emptyForm());
+  // 非 null＝正在編輯既有紀錄的 id；null＝新增
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const closeModal = () => {
+    setShowModal(false);
+    setEditingId(null);
+    setForm(emptyForm());
+    setFormCustIds([]);
+    setFormIsPayable(false);
+  };
+  const openCreate = () => { closeModal(); setShowModal(true); };
+  const openEdit = (p: TourPayment) => {
+    setEditingId(p.id);
+    setForm({
+      type: p.type, category: p.category, description: p.description || "",
+      amount: p.amount, payment_date: p.payment_date || "",
+      note: p.note || "", image: p.image || "", customer_ids: p.customer_ids || [],
+    });
+    setFormCustIds(p.customer_ids || []);
+    setFormIsPayable(!!p.is_payable);
+    setShowModal(true);
+  };
 
   // ── Load data ──
   const loadPayments = useCallback(async () => {
@@ -187,23 +209,32 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], t
       image: form.image || "",
       customer_ids: formCustIds,
     };
-    const { error } = await supabase.from("tour_payments").insert([{
+    const fullPayload = {
       ...basePayload,
       is_payable: form.type === "expense" ? formIsPayable : false,
-    }]);
+    };
+    // 編輯既有紀錄不改 tour_id
+    const { tour_id: _tid, ...updateFull } = fullPayload;
+    const { tour_id: _tid2, ...updateBase } = basePayload;
+
+    const write = (payload: Record<string, unknown>) =>
+      editingId
+        ? supabase.from("tour_payments").update(payload).eq("id", editingId)
+        : supabase.from("tour_payments").insert([payload]);
+
+    const { error } = await write(editingId ? updateFull : fullPayload);
     if (error) {
       const isMissingCol = error.message?.includes("schema cache") || error.message?.includes("Could not find") || error.code === "42703";
       if (isMissingCol) {
         // 降級：不帶 is_payable 欄位儲存
-        const { error: e2 } = await supabase.from("tour_payments").insert([basePayload]);
+        const { error: e2 } = await write(editingId ? updateBase : basePayload);
         setSaving(false);
         if (e2) { alert("儲存失敗：" + e2.message); return; }
         alert("已儲存（應付欄位尚未建立）。\n請在 Supabase SQL Editor 執行：\n\nALTER TABLE tour_payments\n  ADD COLUMN IF NOT EXISTS is_payable BOOLEAN NOT NULL DEFAULT FALSE;");
-        setShowModal(false);
-        setForm(emptyForm());
-        setFormCustIds([]);
-        setFormIsPayable(false);
+        const wasEditing = editingId;
+        closeModal();
         await loadPayments();
+        if (wasEditing) onPaymentCustsChanged?.(wasEditing, formCustIds);
         onChanged?.();
         return;
       }
@@ -212,11 +243,10 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], t
       return;
     }
     setSaving(false);
-    setShowModal(false);
-    setForm(emptyForm());
-    setFormCustIds([]);
-    setFormIsPayable(false);
+    const wasEditing = editingId;
+    closeModal();
     await loadPayments();
+    if (wasEditing) onPaymentCustsChanged?.(wasEditing, formCustIds);
     onChanged?.();
   };
 
@@ -237,7 +267,12 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], t
 
   // ── Delete record ──
   const deleteRecord = async (id: string) => {
-    if (!confirm("確定刪除此紀錄？")) return;
+    const t = payments.find(x => x.id === id);
+    const desc = t
+      ? `${t.payment_date || "無日期"}　${t.type === "income" ? "收入" : t.is_payable ? "應付" : "支出"}　`
+        + `${categoryLabel(t.type, t.category)}${t.description ? "／" + t.description : ""}　NT$${(t.amount || 0).toLocaleString()}`
+      : "";
+    if (!confirm(`確定刪除這筆紀錄？此操作無法復原。\n\n${desc}`)) return;
     await supabase.from("tour_payments").delete().eq("id", id);
     setExpandedId(null);
     await loadPayments();
@@ -451,7 +486,7 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], t
           ))}
         </div>
         <button
-          onClick={() => { setForm(emptyForm()); setFormCustIds([]); setFormIsPayable(false); setShowModal(true); }}
+          onClick={openCreate}
           className="flex items-center gap-1.5 text-sm px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
         >
           <Plus className="w-4 h-4" /> 新增紀錄
@@ -464,7 +499,7 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], t
           <Receipt className="w-8 h-8 text-slate-200 dark:text-slate-600 mx-auto mb-2" />
           <p className="text-sm text-slate-400 dark:text-slate-500">還沒有{filter === "income" ? "收款" : filter === "expense" ? "付款" : "收付款"}紀錄</p>
           <button
-            onClick={() => { setForm(emptyForm()); setFormCustIds([]); setFormIsPayable(false); setShowModal(true); }}
+            onClick={openCreate}
             className="mt-3 text-xs text-blue-600 hover:underline"
           >
             + 新增第一筆
@@ -481,7 +516,7 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], t
                 <th className="text-left px-4 py-3">類別 / 說明</th>
                 <th className="text-right px-4 py-3 whitespace-nowrap">金額</th>
                 <th className="text-center px-4 py-3 whitespace-nowrap">佐證</th>
-                <th className="w-8 px-2 py-3"></th>
+                <th className="w-24 px-2 py-3"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50 dark:divide-slate-700">
@@ -549,9 +584,25 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], t
                       )}
                     </td>
                     <td className="px-2 py-3">
-                      {expandedId === p.id
-                        ? <ChevronUp className="w-4 h-4 text-slate-400" />
-                        : <ChevronDown className="w-4 h-4 text-slate-300" />}
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={e => { e.stopPropagation(); openEdit(p); }}
+                          title="編輯這筆紀錄"
+                          className="inline-flex items-center justify-center w-7 h-7 rounded text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={e => { e.stopPropagation(); deleteRecord(p.id); }}
+                          title="刪除這筆紀錄"
+                          className="inline-flex items-center justify-center w-7 h-7 rounded text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                        {expandedId === p.id
+                          ? <ChevronUp className="w-4 h-4 text-slate-400" />
+                          : <ChevronDown className="w-4 h-4 text-slate-300" />}
+                      </div>
                     </td>
                   </tr>
 
@@ -626,12 +677,20 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], t
                                 onClick={() => setLightbox(p.image)}
                               />
                             )}
-                            <button
-                              onClick={() => deleteRecord(p.id)}
-                              className="flex items-center gap-1 text-xs text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 px-2 py-1 rounded transition-colors self-start"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" /> 刪除
-                            </button>
+                            <div className="flex items-center gap-2 self-start">
+                              <button
+                                onClick={() => openEdit(p)}
+                                className="flex items-center gap-1 text-xs font-semibold text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800/60 hover:bg-blue-50 dark:hover:bg-blue-900/20 px-3 py-1.5 rounded-lg transition-colors"
+                              >
+                                <Pencil className="w-3.5 h-3.5" /> 編輯
+                              </button>
+                              <button
+                                onClick={() => deleteRecord(p.id)}
+                                className="flex items-center gap-1 text-xs text-red-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 px-2 py-1.5 rounded-lg transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" /> 刪除
+                              </button>
+                            </div>
                           </div>
                         </div>
                       </td>
@@ -689,8 +748,8 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], t
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
             <div className="sticky top-0 bg-white dark:bg-slate-800 px-5 py-4 border-b dark:border-slate-700 flex items-center justify-between z-10">
-              <h2 className="font-bold text-slate-800 dark:text-slate-100">新增收付款紀錄</h2>
-              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-1">
+              <h2 className="font-bold text-slate-800 dark:text-slate-100">{editingId ? "編輯收付款紀錄" : "新增收付款紀錄"}</h2>
+              <button onClick={closeModal} className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-1">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -870,7 +929,7 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], t
 
             <div className="px-5 py-4 border-t dark:border-slate-700 flex justify-end gap-3">
               <button
-                onClick={() => setShowModal(false)}
+                onClick={closeModal}
                 className="text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 px-4 py-2 rounded-lg transition-colors"
               >
                 取消
@@ -880,7 +939,7 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], t
                 disabled={saving}
                 className="text-sm bg-blue-600 text-white px-5 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
               >
-                {saving ? "儲存中…" : "儲存"}
+                {saving ? "儲存中…" : editingId ? "更新" : "儲存"}
               </button>
             </div>
           </div>
