@@ -6,7 +6,7 @@ import {
 } from "@/lib/supabase";
 import {
   Plus, X, Upload, ZoomIn, TrendingUp, TrendingDown,
-  Scale, Receipt, ChevronDown, ChevronUp, Trash2, ImageIcon, Users, AlertCircle, Printer, Pencil,
+  Scale, Receipt, ChevronDown, ChevronUp, Trash2, ImageIcon, Users, AlertCircle, Printer, Pencil, Sparkles, Loader2,
 } from "lucide-react";
 import { buildReceivables, receivableTotals } from "@/lib/receivables";
 import type { Tour } from "@/lib/supabase";
@@ -62,6 +62,25 @@ function compressImage(file: File, maxPx = 2400, quality = 0.92): Promise<string
     };
     img.src = url;
   });
+}
+
+/** /api/ocr/payment 回傳的單筆辨識結果 */
+interface ScanRec {
+  payer_name: string | null; matched_name: string | null;
+  amount: number | null; payment_date: string | null;
+  account_last5: string | null; method: string | null; bank: string | null;
+  category: "deposit" | "balance" | "other_in" | null;
+  note: string | null; confidence: "high" | "medium" | "low" | null;
+}
+/** 辨識後、尚未寫入資料庫的待確認紀錄 */
+interface ScanDraft {
+  key: string; image: string; fileName: string;
+  payer_name: string | null; customer_ids: string[];
+  type: "income" | "expense";      // AI 判為「疑似支出」時預設 expense
+  amount: number; payment_date: string; category: string;
+  description: string; note: string;
+  confidence: "high" | "medium" | "low" | null;
+  suspectExpense: boolean;         // AI 明確標記這筆疑似支出
 }
 
 const fmt = (n: number) => `NT$${Math.round(n).toLocaleString()}`;
@@ -135,6 +154,113 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], t
     setFormCustIds(p.customer_ids || []);
     setFormIsPayable(!!p.is_payable);
     setShowModal(true);
+  };
+
+  // ── 智能辨識收款截圖 ───────────────────────────────────────────────────────
+  const [showScan,   setShowScan]   = useState(false);
+  const [scanBusy,   setScanBusy]   = useState(false);
+  const [scanStep,   setScanStep]   = useState("");
+  const [scanErr,    setScanErr]    = useState<string[]>([]);
+  const [drafts,     setDrafts]     = useState<ScanDraft[]>([]);
+  const [importing,  setImporting]  = useState(false);
+  const scanFileRef = useRef<HTMLInputElement>(null);
+
+  /** 這位旅客是否已有訂金入帳 → 有的話新的一筆預設當尾款 */
+  const guessCategory = (cid: string | null): string => {
+    if (!cid) return "deposit";
+    const paidDeposit = payments.some(p =>
+      p.type === "income" && p.category === "deposit" && (p.customer_ids || []).includes(cid));
+    return paidDeposit ? "balance" : "deposit";
+  };
+
+  const runScan = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setScanBusy(true);
+    setScanErr([]);
+    const names = participants.map(pt => pt.customer.name);
+    const today = new Date().toISOString().slice(0, 10);
+    const found: ScanDraft[] = [];
+    const errs: string[] = [];
+
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      setScanStep(`辨識中… ${i + 1} / ${files.length}　${f.name}`);
+      try {
+        const b64 = await compressImage(f, 1800, 0.85);
+        const res = await fetch("/api/ocr/payment", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ imageBase64: b64, names, today }),
+        });
+        const json = await res.json();
+        if (!res.ok) { errs.push(`${f.name}：${json?.error || res.status}`); continue; }
+        const recs = (json?.records || []) as ScanRec[];
+        if (recs.length === 0) { errs.push(`${f.name}：讀不到交易內容`); continue; }
+        recs.forEach((r, k) => {
+          const pt = r.matched_name ? participants.find(x => x.customer.name === r.matched_name) : undefined;
+          const cid = pt?.customer_id || null;
+          const descBits = [r.bank, r.method, r.account_last5 ? `末五碼 ${r.account_last5}` : ""].filter(Boolean);
+          const suspect = /疑似支出/.test(r.note || "");
+          found.push({
+            key: `${Date.now()}-${i}-${k}`,
+            image: b64,
+            fileName: f.name,
+            payer_name: r.payer_name,
+            customer_ids: cid ? [cid] : [],
+            type: suspect ? "expense" : "income",
+            amount: r.amount ?? 0,
+            payment_date: r.payment_date || "",
+            category: suspect ? "misc" : (r.category || guessCategory(cid)),
+            description: [r.payer_name, descBits.join("·")].filter(Boolean).join("　"),
+            note: r.note || "",
+            confidence: r.confidence,
+            suspectExpense: suspect,
+          });
+        });
+      } catch {
+        errs.push(`${f.name}：讀取檔案失敗`);
+      }
+    }
+    setDrafts(d => [...d, ...found]);
+    setScanErr(errs);
+    setScanStep("");
+    setScanBusy(false);
+  };
+
+  const patchDraft = (key: string, patch: Partial<ScanDraft>) =>
+    setDrafts(ds => ds.map(d => d.key === key ? { ...d, ...patch } : d));
+  const dropDraft = (key: string) => setDrafts(ds => ds.filter(d => d.key !== key));
+
+  const importDrafts = async () => {
+    const ready = drafts.filter(d => d.amount > 0);
+    if (ready.length === 0) { alert("沒有可匯入的紀錄（金額必須大於 0）"); return; }
+    setImporting(true);
+    const rows = ready.map(d => ({
+      tour_id: tourId,
+      type: d.type,
+      category: d.category,
+      description: d.description || "",
+      amount: d.amount,
+      payment_date: d.payment_date || null,
+      note: d.note || "",
+      image: d.image || "",
+      customer_ids: d.customer_ids,
+      is_payable: false,
+    }));
+    let { error } = await supabase.from("tour_payments").insert(rows);
+    if (error && (error.code === "42703" || error.message?.includes("schema cache") || error.message?.includes("Could not find"))) {
+      const bare = rows.map(({ is_payable: _p, ...rest }) => rest);
+      ({ error } = await supabase.from("tour_payments").insert(bare));
+    }
+    setImporting(false);
+    if (error) { alert("匯入失敗：" + error.message); return; }
+    setDrafts([]);
+    setShowScan(false);
+    setScanErr([]);
+    await loadPayments();
+    onChanged?.();
+    const inc = ready.filter(d => d.type === "income").length;
+    alert(`已匯入 ${ready.length} 筆（收入 ${inc} 筆／支出 ${ready.length - inc} 筆）。`);
   };
 
   // ── Load data ──
@@ -485,12 +611,21 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], t
             </button>
           ))}
         </div>
-        <button
-          onClick={openCreate}
-          className="flex items-center gap-1.5 text-sm px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Plus className="w-4 h-4" /> 新增紀錄
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => { setShowScan(true); setScanErr([]); }}
+            title="上傳轉帳／匯款截圖，自動帶出旅客、日期、金額"
+            className="flex items-center gap-1.5 text-sm px-3 py-2 bg-violet-600 text-white rounded-lg hover:bg-violet-700 transition-colors"
+          >
+            <Sparkles className="w-4 h-4" /> 智能辨識
+          </button>
+          <button
+            onClick={openCreate}
+            className="flex items-center gap-1.5 text-sm px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Plus className="w-4 h-4" /> 新增紀錄
+          </button>
+        </div>
       </div>
 
       {/* ── Records List ── */}
@@ -941,6 +1076,201 @@ export default function PaymentsTab({ tourId, pax, revenue, participants = [], t
               >
                 {saving ? "儲存中…" : editingId ? "更新" : "儲存"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 智能辨識收款截圖 ── */}
+      {showScan && (
+        <div className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-xl w-full max-w-3xl my-6">
+            <div className="sticky top-0 bg-white dark:bg-slate-800 px-5 py-4 border-b dark:border-slate-700 flex items-center justify-between z-10 rounded-t-2xl">
+              <div>
+                <h2 className="font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-violet-500" /> 智能辨識收款截圖
+                </h2>
+                <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-0.5">
+                  自動帶出旅客、付款日期、金額；截圖會一起存成佐證
+                </p>
+              </div>
+              <button onClick={() => { setShowScan(false); setDrafts([]); setScanErr([]); }}
+                className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 p-1">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="px-5 py-5 space-y-4">
+              <input ref={scanFileRef} type="file" accept="image/*" multiple className="hidden"
+                onChange={e => { runScan(e.target.files); e.target.value = ""; }} />
+
+              <button
+                onClick={() => scanFileRef.current?.click()}
+                disabled={scanBusy}
+                className="w-full py-6 border-2 border-dashed border-violet-300 dark:border-violet-700 rounded-xl flex flex-col items-center justify-center gap-2 text-violet-600 dark:text-violet-400 hover:bg-violet-50 dark:hover:bg-violet-900/20 hover:border-violet-400 disabled:opacity-60 transition-colors"
+              >
+                {scanBusy ? <Loader2 className="w-6 h-6 animate-spin" /> : <Upload className="w-6 h-6" />}
+                <span className="text-sm font-semibold">
+                  {scanBusy ? scanStep : "選擇收款截圖（可一次多張）"}
+                </span>
+                {!scanBusy && (
+                  <span className="text-[11px] text-slate-400 dark:text-slate-500">
+                    網銀轉帳畫面／ATM 明細／帳戶交易列表／LINE Pay 截圖都可以
+                  </span>
+                )}
+              </button>
+
+              {scanErr.length > 0 && (
+                <div className="rounded-xl border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-900/20 px-4 py-3">
+                  <p className="text-xs font-semibold text-amber-700 dark:text-amber-300 mb-1">這幾張沒讀出來</p>
+                  {scanErr.map((m, i) => (
+                    <p key={i} className="text-[11px] text-amber-600 dark:text-amber-400">・{m}</p>
+                  ))}
+                </div>
+              )}
+
+              {drafts.length > 0 && (
+                <div className="rounded-xl border border-blue-200 dark:border-blue-800/60 bg-blue-50 dark:bg-blue-900/20 px-4 py-2.5">
+                  <p className="text-xs text-blue-700 dark:text-blue-300 leading-relaxed">
+                    <b>辨識結果請先核對再匯入。</b>對不到旅客的會留白，需要自己選；
+                    金額、日期也可以直接在下面改。
+                  </p>
+                </div>
+              )}
+
+              {drafts.map(d => {
+                const cid = d.customer_ids[0] || "";
+                const bad = d.amount <= 0;
+                return (
+                  <div key={d.key}
+                    className={`rounded-xl border p-3 space-y-2.5 ${
+                      bad
+                        ? "border-red-200 dark:border-red-800/60 bg-red-50/50 dark:bg-red-900/10"
+                        : "border-slate-200 dark:border-slate-700"
+                    }`}>
+                    <div className="flex items-start gap-3">
+                      <img src={d.image} alt="" onClick={() => setLightbox(d.image)}
+                        className="w-16 h-16 rounded-lg border border-slate-200 dark:border-slate-600 object-cover cursor-zoom-in flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                            {d.payer_name || "（截圖上讀不到匯款人）"}
+                          </span>
+                          {d.confidence && (
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
+                              d.confidence === "high"
+                                ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300"
+                                : d.confidence === "medium"
+                                  ? "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"
+                                  : "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300"
+                            }`}>
+                              {d.confidence === "high" ? "清楚" : d.confidence === "medium" ? "部分模糊" : "畫質差，請細查"}
+                            </span>
+                          )}
+                          {!cid && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 font-semibold">
+                              未對應旅客
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 truncate">{d.fileName}</p>
+                      </div>
+                      <button onClick={() => dropDraft(d.key)}
+                        title="不要這一筆"
+                        className="text-slate-300 hover:text-red-500 p-1 flex-shrink-0">
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {d.suspectExpense && (
+                      <div className="rounded-lg border border-amber-300 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-900/20 px-3 py-2">
+                        <p className="text-[11px] text-amber-700 dark:text-amber-300 leading-relaxed">
+                          <b>這筆看起來是支出</b>（付出去的錢），已自動改成「支出」。若判斷錯誤請自行切回收入。
+                        </p>
+                      </div>
+                    )}
+
+                    <div className="grid grid-cols-2 gap-2">
+                      {(["income","expense"] as const).map(t => (
+                        <button key={t}
+                          onClick={() => patchDraft(d.key, {
+                            type: t,
+                            category: t === "income" ? "deposit" : "misc",
+                          })}
+                          className={`py-1.5 text-xs font-semibold rounded-lg border transition-colors ${
+                            d.type === t
+                              ? t === "income"
+                                ? "bg-emerald-500 text-white border-emerald-500"
+                                : "bg-orange-500 text-white border-orange-500"
+                              : "border-slate-200 dark:border-slate-600 text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700"
+                          }`}>
+                          {t === "income" ? "💰 收入" : "💸 支出"}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <div className="col-span-2 sm:col-span-1">
+                        <label className={lbl}>旅客</label>
+                        <select className={input} value={cid}
+                          onChange={e => patchDraft(d.key, { customer_ids: e.target.value ? [e.target.value] : [] })}>
+                          <option value="">— 未指定 —</option>
+                          {participants.map(pt => (
+                            <option key={pt.customer_id} value={pt.customer_id}>{pt.customer.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className={lbl}>金額 *</label>
+                        <input type="number" min="0" className={input} value={d.amount || ""}
+                          onChange={e => patchDraft(d.key, { amount: +e.target.value })} />
+                      </div>
+                      <div>
+                        <label className={lbl}>日期</label>
+                        <input type="date" className={input} value={d.payment_date}
+                          onChange={e => patchDraft(d.key, { payment_date: e.target.value })} />
+                      </div>
+                      <div>
+                        <label className={lbl}>類別</label>
+                        <select className={input} value={d.category}
+                          onChange={e => patchDraft(d.key, { category: e.target.value })}>
+                          {(d.type === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).map(c => (
+                            <option key={c.key} value={c.key}>{c.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className={lbl}>說明</label>
+                      <input className={input} value={d.description}
+                        onChange={e => patchDraft(d.key, { description: e.target.value })} />
+                    </div>
+                    {bad && (
+                      <p className="text-[11px] text-red-500">金額必須大於 0 才能匯入。</p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="px-5 py-4 border-t dark:border-slate-700 flex items-center justify-between gap-3 flex-wrap">
+              <span className="text-xs text-slate-400 dark:text-slate-500">
+                {drafts.length > 0
+                  ? `可匯入 ${drafts.filter(d => d.amount > 0).length} 筆（收入 ${drafts.filter(d => d.amount > 0 && d.type === "income").length}／支出 ${drafts.filter(d => d.amount > 0 && d.type === "expense").length}）／共 ${drafts.length} 筆`
+                  : "尚未辨識任何截圖"}
+              </span>
+              <div className="flex gap-3">
+                <button onClick={() => { setShowScan(false); setDrafts([]); setScanErr([]); }}
+                  className="text-sm text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 px-4 py-2 rounded-lg transition-colors">
+                  取消
+                </button>
+                <button onClick={importDrafts}
+                  disabled={importing || scanBusy || drafts.filter(d => d.amount > 0).length === 0}
+                  className="text-sm bg-violet-600 text-white px-5 py-2 rounded-lg hover:bg-violet-700 disabled:opacity-40 transition-colors">
+                  {importing ? "匯入中…" : `確認匯入 ${drafts.filter(d => d.amount > 0).length} 筆`}
+                </button>
+              </div>
             </div>
           </div>
         </div>
